@@ -34,6 +34,10 @@ android {
         debug { applicationIdSuffix = ".debug"; buildConfigField("boolean", "MOCK_OBD_DEFAULT", "true") }
         release { if (keystoreFile != null) signingConfig = signingConfigs.getByName("release"); isMinifyEnabled = false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") }
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     buildFeatures { compose = true; buildConfig = true }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isIncludeAndroidResources = true
@@ -43,6 +47,10 @@ android {
             output.outputFileName = if (buildType.name == "release") "NowTuneUp-v1.0.0-release.apk" else "NowTuneUp-debug.apk"
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 kapt { correctErrorTypes = true }
