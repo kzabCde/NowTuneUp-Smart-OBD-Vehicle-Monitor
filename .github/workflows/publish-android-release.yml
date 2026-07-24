@@ -2,17 +2,35 @@ name: Publish Android release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to publish (without the v prefix)
+        required: true
+        default: 1.0.0
+        type: string
 permissions: { contents: write }
 jobs:
   release:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: android-app } }
+    env:
+      RELEASE_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17', cache: gradle }
       - uses: android-actions/setup-android@v3
       - run: chmod +x gradlew
+      - name: Validate release version
+        run: |
+          VERSION="${RELEASE_INPUT#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid semantic version: $VERSION"; exit 1; }
+          grep -Fq "versionName = \"$VERSION\"" app/build.gradle.kts || {
+            echo "Android versionName does not match release $VERSION"
+            exit 1
+          }
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
       - run: ./gradlew test lint
       - name: Restore signing key
         env: { KEYSTORE_B64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
@@ -27,12 +45,15 @@ jobs:
       - name: Name and checksum artifact
         working-directory: .
         run: |
-          scripts/rename-apk.sh "${GITHUB_REF_NAME#v}"
-          scripts/calculate-checksum.sh "android-app/app/build/outputs/apk/release/NowTuneUp-${GITHUB_REF_NAME}-release.apk"
-          scripts/verify-release.sh "android-app/app/build/outputs/apk/release/NowTuneUp-${GITHUB_REF_NAME}-release.apk"
+          scripts/rename-apk.sh "$RELEASE_VERSION"
+          scripts/calculate-checksum.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
+          scripts/verify-release.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          name: NowTuneUp v${{ env.RELEASE_VERSION }}
+          body_path: docs/releases/v1.0.0.md
           generate_release_notes: true
           files: |
-            android-app/app/build/outputs/apk/release/NowTuneUp-${{ github.ref_name }}-release.apk
-            android-app/app/build/outputs/apk/release/NowTuneUp-${{ github.ref_name }}-release.apk.sha256
+            android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk
+            android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk.sha256
