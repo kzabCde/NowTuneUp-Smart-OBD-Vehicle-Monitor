@@ -3,8 +3,10 @@ package com.nowtuneup.app.presentation.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.nowtuneup.app.domain.model.ThemeConfig
 
 private val NtuColorScheme = darkColorScheme(
     primary = Color(0xFF00E5FF),
@@ -19,9 +21,14 @@ private val NtuColorScheme = darkColorScheme(
 )
 
 @Composable
-fun NtuTheme(content: @Composable () -> Unit) {
+fun NtuTheme(config: ThemeConfig = ThemeConfig(), content: @Composable () -> Unit) {
+    val scheme = if (config.name == "Light") lightColorScheme(
+        primary = Color(config.primary), secondary = Color(config.secondary), background = Color(config.background), surface = Color(config.card), onBackground = Color(config.text), onSurface = Color(config.text)
+    ) else darkColorScheme(
+        primary = Color(config.primary), secondary = Color(config.secondary), background = Color(config.background), surface = Color(config.card), onBackground = Color(config.text), onSurface = Color(config.text)
+    )
     MaterialTheme(
-        colorScheme = NtuColorScheme,
+        colorScheme = scheme,
         typography = Typography(),
         content = content,
     )

@@ -9,17 +9,23 @@ import com.nowtuneup.app.data.local.entity.TripEntity
 import com.nowtuneup.app.data.obd.session.ObdSessionManager
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.Dtc
+import com.nowtuneup.app.data.dashboard.DashboardDefaults
+import com.nowtuneup.app.data.dashboard.DashboardRepository
+import com.nowtuneup.app.data.preferences.SettingsRepository
+import com.nowtuneup.app.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class MainViewModel @Inject constructor(private val session: ObdSessionManager, private val dao: NtuDao) : ViewModel() {
+class MainViewModel @Inject constructor(private val session: ObdSessionManager, private val dao: NtuDao, private val dashboardRepository: DashboardRepository, private val settingsRepository: SettingsRepository) : ViewModel() {
     val connection = session.connectionState
     val readings = session.readings
     val trips = dao.trips()
@@ -27,6 +33,8 @@ class MainViewModel @Inject constructor(private val session: ObdSessionManager, 
     val error = _error.asStateFlow()
     private val _dtcs = MutableStateFlow<List<Dtc>>(emptyList())
     val dtcs = _dtcs.asStateFlow()
+    val dashboards = dashboardRepository.dashboards.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardDefaults.presets)
+    val dashboardPreferences = settingsRepository.dashboardPreferences.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardPreferences())
     private var tripId: Long? = null
     private var recorder: Job? = null
 
@@ -37,6 +45,17 @@ class MainViewModel @Inject constructor(private val session: ObdSessionManager, 
     fun pause() = session.pause()
     fun resume() = session.startPolling()
     fun dismissError() { _error.value = null }
+    fun selectDashboard(id: String) = updatePreferences { it.copy(selectedDashboardId = id) }
+    fun selectTheme(theme: ThemeConfig) = updatePreferences { it.copy(theme = theme) }
+    fun setReduceMotion(value: Boolean) = updatePreferences { it.copy(reduceMotion = value) }
+    fun setDrivingMode(value: Boolean) = updatePreferences { it.copy(drivingMode = value) }
+    fun setRefreshRate(value: RefreshRate) { session.setRefreshInterval(value.intervalMillis); updatePreferences { it.copy(refreshRate = value) } }
+    private fun updatePreferences(change: (DashboardPreferences) -> DashboardPreferences) = viewModelScope.launch { settingsRepository.saveDashboardPreferences(change(dashboardPreferences.value)) }
+    fun saveDashboard(config: DashboardConfig) = viewModelScope.launch { dashboardRepository.save(config) }
+    fun duplicateDashboard(config: DashboardConfig) = viewModelScope.launch {
+        val copy = config.copy(id = "custom-${System.currentTimeMillis()}", name = "${config.name} Copy", isDefault = false)
+        dashboardRepository.save(copy); selectDashboard(copy.id)
+    }
 
     fun scan() = viewModelScope.launch {
         session.readDtcs().onSuccess {

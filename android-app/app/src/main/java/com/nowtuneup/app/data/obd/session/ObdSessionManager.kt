@@ -30,6 +30,7 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
     val readings: StateFlow<List<VehicleReading>> = _readings
     private var supportedPids: Set<Int> = emptySet()
     private var polling: Job? = null
+    @Volatile private var refreshIntervalMillis: Long = 500
 
     suspend fun connect(): Result<Unit> {
         transport.connect().onFailure { return Result.failure(it) }
@@ -82,12 +83,13 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
                     ObdResponseParser.parseMode1(raw, pid, command).onSuccess { publish(pid, it) }
                 }
                 tick++
-                delay(if (pid == 0x0C || pid == 0x0D) 250 else 700)
+                delay(if (pid == 0x0C || pid == 0x0D) refreshIntervalMillis else maxOf(refreshIntervalMillis, 700))
             }
         }
     }
 
     fun pause() { polling?.cancel(); polling = null }
+    fun setRefreshInterval(intervalMillis: Long) { refreshIntervalMillis = intervalMillis.coerceIn(200, 1_000) }
     suspend fun readDtcs() = queue.execute(ObdRequest("03", 4_000)).map(DtcParser::parse)
     fun close() = scope.cancel()
 
