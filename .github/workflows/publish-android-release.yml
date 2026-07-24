@@ -31,6 +31,11 @@ jobs:
             exit 1
           }
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES=docs/releases/v${VERSION}.md" >> "$GITHUB_ENV"
+          test -f "../docs/releases/v${VERSION}.md" || {
+            echo "Release notes are missing for v$VERSION"
+            exit 1
+          }
       - run: ./gradlew test lint
       - name: Restore signing key
         env: { KEYSTORE_B64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
@@ -52,7 +57,7 @@ jobs:
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
           name: NowTuneUp v${{ env.RELEASE_VERSION }}
-          body_path: docs/releases/v1.0.0.md
+          body_path: ${{ env.RELEASE_NOTES }}
           generate_release_notes: true
           files: |
             android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk

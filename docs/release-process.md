@@ -1,7 +1,7 @@
 # Release process
 
 1. Confirm `android-app` tests/lint/build and all `web` checks pass.
-2. Update Android `versionName`, `versionCode`, release notes, and expected output name together.
+2. Update Android `versionName`, `versionCode`, expected output name, and the matching `docs/releases/vX.Y.Z.md` release notes together.
 3. Configure repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 4. Merge to the protected release branch, then either run **Publish Android release** manually with `1.0.0`, or create and push an annotated semantic tag:
 
