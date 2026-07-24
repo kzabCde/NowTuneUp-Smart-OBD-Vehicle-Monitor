@@ -64,13 +64,13 @@ jobs:
 
       - name: Commit generated APK
         run: |
-          if git diff --quiet -- web/public/downloads/NowTuneUp.apk web/lib/local-release.ts; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f web/public/downloads/NowTuneUp.apk web/lib/local-release.ts
+          if git diff --cached --quiet; then
             echo "Bundled APK is already current."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/public/downloads/NowTuneUp.apk web/lib/local-release.ts
           git commit -m "Bundle NowTuneUp APK 1.0.0 with website"
           git push
 
