@@ -68,7 +68,7 @@ npm run test
 npm run build
 ```
 
-Deploy `web/` as the Vercel root. Configure:
+Vercel can import the repository root directly: the root workspace manifest exposes the pinned Next.js version and delegates builds to `web`, while the root `vercel.json` selects `web/.next`. Alternatively, set the Vercel Root Directory to `web`. Configure:
 
 | Variable | Required | Exposure |
 |---|---:|---|
