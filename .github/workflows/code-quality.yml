@@ -6,9 +6,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Reject committed secrets and malformed whitespace
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git diff --check HEAD~1 HEAD
-          ! git grep -En '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|ANDROID_KEYSTORE_PASSWORD=.+|GITHUB_TOKEN=gh[ps]_.)'
+          git fetch origin "$BASE_REF" --depth=1
+          BASE=$(git merge-base HEAD FETCH_HEAD)
+          git diff --check "$BASE" HEAD
+          ! git grep -En '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|ANDROID_KEYSTORE_PASSWORD=.+|GITHUB_TOKEN=gh[ps]_.)' -- ':!.github/workflows/code-quality.yml'
       - name: Validate shell scripts
         run: bash -n scripts/*.sh android-app/gradlew
