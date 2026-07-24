@@ -5,4 +5,4 @@ Next.js App Router frontend for product documentation and server-side GitHub Rel
 
 ## Vercel
 
-Import the repository root with the committed root `package.json` and `vercel.json`, or set the Vercel project Root Directory to `web`. Both configurations expose Next.js 15.3.3 during framework detection. The root workspace is recommended because it works without dashboard-specific directory settings.
+Import the repository root with the committed root `package.json` and `vercel.json`, or set the Vercel project Root Directory to `web`. Both configurations expose Next.js 15.3.3 during framework detection. The root manifest pins React and React DOM to the same versions as this workspace so server rendering uses one React runtime. The root workspace is recommended because it works without dashboard-specific directory settings.
