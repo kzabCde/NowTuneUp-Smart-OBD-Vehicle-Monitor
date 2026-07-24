@@ -66,6 +66,10 @@ import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
+import com.nowtuneup.app.ui.dashboard.DashboardScreen
+import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
+import com.nowtuneup.app.data.dashboard.DashboardDefaults
+import com.nowtuneup.app.domain.model.*
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Date
 
@@ -98,6 +102,9 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     var selectedDestination by remember { mutableIntStateOf(0) }
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
+    val dashboardPreferences by viewModel.dashboardPreferences.collectAsState()
+
+    NtuTheme(dashboardPreferences.theme) {
 
     Scaffold(
         topBar = {
@@ -145,7 +152,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 1 -> LiveData(viewModel)
                 2 -> Diagnostics(viewModel)
                 3 -> Trips(viewModel)
-                else -> Settings()
+                else -> Settings(viewModel)
             }
         }
     }
@@ -162,25 +169,19 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             text = { Text(message) },
         )
     }
+    }
 }
 
 @Composable
 fun Dashboard(viewModel: MainViewModel) {
     val readings by viewModel.readings.collectAsState()
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val dashboardPids = setOf(0x0C, 0x0D, 0x05, 0x42, 0x04, 0x11)
-
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(if (isLandscape) 3 else 2),
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        gridItems(items = readings.filter { it.pid in dashboardPids }, key = { it.pid }) { reading ->
-            GaugeCard(reading)
-        }
-    }
+    val dashboards by viewModel.dashboards.collectAsState()
+    val preferences by viewModel.dashboardPreferences.collectAsState()
+    val dtcs by viewModel.dtcs.collectAsState()
+    val selected = dashboards.firstOrNull { it.id == preferences.selectedDashboardId } ?: dashboards.first()
+    var editing by remember { mutableStateOf(false) }
+    if (editing) DashboardEditor(selected, preferences.drivingMode, onSave = { viewModel.saveDashboard(it); editing = false }, onCancel = { editing = false })
+    else DashboardScreen(selected, readings, preferences, dtcs.size, onEdit = { editing = true })
 }
 
 @Composable
@@ -332,29 +333,21 @@ fun Trips(viewModel: MainViewModel) {
 }
 
 @Composable
-fun Settings() {
+fun Settings(viewModel: MainViewModel) {
+    val preferences by viewModel.dashboardPreferences.collectAsState()
+    val dashboards by viewModel.dashboards.collectAsState()
     Column(modifier = Modifier.padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
-        listOf(
-            "Metric units",
-            "Keep screen awake",
-            "Automatic reconnection",
-            "Landscape dashboard",
-            "Debug information",
-        ).forEach { title ->
-            var checked by remember(title) { mutableStateOf(title != "Debug information") }
-            ListItem(
-                headlineContent = { Text(title) },
-                trailingContent = {
-                    Switch(
-                        checked = checked,
-                        onCheckedChange = { checked = it },
-                    )
-                },
-            )
-        }
+        Text("Dashboard preset", style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { dashboards.take(3).forEach { dashboard -> FilterChip(preferences.selectedDashboardId == dashboard.id, { viewModel.selectDashboard(dashboard.id) }, { Text(dashboard.name) }) } }
+        Text("Theme", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { DashboardDefaults.themes.take(3).forEach { theme -> FilterChip(preferences.theme.name == theme.name, { viewModel.selectTheme(theme) }, { Text(theme.name) }) } }
+        ListItem(headlineContent = { Text("Reduce Motion") }, supportingContent = { Text("Limits gauge and screen animation") }, trailingContent = { Switch(preferences.reduceMotion, viewModel::setReduceMotion) })
+        ListItem(headlineContent = { Text("Driving Mode") }, supportingContent = { Text("Larger essentials and locks dashboard editing") }, trailingContent = { Switch(preferences.drivingMode, viewModel::setDrivingMode) })
+        Text("Refresh rate", style = MaterialTheme.typography.titleMedium)
+        Row { RefreshRate.entries.forEach { rate -> FilterChip(preferences.refreshRate == rate, { viewModel.setRefreshRate(rate) }, { Text(rate.name) }, Modifier.padding(end = 6.dp)) } }
         Text(
-            text = "NTU 1.0.0 • Local-first • Read-only OBD-II",
+            text = "NTU 1.1.0 • Local-first • Read-only OBD-II",
             modifier = Modifier.padding(16.dp),
         )
     }

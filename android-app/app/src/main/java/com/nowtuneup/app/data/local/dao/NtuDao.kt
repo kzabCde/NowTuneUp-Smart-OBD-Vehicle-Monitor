@@ -12,5 +12,6 @@ import kotlinx.coroutines.flow.Flow
  @Query("SELECT * FROM diagnostic_scans ORDER BY readAt DESC") fun scans():Flow<List<DiagnosticScanEntity>>
  @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun saveProfile(profile:DashboardProfileEntity)
  @Query("SELECT * FROM dashboard_profiles ORDER BY name") fun profiles():Flow<List<DashboardProfileEntity>>
+ @Query("DELETE FROM dashboard_profiles WHERE name=:name") suspend fun deleteProfile(name:String)
  @Query("DELETE FROM samples") suspend fun clearSamples(); @Query("DELETE FROM trips") suspend fun clearTrips(); @Query("DELETE FROM diagnostic_scans") suspend fun clearScans()
 }

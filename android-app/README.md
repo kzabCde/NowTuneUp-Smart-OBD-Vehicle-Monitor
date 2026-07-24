@@ -9,7 +9,7 @@ NTU is a local-first, read-only Android OBD-II dashboard for ELM327-compatible U
 - USB serial discovery/opening and permission entry point for ELM327 adapters; prompt-bounded reads and cable failure handling.
 - Sequential `ATZ`, `ATE0`, `ATL0`, `ATS0`, `ATH0`, `ATSP0` initialization and a serialized, cancellable, bounded-retry command queue.
 - Robust echo/prompt normalization, informational/error recognition, multiple-ECU frames, PID/mode validation, supported-PID mask parsing, and stored Mode 03 DTC parsing.
-- Responsive dark dashboard with gauges, prominent portrait/landscape readings; searchable live data with pause/resume; read-only diagnostics; trip history; settings.
+- Customizable Digital, Analog, and Hybrid dashboards with six built-in presets, portrait/landscape layouts, five gauge styles, threshold colors, accessible themes, Reduce Motion, and Driving Mode.
 - Debug-only mock transport with changing RPM/speed and representative values. Release defaults to physical USB.
 - Room schema for indexed trips/samples, diagnostic scans, and dashboard profiles; DataStore settings; CSV writer compatible with Storage Access Framework destinations.
 - Foreground connected-device monitoring service with persistent status and stop action.
@@ -71,7 +71,7 @@ Install Android Studio with Android SDK 35 and JDK 17, then set `sdk.dir` in unc
 Outputs:
 
 - `app/build/outputs/apk/debug/NowTuneUp-debug.apk`
-- `app/build/outputs/apk/release/NowTuneUp-v1.0.0-release.apk`
+- `app/build/outputs/apk/release/NowTuneUp-v1.1.0-release.apk`
 
 The repository never stores signing secrets. Copy `signing.properties.example` locally and wire credentials through environment/local Gradle configuration for distributable signing. Without that setup, release output is unsigned.
 

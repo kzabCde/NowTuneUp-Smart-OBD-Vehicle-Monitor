@@ -24,8 +24,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -51,7 +51,7 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = if (buildType.name == "release") "NowTuneUp-v1.0.0-release.apk" else "NowTuneUp-debug.apk"
+            output.outputFileName = if (buildType.name == "release") "NowTuneUp-v1.1.0-release.apk" else "NowTuneUp-debug.apk"
         }
     }
 }
@@ -81,6 +81,7 @@ dependencies {
     kapt("com.google.dagger:hilt-compiler:2.56.2")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("com.github.mik3y:usb-serial-for-android:3.9.0")
+    implementation("com.google.code.gson:gson:2.13.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
