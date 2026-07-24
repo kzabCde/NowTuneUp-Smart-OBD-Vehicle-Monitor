@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# Text-only Gradle launcher for environments where binary files cannot be stored.
+set -eu
+
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+GRADLE_VERSION=8.14.4
+GRADLE_USER_HOME=${GRADLE_USER_HOME:-"$HOME/.gradle"}
+INSTALL_DIR="$GRADLE_USER_HOME/wrapper/text-launcher/gradle-$GRADLE_VERSION"
+ARCHIVE="$GRADLE_USER_HOME/wrapper/text-launcher/gradle-$GRADLE_VERSION-bin.zip"
+DISTRIBUTION_URL="https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip"
+
+if [ ! -x "$INSTALL_DIR/bin/gradle" ]; then
+    mkdir -p "$(dirname "$ARCHIVE")"
+    if [ ! -f "$ARCHIVE" ]; then
+        echo "Downloading Gradle $GRADLE_VERSION..." >&2
+        if command -v curl >/dev/null 2>&1; then
+            curl --fail --location --retry 3 --output "$ARCHIVE.part" "$DISTRIBUTION_URL"
+        elif command -v wget >/dev/null 2>&1; then
+            wget --tries=3 --output-document="$ARCHIVE.part" "$DISTRIBUTION_URL"
+        else
+            echo "Gradle is unavailable and neither curl nor wget is installed." >&2
+            exit 1
+        fi
+        mv "$ARCHIVE.part" "$ARCHIVE"
+    fi
+    command -v unzip >/dev/null 2>&1 || { echo "unzip is required to install Gradle." >&2; exit 1; }
+    rm -rf "$INSTALL_DIR"
+    unzip -q "$ARCHIVE" -d "$(dirname "$INSTALL_DIR")"
+fi
+
+exec "$INSTALL_DIR/bin/gradle" -p "$APP_HOME" "$@"

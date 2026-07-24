@@ -32,3 +32,17 @@ google-services.json
 
 # Android Profiling
 *.hprof
+signing.properties
+*.csv
+node_modules/
+.next/
+playwright-report/
+test-results/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+android-app/local.properties
+android-app/app/schemas/
+# Gradle wrapper JAR is intentionally omitted because this repository must remain text-only.
+android-app/gradle/wrapper/gradle-wrapper.jar

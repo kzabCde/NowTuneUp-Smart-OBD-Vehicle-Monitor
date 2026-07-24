@@ -1,0 +1,3 @@
+import Link from "next/link";
+const links=[["Features","/features"],["Devices","/supported-devices"],["Releases","/releases"],["Install","/install-guide"]];
+export function Header(){return <header className="shell flex items-center justify-between py-5"><Link href="/" className="flex items-center gap-3 font-black text-xl" aria-label="NowTuneUp home"><span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300 text-slate-950">N</span><span>NowTuneUp</span></Link><nav aria-label="Main navigation" className="desktop-nav flex gap-6 text-sm text-slate-300">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</nav><Link href="/download" className="button">Download APK</Link></header>}

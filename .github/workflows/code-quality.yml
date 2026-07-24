@@ -1,0 +1,14 @@
+name: Code quality
+on: [pull_request]
+permissions: { contents: read }
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject committed secrets and malformed whitespace
+        run: |
+          git diff --check HEAD~1 HEAD
+          ! git grep -En '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|ANDROID_KEYSTORE_PASSWORD=.+|GITHUB_TOKEN=gh[ps]_.)'
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh android-app/gradlew
