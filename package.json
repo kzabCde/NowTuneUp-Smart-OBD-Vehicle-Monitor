@@ -1,0 +1,31 @@
+{
+  "name": "nowtuneup-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=nowtuneup-web",
+    "build": "npm run verify:web-runtime && npm run build --workspace=nowtuneup-web",
+    "start": "npm run start --workspace=nowtuneup-web",
+    "typecheck": "npm run typecheck --workspace=nowtuneup-web",
+    "lint": "npm run lint --workspace=nowtuneup-web",
+    "test": "npm run test --workspace=nowtuneup-web",
+    "verify:web-runtime": "node scripts/verify-web-runtime.mjs"
+  },
+  "dependencies": {
+    "next": "15.5.7",
+    "react": "19.1.2",
+    "react-dom": "19.1.2"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "overrides": {
+    "next": "15.5.7",
+    "react": "19.1.2",
+    "react-dom": "19.1.2"
+  },
+  "packageManager": "npm@11.4.2"
+}

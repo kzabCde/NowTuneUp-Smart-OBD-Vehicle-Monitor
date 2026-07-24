@@ -1,0 +1,6 @@
+import { GithubRelease, ReleaseInfo, releasesSchema } from "@/lib/validation/releases";
+const APK=/^NowTuneUp-v(.+)-release\.apk$/;
+export class ReleaseDataError extends Error { constructor(message:string,readonly status=502){super(message)} }
+export function stableReleases(input:unknown):GithubRelease[]{const parsed=releasesSchema.safeParse(input);if(!parsed.success)throw new ReleaseDataError("GitHub returned invalid release data");return parsed.data.filter(r=>!r.draft&&!r.prerelease&&r.published_at!==null)}
+export function normalizeRelease(release:GithubRelease):ReleaseInfo {const apk=release.assets.find(a=>APK.test(a.name));if(!apk)throw new ReleaseDataError("Release does not contain a NowTuneUp APK",404);const match=apk.name.match(APK);const version=match?.[1];if(!version)throw new ReleaseDataError("APK filename is invalid");return {version,tagName:release.tag_name,versionCode:versionToCode(version),apkName:apk.name,apkSize:apk.size,downloadUrl:apk.browser_download_url,downloadCount:apk.download_count,sha256:null,minimumAndroid:"Android 8.0",publishedAt:release.published_at??"",releaseNotes:release.body?.trim()||"No release notes provided."}}
+export function versionToCode(version:string):number {const [major=0,minor=0,patch=0]=version.split(/[.-]/).slice(0,3).map(Number);return major*10000+minor*100+patch}

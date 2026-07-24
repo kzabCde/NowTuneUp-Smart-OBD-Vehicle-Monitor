@@ -1,0 +1,5 @@
+# CI reads equivalent values from encrypted secrets. Never commit actual values.
+NTU_KEYSTORE_FILE=/absolute/path/to/release.keystore
+NTU_KEYSTORE_PASSWORD=CHANGE_ME
+NTU_KEY_ALIAS=CHANGE_ME
+NTU_KEY_PASSWORD=CHANGE_ME

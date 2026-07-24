@@ -1,0 +1,38 @@
+name: Publish Android release
+on:
+  push:
+    tags: ['v*']
+permissions: { contents: write }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: android-app } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17', cache: gradle }
+      - uses: android-actions/setup-android@v3
+      - run: chmod +x gradlew
+      - run: ./gradlew test lint
+      - name: Restore signing key
+        env: { KEYSTORE_B64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
+        run: echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/nowtuneup.jks"
+      - name: Build signed release APK
+        env:
+          NTU_KEYSTORE_FILE: ${{ runner.temp }}/nowtuneup.jks
+          NTU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          NTU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NTU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+      - name: Name and checksum artifact
+        working-directory: .
+        run: |
+          scripts/rename-apk.sh "${GITHUB_REF_NAME#v}"
+          scripts/calculate-checksum.sh "android-app/app/build/outputs/apk/release/NowTuneUp-${GITHUB_REF_NAME}-release.apk"
+          scripts/verify-release.sh "android-app/app/build/outputs/apk/release/NowTuneUp-${GITHUB_REF_NAME}-release.apk"
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            android-app/app/build/outputs/apk/release/NowTuneUp-${{ github.ref_name }}-release.apk
+            android-app/app/build/outputs/apk/release/NowTuneUp-${{ github.ref_name }}-release.apk.sha256

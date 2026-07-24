@@ -1,0 +1,4 @@
+import type { Metadata } from "next";import "./globals.css";import {Header} from "@/components/layout/Header";import {Footer} from "@/components/layout/Footer";
+const site=process.env.NEXT_PUBLIC_SITE_URL??"https://nowtuneup.com";
+export const metadata:Metadata={metadataBase:new URL(site),title:{default:"NowTuneUp | Real-Time OBD-II Vehicle Monitoring",template:"%s | NowTuneUp"},description:"Monitor live vehicle data locally on Android through a USB OBD-II adapter.",alternates:{canonical:"/"},openGraph:{type:"website",title:"NowTuneUp",description:"Real-time vehicle monitoring through OBD-II",url:site},twitter:{card:"summary_large_image",title:"NowTuneUp",description:"Private, local OBD-II monitoring for Android"}};
+export default function Layout({children}:{children:React.ReactNode}){return <html lang="en"><body><Header/><main>{children}</main><Footer/></body></html>}

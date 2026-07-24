@@ -1,0 +1,1 @@
+"use client";export default function ErrorPage({reset}:{error:Error&{digest?:string};reset:()=>void}){return <section className="shell py-24 text-center"><h1 className="text-4xl font-black">Something went wrong</h1><p className="muted mt-3">The requested content could not be loaded safely.</p><button className="button mt-7 focusable" onClick={reset}>Try again</button></section>}
