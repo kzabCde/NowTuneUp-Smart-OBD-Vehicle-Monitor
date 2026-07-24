@@ -31,8 +31,15 @@ android {
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
     }
     buildTypes {
-        debug { applicationIdSuffix = ".debug"; buildConfigField("boolean", "MOCK_OBD_DEFAULT", "true") }
-        release { if (keystoreFile != null) signingConfig = signingConfigs.getByName("release"); isMinifyEnabled = false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") }
+        debug {
+            // The website APK must use the real USB OBD transport by default.
+            buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
+        }
+        release {
+            if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
