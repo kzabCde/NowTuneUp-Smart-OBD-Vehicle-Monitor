@@ -15,17 +15,17 @@
     "verify:web-runtime": "node scripts/verify-web-runtime.mjs"
   },
   "dependencies": {
-    "next": "15.3.3",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "next": "15.5.7",
+    "react": "19.1.2",
+    "react-dom": "19.1.2"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "22.x"
   },
   "overrides": {
-    "next": "15.3.3",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "next": "15.5.7",
+    "react": "19.1.2",
+    "react-dom": "19.1.2"
   },
   "packageManager": "npm@11.4.2"
 }
