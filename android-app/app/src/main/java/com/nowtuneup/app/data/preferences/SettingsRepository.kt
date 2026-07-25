@@ -8,9 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.JsonParser
-import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
 import com.nowtuneup.app.domain.model.DashboardPreferences
-import com.nowtuneup.app.domain.model.HudColorPreset
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.map
@@ -78,9 +76,9 @@ class SettingsRepository @Inject constructor(
             hudMirror = if (root.has("hudMirror")) parsed.hudMirror else defaults.hudMirror,
             hudBurnInProtection = if (root.has("hudBurnInProtection")) parsed.hudBurnInProtection else defaults.hudBurnInProtection,
             hudBrightnessPercent = if (root.has("hudBrightnessPercent")) parsed.hudBrightnessPercent else defaults.hudBrightnessPercent,
-            hudColorPreset = if (root.has("hudColorPreset")) parsed.hudColorPreset ?: HudColorPreset.GREEN else defaults.hudColorPreset,
+            hudColorPreset = if (root.has("hudColorPreset")) parsed.hudColorPreset else defaults.hudColorPreset,
             adaptiveLayoutProfile = if (root.has("adaptiveLayoutProfile")) {
-                parsed.adaptiveLayoutProfile ?: AdaptiveLayoutProfile.AUTO
+                parsed.adaptiveLayoutProfile
             } else {
                 defaults.adaptiveLayoutProfile
             },
