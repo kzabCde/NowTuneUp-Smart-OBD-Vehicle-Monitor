@@ -30,11 +30,15 @@ object DashboardCodec {
         val widgets = config.portrait.widgets + config.landscape.widgets
         require(widgets.map { it.id }.all { it.isNotBlank() }) { "Widget ids are required" }
         require(widgets.all { widget ->
+            val ringIsValid = widget.digitalRing?.let { ring ->
+                ring.segmentCount in 12..72
+            } ?: true
             widget.title.isNotBlank() &&
                 widget.decimals in 0..3 &&
                 widget.valueSize in 20..80 &&
                 widget.columnSpan in 1..6 &&
-                widget.rowSpan in 1..4
+                widget.rowSpan in 1..4 &&
+                ringIsValid
         }) { "Invalid widget configuration" }
 
         config
