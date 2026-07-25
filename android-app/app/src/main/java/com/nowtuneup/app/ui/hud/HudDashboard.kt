@@ -84,7 +84,7 @@ fun HudDashboard(
                     onTap = {
                         if (!preferences.touchLock) controlsVisible = !controlsVisible
                     },
-                    onLongPress = onToggleTouchLock,
+                    onLongPress = { onToggleTouchLock() },
                 )
             },
     ) {
