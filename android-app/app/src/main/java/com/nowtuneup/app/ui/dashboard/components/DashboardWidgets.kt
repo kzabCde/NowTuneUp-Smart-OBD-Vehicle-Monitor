@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
@@ -50,6 +51,8 @@ private data class GaugeVisual(
     val needleWidth: Float,
     val showProgressArc: Boolean,
     val glow: Boolean,
+    val showRedZone: Boolean,
+    val doubleRing: Boolean,
 )
 
 @Composable
@@ -67,18 +70,19 @@ fun DashboardWidgetView(
         ReadingStatus.WARNING -> Color(config.colors.warning)
         ReadingStatus.CRITICAL -> Color(config.colors.critical)
     }
+    val minimumHeight = config.minimumHeight()
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 132.dp)
+            .heightIn(min = minimumHeight)
             .border(1.dp, Color(config.colors.border), MaterialTheme.shapes.large),
         colors = CardDefaults.cardColors(containerColor = Color(config.colors.background)),
     ) {
         when (config.type) {
             DashboardWidgetType.ANALOG,
             DashboardWidgetType.MINI_GAUGE,
-            -> AnalogGauge(config, reading, status, statusColor, reduceMotion)
+            -> AnalogGauge(config, reading, status, statusColor, reduceMotion, minimumHeight)
 
             DashboardWidgetType.PROGRESS -> ProgressWidget(config, value, status, statusColor)
             DashboardWidgetType.DTC_CARD -> DtcWidget(dtcCount)
@@ -95,9 +99,9 @@ private fun DigitalWidget(
     color: Color,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
@@ -106,7 +110,7 @@ private fun DigitalWidget(
         Text(
             text = value?.let { "% .${config.decimals}f".format(it).trim() } ?: "--",
             color = color,
-            fontSize = config.valueSize.coerceIn(24, 64).sp,
+            fontSize = config.valueSize.coerceIn(20, 80).sp,
             fontWeight = FontWeight.Black,
         )
         Text(
@@ -125,8 +129,8 @@ private fun ProgressWidget(
     color: Color,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
@@ -154,6 +158,7 @@ private fun AnalogGauge(
     status: ReadingStatus,
     color: Color,
     reduceMotion: Boolean,
+    minimumHeight: Dp,
 ) {
     val minimum = reading?.minimum ?: 0.0
     val maximum = reading?.maximum ?: 100.0
@@ -175,11 +180,12 @@ private fun AnalogGauge(
     val needleColor = when (config.gaugeStyle) {
         GaugeStyle.SPORT -> Color(config.colors.critical)
         GaugeStyle.NEON -> Color(config.colors.value)
+        GaugeStyle.OEM -> Color(config.colors.label)
         else -> color
     }
 
     Box(
-        modifier = Modifier.fillMaxWidth().height(190.dp).padding(8.dp),
+        modifier = Modifier.fillMaxWidth().height(minimumHeight.coerceAtLeast(190.dp)).padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -196,6 +202,15 @@ private fun AnalogGauge(
                     style = Stroke(visual.arcWidth * 2.8f, cap = StrokeCap.Round),
                 )
             }
+            if (visual.doubleRing) {
+                drawArc(
+                    color = border.copy(alpha = 0.45f),
+                    startAngle = 145f,
+                    sweepAngle = 250f,
+                    useCenter = false,
+                    style = Stroke(visual.arcWidth + 7f, cap = StrokeCap.Butt),
+                )
+            }
             drawArc(
                 color = border,
                 startAngle = 145f,
@@ -210,6 +225,15 @@ private fun AnalogGauge(
                     sweepAngle = 250f * animated,
                     useCenter = false,
                     style = Stroke(visual.arcWidth, cap = StrokeCap.Round),
+                )
+            }
+            if (visual.showRedZone) {
+                drawArc(
+                    color = Color(config.colors.critical),
+                    startAngle = 345f,
+                    sweepAngle = 50f,
+                    useCenter = false,
+                    style = Stroke(visual.arcWidth + 1f, cap = StrokeCap.Butt),
                 )
             }
 
@@ -239,7 +263,7 @@ private fun AnalogGauge(
                 strokeWidth = visual.needleWidth,
                 cap = StrokeCap.Round,
             )
-            drawCircle(needleColor, 7f, center)
+            drawCircle(needleColor, if (config.gaugeStyle == GaugeStyle.MINIMAL) 4f else 7f, center)
         }
 
         Column(
@@ -249,7 +273,7 @@ private fun AnalogGauge(
             Text(config.title, style = MaterialTheme.typography.labelMedium, color = Color(config.colors.label))
             Text(
                 value?.let { "%.${config.decimals}f".format(it) } ?: "--",
-                fontSize = 28.sp,
+                fontSize = config.valueSize.coerceIn(22, 56).sp,
                 fontWeight = FontWeight.Bold,
                 color = color,
             )
@@ -267,8 +291,8 @@ private fun AnalogGauge(
 private fun DtcWidget(dtcCount: Int) {
     val detail = if (dtcCount == 0) "No stored codes found" else "$dtcCount stored code(s)"
     Column(
-        modifier = Modifier.fillMaxWidth().padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize().padding(18.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text("DTC status", fontWeight = FontWeight.Bold)
         Text(detail, style = MaterialTheme.typography.titleMedium)
@@ -286,6 +310,13 @@ private fun StatusLabel(status: ReadingStatus, color: Color) {
     )
 }
 
+private fun DashboardWidgetConfig.minimumHeight(): Dp = when (rowSpan.coerceIn(1, 4)) {
+    1 -> if (type == DashboardWidgetType.ANALOG || type == DashboardWidgetType.MINI_GAUGE) 190.dp else 132.dp
+    2 -> 230.dp
+    3 -> 310.dp
+    else -> 390.dp
+}
+
 private fun DashboardWidgetConfig.readingStatus(value: Double?): ReadingStatus = when {
     value == null -> ReadingStatus.NO_DATA
     threshold.criticalLow?.let { value <= it } == true ||
@@ -296,11 +327,11 @@ private fun DashboardWidgetConfig.readingStatus(value: Double?): ReadingStatus =
 }
 
 private fun GaugeStyle.visual(): GaugeVisual = when (this) {
-    GaugeStyle.CLASSIC -> GaugeVisual(11, 9f, 6f, true, false)
-    GaugeStyle.SPORT -> GaugeVisual(13, 12f, 8f, true, false)
-    GaugeStyle.MINIMAL -> GaugeVisual(5, 5f, 4f, false, false)
-    GaugeStyle.NEON -> GaugeVisual(11, 8f, 6f, true, true)
-    GaugeStyle.OEM -> GaugeVisual(9, 10f, 5f, true, false)
+    GaugeStyle.CLASSIC -> GaugeVisual(11, 9f, 6f, true, false, false, false)
+    GaugeStyle.SPORT -> GaugeVisual(15, 12f, 9f, true, false, true, false)
+    GaugeStyle.MINIMAL -> GaugeVisual(3, 4f, 3f, false, false, false, false)
+    GaugeStyle.NEON -> GaugeVisual(11, 8f, 6f, true, true, false, false)
+    GaugeStyle.OEM -> GaugeVisual(9, 8f, 5f, false, false, false, true)
 }
 
 fun DisplayUnit.label(): String = when (this) {
