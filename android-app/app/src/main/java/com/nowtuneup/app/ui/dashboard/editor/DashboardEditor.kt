@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,13 +47,19 @@ import com.nowtuneup.app.data.dashboard.DashboardCodec
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
+import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
+import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.WarningThreshold
+import com.nowtuneup.app.domain.model.digitalRingPreset
+
+private enum class EditorOrientation { PORTRAIT, LANDSCAPE }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,21 +71,23 @@ fun DashboardEditor(
 ) {
     val context = LocalContext.current
     var draft by remember(config) { mutableStateOf(config) }
+    var orientation by remember { mutableStateOf(EditorOrientation.PORTRAIT) }
     var selectedWidgetId by remember { mutableStateOf<String?>(null) }
     var draggingWidgetId by remember { mutableStateOf<String?>(null) }
     var showThemeEditor by remember { mutableStateOf(false) }
     var transferMessage by remember { mutableStateOf<String?>(null) }
+    val activeLayout = draft.layout(orientation)
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
         if (uri != null) {
             runCatching {
-                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
-                    writer.write(DashboardCodec.export(draft))
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                    it.write(DashboardCodec.export(draft))
                 } ?: error("Unable to open export file")
             }.onSuccess {
-                transferMessage = "Dashboard exported successfully."
+                transferMessage = "Dashboard exported with portrait and landscape layouts."
             }.onFailure {
                 transferMessage = "Export failed: ${it.message ?: "Unknown error"}"
             }
@@ -93,10 +102,10 @@ fun DashboardEditor(
                 val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                     ?: error("Unable to read import file")
                 DashboardCodec.import(json).getOrThrow()
-            }.onSuccess { imported ->
-                draft = imported.copy(id = config.id, isDefault = false)
+            }.onSuccess {
+                draft = it.copy(id = config.id, isDefault = false)
                 selectedWidgetId = null
-                transferMessage = "Dashboard imported. Review it, then tap Save."
+                transferMessage = "Dashboard imported. Review both orientations before saving."
             }.onFailure {
                 transferMessage = "Import failed: ${it.message ?: "Invalid dashboard file"}"
             }
@@ -114,13 +123,13 @@ fun DashboardEditor(
     }
 
     selectedWidgetId?.let { id ->
-        draft.portrait.widgets.firstOrNull { it.id == id }?.let { widget ->
+        activeLayout.widgets.firstOrNull { it.id == id }?.let { widget ->
             WidgetConfigurationSheet(
                 widget = widget,
-                columns = draft.portrait.columns,
+                columns = activeLayout.columns,
                 onDismiss = { selectedWidgetId = null },
                 onSave = { changed ->
-                    draft = draft.updateWidget(changed)
+                    draft = draft.updateWidget(orientation, changed)
                     selectedWidgetId = null
                 },
             )
@@ -129,10 +138,10 @@ fun DashboardEditor(
 
     if (showThemeEditor) {
         DashboardThemeSheet(
-            initial = draft.dashboardTheme(),
+            initial = draft.dashboardTheme(orientation),
             onDismiss = { showThemeEditor = false },
-            onApply = { theme ->
-                draft = draft.applyDashboardTheme(theme)
+            onApply = {
+                draft = draft.applyDashboardTheme(it)
                 showThemeEditor = false
             },
         )
@@ -150,7 +159,7 @@ fun DashboardEditor(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard editor") },
+                title = { Text("Responsive dashboard editor") },
                 navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
                 actions = { TextButton(onClick = { onSave(draft) }) { Text("Save") } },
             )
@@ -170,11 +179,33 @@ fun DashboardEditor(
                 )
             }
             item {
-                SectionTitle("Display mode", "Choose a base style for all widgets.")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                SectionTitle("Edit orientation", "Portrait and landscape keep independent columns, order and sizes.")
+                ScrollableChips {
+                    EditorOrientation.entries.forEach { item ->
+                        FilterChip(
+                            selected = orientation == item,
+                            onClick = {
+                                orientation = item
+                                selectedWidgetId = null
+                            },
+                            label = { Text(item.label()) },
+                        )
+                    }
+                }
+                Text("Editing ${orientation.label()}: ${activeLayout.widgets.size} widgets, ${activeLayout.columns} columns")
+                OutlinedButton(
+                    onClick = {
+                        draft = draft.copyOtherLayoutTo(orientation)
+                        selectedWidgetId = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
+                    Text(if (orientation == EditorOrientation.PORTRAIT) "Copy Landscape to Portrait" else "Copy Portrait to Landscape")
+                }
+            }
+            item {
+                SectionTitle("Display mode", "Apply a shared base style to both orientations.")
+                ScrollableChips {
                     DashboardMode.entries.forEach { mode ->
                         FilterChip(
                             selected = draft.mode == mode,
@@ -185,16 +216,17 @@ fun DashboardEditor(
                 }
             }
             item {
-                SectionTitle("Grid", "Resize widgets inside a 1–6 column dashboard.")
-                Text("Portrait columns: ${draft.portrait.columns}")
+                SectionTitle("${orientation.label()} grid", "Use fewer columns on phones and more columns in landscape or tablets.")
+                Text("Columns: ${activeLayout.columns}")
                 Slider(
-                    value = draft.portrait.columns.toFloat(),
+                    value = activeLayout.columns.toFloat(),
                     onValueChange = { value ->
                         val columns = value.toInt().coerceIn(1, 6)
-                        draft = draft.copy(
-                            portrait = draft.portrait.copy(
+                        draft = draft.withLayout(
+                            orientation,
+                            activeLayout.copy(
                                 columns = columns,
-                                widgets = draft.portrait.widgets.map {
+                                widgets = activeLayout.widgets.map {
                                     it.copy(columnSpan = it.columnSpan.coerceAtMost(columns))
                                 },
                             ),
@@ -205,11 +237,8 @@ fun DashboardEditor(
                 )
             }
             item {
-                SectionTitle("Dashboard theme", "Apply a preset or edit colors for every widget.")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                SectionTitle("Dashboard theme", "Theme changes are applied to portrait and landscape widgets.")
+                ScrollableChips {
                     DashboardDefaults.themes.forEach { theme ->
                         FilterChip(
                             selected = false,
@@ -222,21 +251,21 @@ fun DashboardEditor(
             }
             item {
                 SectionTitle(
-                    "Widgets",
-                    "Press and hold a card, then drag up or down. Tap a card for full configuration.",
+                    "${orientation.label()} widgets",
+                    "Press and hold to reorder. Tap Configure to resize or change the gauge.",
                 )
             }
             itemsIndexed(
-                items = draft.portrait.widgets,
-                key = { _, widget -> widget.id },
+                items = activeLayout.widgets,
+                key = { _, widget -> "${orientation.name}-${widget.id}" },
             ) { index, widget ->
-                var dragDistance by remember(widget.id) { mutableFloatStateOf(0f) }
+                var dragDistance by remember(orientation, widget.id) { mutableFloatStateOf(0f) }
                 WidgetEditorCard(
                     widget = widget,
                     index = index,
-                    total = draft.portrait.widgets.size,
+                    total = activeLayout.widgets.size,
                     dragging = draggingWidgetId == widget.id,
-                    modifier = Modifier.pointerInput(widget.id, index, draft.portrait.widgets.size) {
+                    modifier = Modifier.pointerInput(orientation, widget.id, index, activeLayout.widgets.size) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
                                 draggingWidgetId = widget.id
@@ -255,12 +284,12 @@ fun DashboardEditor(
                                 dragDistance += amount.y
                                 val threshold = 56.dp.toPx()
                                 when {
-                                    dragDistance > threshold && index < draft.portrait.widgets.lastIndex -> {
-                                        draft = draft.moveWidget(index, index + 1)
+                                    dragDistance > threshold && index < activeLayout.widgets.lastIndex -> {
+                                        draft = draft.moveWidget(orientation, index, index + 1)
                                         dragDistance = 0f
                                     }
                                     dragDistance < -threshold && index > 0 -> {
-                                        draft = draft.moveWidget(index, index - 1)
+                                        draft = draft.moveWidget(orientation, index, index - 1)
                                         dragDistance = 0f
                                     }
                                 }
@@ -268,12 +297,11 @@ fun DashboardEditor(
                         )
                     },
                     onEdit = { selectedWidgetId = widget.id },
-                    onMove = { destination -> draft = draft.moveWidget(index, destination) },
+                    onMove = { draft = draft.moveWidget(orientation, index, it) },
                     onRemove = {
-                        draft = draft.copy(
-                            portrait = draft.portrait.copy(
-                                widgets = draft.portrait.widgets.filterNot { it.id == widget.id },
-                            ),
+                        draft = draft.withLayout(
+                            orientation,
+                            activeLayout.copy(widgets = activeLayout.widgets.filterNot { item -> item.id == widget.id }),
                         )
                     },
                 )
@@ -283,14 +311,14 @@ fun DashboardEditor(
                     onClick = {
                         val source = DashboardDefaults.presets
                             .flatMap { it.portrait.widgets }
-                            .firstOrNull { candidate ->
-                                draft.portrait.widgets.none { it.pid == candidate.pid }
-                            }
+                            .firstOrNull { candidate -> activeLayout.widgets.none { it.pid == candidate.pid } }
                         if (source != null) {
-                            draft = draft.copy(
-                                portrait = draft.portrait.copy(
-                                    widgets = draft.portrait.widgets + source.copy(
-                                        id = "${source.id}-${System.currentTimeMillis()}",
+                            draft = draft.withLayout(
+                                orientation,
+                                activeLayout.copy(
+                                    widgets = activeLayout.widgets + source.copy(
+                                        id = "${source.id}-${orientation.name.lowercase()}-${System.currentTimeMillis()}",
+                                        columnSpan = source.columnSpan.coerceAtMost(activeLayout.columns),
                                     ),
                                 ),
                             )
@@ -300,30 +328,26 @@ fun DashboardEditor(
                 ) { Text("Add available widget") }
             }
             item {
-                SectionTitle("Import and export", "Dashboard JSON includes order, size, colors and thresholds.")
-                Row(
+                SectionTitle("Import and export", "JSON includes both orientations, colors, thresholds and Digital Ring settings.")
+                OutlinedButton(
+                    onClick = {
+                        val safeName = draft.name.ifBlank { "NowTuneUp-dashboard" }
+                            .replace(Regex("[^A-Za-z0-9._-]"), "-")
+                        exportLauncher.launch("$safeName.json")
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            val safeName = draft.name.ifBlank { "NowTuneUp-dashboard" }
-                                .replace(Regex("[^A-Za-z0-9._-]"), "-")
-                            exportLauncher.launch("$safeName.json")
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Export JSON") }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Import JSON") }
-                }
+                ) { Text("Export JSON") }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Import JSON") }
             }
             item {
                 OutlinedButton(
                     onClick = {
                         val default = DashboardDefaults.presets.first()
                         draft = default.copy(id = config.id, name = config.name)
+                        orientation = EditorOrientation.PORTRAIT
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Reset dashboard") }
@@ -356,10 +380,7 @@ private fun WidgetEditorCard(
         modifier = modifier.fillMaxWidth().alpha(if (dragging) 0.58f else 1f),
         colors = CardDefaults.cardColors(containerColor = Color(widget.colors.background)),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
                     Text(widget.title, color = Color(widget.colors.label), fontWeight = FontWeight.Bold)
@@ -371,11 +392,6 @@ private fun WidgetEditorCard(
                 }
                 Text("☰", color = Color(widget.colors.value), style = MaterialTheme.typography.titleLarge)
             }
-            Text(
-                "Hold and drag to reorder. Tap to configure.",
-                color = Color(widget.colors.label),
-                style = MaterialTheme.typography.labelSmall,
-            )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextButton(onClick = { onMove(index - 1) }, enabled = index > 0) { Text("↑") }
                 TextButton(onClick = { onMove(index + 1) }, enabled = index < total - 1) { Text("↓") }
@@ -394,6 +410,7 @@ private fun WidgetConfigurationSheet(
     onDismiss: () -> Unit,
     onSave: (DashboardWidgetConfig) -> Unit,
 ) {
+    val initialRing = widget.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
     var draft by remember(widget.id) { mutableStateOf(widget) }
     var warningLow by remember(widget.id) { mutableStateOf(widget.threshold.warningLow.text()) }
     var warningHigh by remember(widget.id) { mutableStateOf(widget.threshold.warningHigh.text()) }
@@ -405,6 +422,30 @@ private fun WidgetConfigurationSheet(
     var borderColor by remember(widget.id) { mutableStateOf(widget.colors.border.hex()) }
     var warningColor by remember(widget.id) { mutableStateOf(widget.colors.warning.hex()) }
     var criticalColor by remember(widget.id) { mutableStateOf(widget.colors.critical.hex()) }
+    var ringPreset by remember(widget.id) { mutableStateOf(initialRing.preset) }
+    var segmentCount by remember(widget.id) { mutableFloatStateOf(initialRing.segmentCount.toFloat()) }
+    var showScaleLabels by remember(widget.id) { mutableStateOf(initialRing.showScaleLabels) }
+    var digitColor by remember(widget.id) { mutableStateOf(initialRing.digitColor.hex()) }
+    var activeSegmentColor by remember(widget.id) { mutableStateOf(initialRing.activeSegmentColor.hex()) }
+    var inactiveSegmentColor by remember(widget.id) { mutableStateOf(initialRing.inactiveSegmentColor.hex()) }
+    var scaleColor by remember(widget.id) { mutableStateOf(initialRing.scaleColor.hex()) }
+    var titleColor by remember(widget.id) { mutableStateOf(initialRing.titleColor.hex()) }
+    var bezelColor by remember(widget.id) { mutableStateOf(initialRing.bezelColor.hex()) }
+
+    fun applyPreset(preset: DigitalRingColorPreset) {
+        val selected = digitalRingPreset(preset, segmentCount.toInt())
+        ringPreset = preset
+        digitColor = selected.digitColor.hex()
+        activeSegmentColor = selected.activeSegmentColor.hex()
+        inactiveSegmentColor = selected.inactiveSegmentColor.hex()
+        scaleColor = selected.scaleColor.hex()
+        titleColor = selected.titleColor.hex()
+        bezelColor = selected.bezelColor.hex()
+        valueColor = selected.digitColor.hex()
+        labelColor = selected.scaleColor.hex()
+        backgroundColor = "#FF000000"
+        borderColor = selected.bezelColor.hex()
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -419,18 +460,20 @@ private fun WidgetConfigurationSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-
             SheetHeading("Widget type")
             ScrollableChips {
                 DashboardWidgetType.entries.forEach { type ->
                     FilterChip(
                         selected = draft.type == type,
-                        onClick = { draft = draft.copy(type = type) },
+                        onClick = {
+                            draft = if (type == DashboardWidgetType.DIGITAL_RING) {
+                                draft.copy(type = type, digitalRing = draft.digitalRing ?: initialRing)
+                            } else draft.copy(type = type)
+                        },
                         label = { Text(type.label()) },
                     )
                 }
             }
-
             if (draft.type == DashboardWidgetType.ANALOG || draft.type == DashboardWidgetType.MINI_GAUGE) {
                 SheetHeading("Analog gauge style")
                 ScrollableChips {
@@ -443,7 +486,39 @@ private fun WidgetConfigurationSheet(
                     }
                 }
             }
-
+            if (draft.type == DashboardWidgetType.DIGITAL_RING) {
+                HorizontalDivider()
+                SheetHeading("Digital Ring Gauge")
+                ScrollableChips {
+                    DigitalRingColorPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = ringPreset == preset,
+                            onClick = {
+                                if (preset == DigitalRingColorPreset.CUSTOM) ringPreset = preset else applyPreset(preset)
+                            },
+                            label = { Text(preset.label()) },
+                        )
+                    }
+                }
+                Text("Segments: ${segmentCount.toInt()}")
+                Slider(
+                    value = segmentCount,
+                    onValueChange = { segmentCount = it.coerceIn(12f, 72f) },
+                    valueRange = 12f..72f,
+                    steps = 59,
+                )
+                FilterChip(
+                    selected = showScaleLabels,
+                    onClick = { showScaleLabels = !showScaleLabels },
+                    label = { Text(if (showScaleLabels) "Scale labels shown" else "Scale labels hidden") },
+                )
+                ColorField("Center digits", digitColor) { digitColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Active segments", activeSegmentColor) { activeSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Inactive segments", inactiveSegmentColor) { inactiveSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Scale numbers", scaleColor) { scaleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Gauge title", titleColor) { titleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Bezel", bezelColor) { bezelColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+            }
             SheetHeading("Unit")
             ScrollableChips {
                 DisplayUnit.entries.forEach { unit ->
@@ -454,7 +529,6 @@ private fun WidgetConfigurationSheet(
                     )
                 }
             }
-
             Text("Width: ${draft.columnSpan.coerceIn(1, columns)} of $columns columns")
             Slider(
                 value = draft.columnSpan.coerceIn(1, columns).toFloat(),
@@ -483,15 +557,12 @@ private fun WidgetConfigurationSheet(
                 valueRange = 20f..80f,
                 steps = 11,
             )
-
             HorizontalDivider()
             SheetHeading("Warning thresholds")
-            Text("Leave a field blank to disable that threshold.", style = MaterialTheme.typography.bodySmall)
             ThresholdRow("Warning low", warningLow) { warningLow = it }
             ThresholdRow("Warning high", warningHigh) { warningHigh = it }
             ThresholdRow("Critical low", criticalLow) { criticalLow = it }
             ThresholdRow("Critical high", criticalHigh) { criticalHigh = it }
-
             HorizontalDivider()
             SheetHeading("Widget colors")
             ColorField("Value / needle", valueColor) { valueColor = it }
@@ -500,9 +571,22 @@ private fun WidgetConfigurationSheet(
             ColorField("Border", borderColor) { borderColor = it }
             ColorField("Warning", warningColor) { warningColor = it }
             ColorField("Critical", criticalColor) { criticalColor = it }
-
             Button(
                 onClick = {
+                    val currentRing = draft.digitalRing ?: initialRing
+                    val ring = if (draft.type == DashboardWidgetType.DIGITAL_RING) {
+                        DigitalRingConfig(
+                            preset = ringPreset,
+                            segmentCount = segmentCount.toInt().coerceIn(12, 72),
+                            digitColor = digitColor.argbOr(currentRing.digitColor),
+                            activeSegmentColor = activeSegmentColor.argbOr(currentRing.activeSegmentColor),
+                            inactiveSegmentColor = inactiveSegmentColor.argbOr(currentRing.inactiveSegmentColor),
+                            scaleColor = scaleColor.argbOr(currentRing.scaleColor),
+                            titleColor = titleColor.argbOr(currentRing.titleColor),
+                            bezelColor = bezelColor.argbOr(currentRing.bezelColor),
+                            showScaleLabels = showScaleLabels,
+                        )
+                    } else draft.digitalRing
                     onSave(
                         draft.copy(
                             threshold = WarningThreshold(
@@ -519,6 +603,7 @@ private fun WidgetConfigurationSheet(
                                 warning = warningColor.argbOr(widget.colors.warning),
                                 critical = criticalColor.argbOr(widget.colors.critical),
                             ),
+                            digitalRing = ring,
                         ),
                     )
                 },
@@ -546,7 +631,6 @@ private fun DashboardThemeSheet(
     var warning by remember(initial) { mutableStateOf(initial.warning.hex()) }
     var critical by remember(initial) { mutableStateOf(initial.critical.hex()) }
     var border by remember(initial) { mutableStateOf(initial.border.hex()) }
-
     val preview = initial.copy(
         name = name.ifBlank { "Custom" },
         primary = primary.argbOr(initial.primary),
@@ -559,21 +643,16 @@ private fun DashboardThemeSheet(
         critical = critical.argbOr(initial.critical),
         border = border.argbOr(initial.border),
     )
-
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Dashboard theme editor", style = MaterialTheme.typography.headlineSmall)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(preview.card)),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(preview.card)), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Live preview", color = Color(preview.text), fontWeight = FontWeight.Bold)
                     Text("2,450 rpm", color = Color(preview.gaugeNeedle), style = MaterialTheme.typography.headlineMedium)
-                    Text("Warning  •  Critical", color = Color(preview.warning))
                 }
             }
             OutlinedTextField(
@@ -630,8 +709,7 @@ private fun ColorField(label: String, value: String, onValueChange: (String) -> 
     OutlinedTextField(
         value = value,
         onValueChange = { input ->
-            val cleaned = input.uppercase().filter { it in "#0123456789ABCDEF" }.take(9)
-            onValueChange(cleaned)
+            onValueChange(input.uppercase().filter { it in "#0123456789ABCDEF" }.take(9))
         },
         label = { Text("$label · #AARRGGBB") },
         modifier = Modifier.fillMaxWidth(),
@@ -640,17 +718,43 @@ private fun ColorField(label: String, value: String, onValueChange: (String) -> 
     )
 }
 
-private fun DashboardConfig.updateWidget(changed: DashboardWidgetConfig): DashboardConfig = copy(
-    portrait = portrait.copy(
-        widgets = portrait.widgets.map { if (it.id == changed.id) changed else it },
-    ),
-)
+private fun DashboardConfig.layout(orientation: EditorOrientation): DashboardLayout =
+    if (orientation == EditorOrientation.PORTRAIT) portrait else landscape
 
-private fun DashboardConfig.moveWidget(from: Int, to: Int): DashboardConfig {
-    val widgets = portrait.widgets
-    if (from !in widgets.indices || to !in widgets.indices || from == to) return this
-    val reordered = widgets.toMutableList().apply { add(to, removeAt(from)) }
-    return copy(portrait = portrait.copy(widgets = reordered))
+private fun DashboardConfig.withLayout(
+    orientation: EditorOrientation,
+    layout: DashboardLayout,
+): DashboardConfig = if (orientation == EditorOrientation.PORTRAIT) copy(portrait = layout) else copy(landscape = layout)
+
+private fun DashboardConfig.updateWidget(
+    orientation: EditorOrientation,
+    changed: DashboardWidgetConfig,
+): DashboardConfig {
+    val layout = layout(orientation)
+    return withLayout(orientation, layout.copy(widgets = layout.widgets.map { if (it.id == changed.id) changed else it }))
+}
+
+private fun DashboardConfig.moveWidget(
+    orientation: EditorOrientation,
+    from: Int,
+    to: Int,
+): DashboardConfig {
+    val layout = layout(orientation)
+    if (from !in layout.widgets.indices || to !in layout.widgets.indices || from == to) return this
+    val reordered = layout.widgets.toMutableList().apply { add(to, removeAt(from)) }
+    return withLayout(orientation, layout.copy(widgets = reordered))
+}
+
+private fun DashboardConfig.copyOtherLayoutTo(target: EditorOrientation): DashboardConfig {
+    val source = if (target == EditorOrientation.PORTRAIT) landscape else portrait
+    val destination = layout(target)
+    return withLayout(
+        target,
+        source.copy(
+            columns = destination.columns,
+            widgets = source.widgets.map { it.copy(columnSpan = it.columnSpan.coerceAtMost(destination.columns)) },
+        ),
+    )
 }
 
 private fun DashboardConfig.applyMode(mode: DashboardMode): DashboardConfig {
@@ -659,16 +763,14 @@ private fun DashboardConfig.applyMode(mode: DashboardMode): DashboardConfig {
         DashboardMode.ANALOG -> DashboardWidgetType.ANALOG
         DashboardMode.HYBRID -> null
     }
-    return copy(
-        mode = mode,
-        portrait = portrait.copy(
-            widgets = portrait.widgets.map { widget -> type?.let { widget.copy(type = it) } ?: widget },
-        ),
+    fun apply(layout: DashboardLayout) = layout.copy(
+        widgets = layout.widgets.map { widget -> type?.let { widget.copy(type = it) } ?: widget },
     )
+    return copy(mode = mode, portrait = apply(portrait), landscape = apply(landscape))
 }
 
-private fun DashboardConfig.dashboardTheme(): ThemeConfig {
-    val colors = portrait.widgets.firstOrNull()?.colors ?: ColorConfig()
+private fun DashboardConfig.dashboardTheme(orientation: EditorOrientation): ThemeConfig {
+    val colors = layout(orientation).widgets.firstOrNull()?.colors ?: ColorConfig()
     return ThemeConfig(
         name = "Custom dashboard",
         primary = colors.value,
@@ -684,25 +786,38 @@ private fun DashboardConfig.dashboardTheme(): ThemeConfig {
 }
 
 private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardConfig {
-    fun themed(widget: DashboardWidgetConfig): DashboardWidgetConfig = widget.copy(
-        colors = widget.colors.copy(
-            value = theme.gaugeNeedle,
-            label = theme.text,
-            background = theme.card,
-            border = theme.border,
-            warning = theme.warning,
-            critical = theme.critical,
-        ),
-    )
+    fun themed(widget: DashboardWidgetConfig): DashboardWidgetConfig {
+        val ring = widget.digitalRing?.copy(
+            preset = DigitalRingColorPreset.CUSTOM,
+            digitColor = theme.gaugeNeedle,
+            activeSegmentColor = theme.gaugeNeedle,
+            scaleColor = theme.gaugeTick,
+            titleColor = theme.text,
+            bezelColor = theme.border,
+        )
+        return widget.copy(
+            colors = widget.colors.copy(
+                value = theme.gaugeNeedle,
+                label = theme.text,
+                background = theme.card,
+                border = theme.border,
+                warning = theme.warning,
+                critical = theme.critical,
+            ),
+            digitalRing = ring,
+        )
+    }
     return copy(
         portrait = portrait.copy(widgets = portrait.widgets.map(::themed)),
         landscape = landscape.copy(widgets = landscape.widgets.map(::themed)),
     )
 }
 
+private fun EditorOrientation.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DashboardMode.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DashboardWidgetType.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
 private fun GaugeStyle.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
+private fun DigitalRingColorPreset.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DisplayUnit.label(): String = when (this) {
     DisplayUnit.KMH -> "km/h"
     DisplayUnit.MPH -> "mph"

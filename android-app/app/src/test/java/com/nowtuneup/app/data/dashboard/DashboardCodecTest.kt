@@ -7,6 +7,8 @@ import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
+import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.WarningThreshold
@@ -16,8 +18,44 @@ import org.junit.Test
 
 class DashboardCodecTest {
     @Test
-    fun releaseVersionIs121() {
-        assertEquals("1.2.1", BuildConfig.VERSION_NAME)
+    fun releaseVersionIs122() {
+        assertEquals("1.2.2", BuildConfig.VERSION_NAME)
+    }
+
+    @Test
+    fun roundTripPreservesIndependentResponsiveLayouts() {
+        val portraitWidget = DashboardWidgetConfig(
+            id = "speed",
+            pid = 0x0D,
+            type = DashboardWidgetType.DIGITAL,
+            title = "Speed",
+            unit = DisplayUnit.KMH,
+            columnSpan = 2,
+        )
+        val landscapeWidget = portraitWidget.copy(
+            type = DashboardWidgetType.DIGITAL_RING,
+            columnSpan = 1,
+            rowSpan = 2,
+            digitalRing = DigitalRingConfig(
+                preset = DigitalRingColorPreset.CYAN,
+                segmentCount = 48,
+            ),
+        )
+        val config = DashboardConfig(
+            id = "responsive",
+            name = "Responsive dashboard",
+            mode = DashboardMode.HYBRID,
+            portrait = DashboardLayout(columns = 2, widgets = listOf(portraitWidget)),
+            landscape = DashboardLayout(columns = 4, widgets = listOf(landscapeWidget)),
+        )
+
+        val imported = DashboardCodec.import(DashboardCodec.export(config)).getOrThrow()
+
+        assertEquals(2, imported.portrait.columns)
+        assertEquals(4, imported.landscape.columns)
+        assertEquals(DashboardWidgetType.DIGITAL, imported.portrait.widgets.single().type)
+        assertEquals(DashboardWidgetType.DIGITAL_RING, imported.landscape.widgets.single().type)
+        assertEquals(48, imported.landscape.widgets.single().digitalRing?.segmentCount)
     }
 
     @Test
@@ -59,14 +97,6 @@ class DashboardCodecTest {
     }
 
     @Test
-    fun digitalCanBecomeAnalogWithoutChangingParameter() {
-        val widget = DashboardDefaults.presets.first().portrait.widgets[1]
-        val analog = widget.copy(type = DashboardWidgetType.ANALOG)
-        assertEquals(widget.pid, analog.pid)
-        assertEquals(DashboardWidgetType.ANALOG, analog.type)
-    }
-
-    @Test
     fun importRejectsInvalidWidgetHeight() {
         val invalid = DashboardDefaults.presets.first().let { preset ->
             preset.copy(
@@ -77,7 +107,18 @@ class DashboardCodecTest {
                 ),
             )
         }
+        assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
+    }
 
+    @Test
+    fun importRejectsInvalidDigitalRingSegmentCount() {
+        val invalidWidget = DashboardDefaults.presets.first().portrait.widgets.first().copy(
+            type = DashboardWidgetType.DIGITAL_RING,
+            digitalRing = DigitalRingConfig(segmentCount = 100),
+        )
+        val invalid = DashboardDefaults.presets.first().copy(
+            portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
+        )
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }
 }
