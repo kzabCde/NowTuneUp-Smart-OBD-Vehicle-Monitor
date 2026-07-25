@@ -415,7 +415,7 @@ fun Settings(viewModel: MainViewModel) {
         }
         item {
             Text(
-                "NTU 1.1.1 • Android 8+ • Local-first • Read-only OBD-II",
+                "NTU 1.2.0 • Android 8+ • Local-first • Read-only OBD-II",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 16.dp),
             )
