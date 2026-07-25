@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.2.2",
-  tagName: "v1.2.2",
-  versionCode: 6,
+  version: "1.3.1",
+  tagName: "v1.3.1",
+  versionCode: 7,
   apkName: "NowTuneUp.apk",
-  apkSize: 12641778,
+  apkSize: 12690958,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "7c6def5add5bc459c97cab9deab220a9027f5ac2ea3a2d76a3d754e0029ba231",
+  sha256: "b831721321c984234cb5cd26a8949d48ab4ee51a10e5bcd6957f320225791ff8",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-07-25T11:03:34.000Z",
-  releaseNotes: "Restores Digital Ring Gauge source and adds responsive portrait and landscape dashboard layouts, independent orientation editing, copy-layout actions, compact landscape connection UI, responsive grid spacing, and JSON persistence for both orientations.",
+  publishedAt: "2026-07-25T12:00:50.000Z",
+  releaseNotes: "Adds Gauge Focus Mode with tap-to-hide controls, touch lock, keep-screen-on, automatic focus, swipeable dashboard pages and compact connection status. Adds Peak/Min/Max, threshold alerts with sound, vibration, hysteresis and cooldown, data freshness and stale-value protection, automatic reconnect and last-dashboard resume.",
 };
 
 export function getLocalRelease(version?: string) {

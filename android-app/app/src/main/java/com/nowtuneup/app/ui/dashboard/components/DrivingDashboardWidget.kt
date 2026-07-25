@@ -1,0 +1,103 @@
+package com.nowtuneup.app.ui.dashboard.components
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.nowtuneup.app.domain.model.DataFreshness
+import com.nowtuneup.app.domain.model.DashboardWidgetConfig
+import com.nowtuneup.app.domain.model.ReadingStats
+import com.nowtuneup.app.domain.model.VehicleReading
+
+@Composable
+fun DrivingDashboardWidget(
+    config: DashboardWidgetConfig,
+    reading: VehicleReading?,
+    stats: ReadingStats?,
+    freshness: DataFreshness,
+    reduceMotion: Boolean,
+    dtcCount: Int,
+    showPeakHold: Boolean,
+    showMinMax: Boolean,
+) {
+    val protectedReading = if (freshness in setOf(DataFreshness.STALE, DataFreshness.RECONNECTING)) {
+        reading?.copy(value = null)
+    } else {
+        reading
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        DashboardWidgetView(
+            config = config,
+            reading = protectedReading,
+            reduceMotion = reduceMotion,
+            dtcCount = dtcCount,
+        )
+
+        if (freshness != DataFreshness.LIVE) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                color = freshnessColor(freshness).copy(alpha = 0.92f),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    text = freshnessLabel(freshness),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Black,
+                )
+            }
+        }
+
+        if (stats != null && (showPeakHold || showMinMax)) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
+                color = Color.Black.copy(alpha = 0.66f),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (showMinMax) {
+                        Text("Min ${stats.minimum.short()}  Max ${stats.maximum.short()}", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (showPeakHold) {
+                        Text("Peak ${stats.peak.short()}", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun freshnessLabel(value: DataFreshness): String = when (value) {
+    DataFreshness.LIVE -> "Live"
+    DataFreshness.DELAYED -> "Delayed"
+    DataFreshness.STALE -> "Stale data"
+    DataFreshness.NO_DATA -> "No data"
+    DataFreshness.UNSUPPORTED -> "Unsupported"
+    DataFreshness.RECONNECTING -> "Reconnecting"
+}
+
+private fun freshnessColor(value: DataFreshness): Color = when (value) {
+    DataFreshness.LIVE -> Color(0xFF4CAF50)
+    DataFreshness.DELAYED -> Color(0xFFFFC107)
+    DataFreshness.STALE -> Color(0xFFFF7043)
+    DataFreshness.NO_DATA -> Color(0xFFB0BEC5)
+    DataFreshness.UNSUPPORTED -> Color(0xFF90A4AE)
+    DataFreshness.RECONNECTING -> Color(0xFF29B6F6)
+}
+
+private fun Double?.short(): String = this?.let { value ->
+    if (kotlin.math.abs(value) >= 100.0) "%.0f".format(value) else "%.1f".format(value)
+} ?: "--"
