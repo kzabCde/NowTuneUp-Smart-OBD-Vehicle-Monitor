@@ -1,5 +1,6 @@
 package com.nowtuneup.app.data.dashboard
 
+import com.nowtuneup.app.BuildConfig
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardLayout
@@ -14,6 +15,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashboardCodecTest {
+    @Test
+    fun releaseVersionIs120() {
+        assertEquals("1.2.0", BuildConfig.VERSION_NAME)
+    }
+
     @Test
     fun roundTripPreservesEditorConfiguration() {
         val widget = DashboardWidgetConfig(
