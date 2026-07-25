@@ -24,34 +24,43 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
     }
     buildTypes {
         debug {
-            // The website APK must use the real USB OBD transport by default.
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true; buildConfig = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isIncludeAndroidResources = true
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = if (buildType.name == "release") "NowTuneUp-v1.1.0-release.apk" else "NowTuneUp-debug.apk"
+            output.outputFileName = if (buildType.name == "release") {
+                "NowTuneUp-v1.1.1-release.apk"
+            } else {
+                "NowTuneUp-debug.apk"
+            }
         }
     }
 }
@@ -60,7 +69,9 @@ kotlin {
     jvmToolchain(17)
 }
 
-kapt { correctErrorTypes = true }
+kapt {
+    correctErrorTypes = true
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.05.01")

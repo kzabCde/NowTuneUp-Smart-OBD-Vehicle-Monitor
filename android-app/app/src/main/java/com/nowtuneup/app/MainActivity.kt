@@ -3,18 +3,19 @@ package com.nowtuneup.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.List
@@ -48,11 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,9 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ConnectionState
-import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.RefreshRate
-import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
 import com.nowtuneup.app.ui.dashboard.DashboardScreen
@@ -74,9 +69,7 @@ import java.util.Date
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            NtuApp()
-        }
+        setContent { NtuApp() }
     }
 }
 
@@ -97,22 +90,22 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     var selectedDestination by remember { mutableIntStateOf(0) }
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
-    val dashboardPreferences by viewModel.dashboardPreferences.collectAsState()
+    val preferences by viewModel.dashboardPreferences.collectAsState()
 
-    NtuTheme(dashboardPreferences.theme) {
+    NtuTheme(preferences.theme) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
-                            Text(text = "NTU", fontWeight = FontWeight.Black)
-                            Text(text = "Vehicle Monitoring", fontSize = 11.sp)
+                            Text("NTU", fontWeight = FontWeight.Black)
+                            Text("Vehicle monitor", fontSize = 11.sp)
                         }
                     },
                     actions = {
                         AssistChip(
-                            onClick = { viewModel.toggleConnection() },
-                            label = { Text(connectionState.name.replace('_', ' ')) },
+                            onClick = viewModel::toggleConnection,
+                            label = { Text(connectionState.shortLabel()) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = if (connectionState == ConnectionState.CONNECTED) {
@@ -120,7 +113,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                                     } else {
                                         Icons.Default.Usb
                                     },
-                                    contentDescription = "Connection status",
+                                    contentDescription = "OBD connection",
                                 )
                             },
                         )
@@ -153,13 +146,11 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
 
         errorMessage?.let { message ->
             AlertDialog(
-                onDismissRequest = { viewModel.dismissError() },
+                onDismissRequest = viewModel::dismissError,
                 confirmButton = {
-                    TextButton(onClick = { viewModel.dismissError() }) {
-                        Text("OK")
-                    }
+                    TextButton(onClick = viewModel::dismissError) { Text("OK") }
                 },
-                title = { Text("Communication error") },
+                title = { Text("Communication problem") },
                 text = { Text(message) },
             )
         }
@@ -171,9 +162,11 @@ fun Dashboard(viewModel: MainViewModel) {
     val readings by viewModel.readings.collectAsState()
     val dashboards by viewModel.dashboards.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
+    val connectionState by viewModel.connection.collectAsState()
     val dtcs by viewModel.dtcs.collectAsState()
     val selected = dashboards.firstOrNull { it.id == preferences.selectedDashboardId }
-        ?: dashboards.first()
+        ?: dashboards.firstOrNull()
+        ?: DashboardDefaults.presets.first()
     var editing by remember { mutableStateOf(false) }
 
     if (editing) {
@@ -191,110 +184,77 @@ fun Dashboard(viewModel: MainViewModel) {
             config = selected,
             readings = readings,
             preferences = preferences,
+            connectionState = connectionState,
             dtcCount = dtcs.size,
+            onConnectionAction = viewModel::toggleConnection,
             onEdit = { editing = true },
         )
     }
 }
 
 @Composable
-fun GaugeCard(reading: VehicleReading) {
-    val isPrimaryReading = reading.pid == 0x0C || reading.pid == 0x0D
-    Card(
-        modifier = Modifier.height(if (isPrimaryReading) 190.dp else 130.dp),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawArc(
-                    color = Color.DarkGray,
-                    startAngle = 145f,
-                    sweepAngle = 250f,
-                    useCenter = false,
-                    style = Stroke(width = 10f, cap = StrokeCap.Round),
-                )
-                val ratio = reading.value?.let { value ->
-                    val minimum = reading.minimum ?: 0.0
-                    val maximum = reading.maximum ?: 100.0
-                    if (maximum <= minimum) {
-                        0f
-                    } else {
-                        ((value - minimum) / (maximum - minimum)).toFloat().coerceIn(0f, 1f)
-                    }
-                } ?: 0f
-                drawArc(
-                    color = Color.Cyan,
-                    startAngle = 145f,
-                    sweepAngle = 250f * ratio,
-                    useCenter = false,
-                    style = Stroke(width = 10f, cap = StrokeCap.Round),
-                )
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = reading.name, fontSize = 12.sp)
-                Text(
-                    text = reading.value?.let { "%.1f".format(it) } ?: "—",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = if (reading.supported) reading.unit else "Not supported",
-                    fontSize = 12.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun LiveData(viewModel: MainViewModel) {
     val readings by viewModel.readings.collectAsState()
+    val connectionState by viewModel.connection.collectAsState()
     var query by remember { mutableStateOf("") }
+    val filtered = readings.filter { it.name.contains(query, ignoreCase = true) }
 
-    Column {
+    Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth().padding(12.dp),
-            label = { Text("Search parameters") },
+            label = { Text("Search vehicle data") },
             singleLine = true,
         )
-        Row {
+        Row(modifier = Modifier.padding(horizontal = 12.dp)) {
             Button(
-                onClick = { viewModel.pause() },
-                modifier = Modifier.padding(start = 12.dp),
-            ) {
-                Text("Pause")
-            }
-            TextButton(onClick = { viewModel.resume() }) {
-                Text("Resume")
-            }
+                onClick = viewModel::pause,
+                enabled = connectionState == ConnectionState.CONNECTED,
+            ) { Text("Pause") }
+            TextButton(
+                onClick = viewModel::resume,
+                enabled = connectionState == ConnectionState.CONNECTED,
+            ) { Text("Resume") }
         }
-        LazyColumn {
-            items(
-                items = readings.filter { it.name.contains(query, ignoreCase = true) },
-                key = { it.pid },
-            ) { reading ->
-                ListItem(
-                    headlineContent = { Text(reading.name) },
-                    overlineContent = { Text("PID 01%02X".format(reading.pid)) },
-                    supportingContent = {
-                        Text(
-                            if (reading.supported) {
-                                "Range ${reading.minimum}–${reading.maximum}"
-                            } else {
-                                "Not supported"
-                            },
-                        )
-                    },
-                    trailingContent = {
-                        Text(reading.value?.let { "%.1f ${reading.unit}".format(it) } ?: "—")
-                    },
-                )
-                HorizontalDivider()
+
+        if (connectionState != ConnectionState.CONNECTED) {
+            MessageCard(
+                title = "Vehicle is not connected",
+                message = "Connect the USB OBD-II adapter before reading live parameters.",
+                actionLabel = "Connect",
+                onAction = viewModel::toggleConnection,
+            )
+        } else if (filtered.isEmpty()) {
+            MessageCard(
+                title = if (query.isBlank()) "Waiting for ECU data" else "No matching parameter",
+                message = if (query.isBlank()) {
+                    "Keep the ignition on while NTU checks the supported OBD-II PIDs."
+                } else {
+                    "Try a different search term."
+                },
+            )
+        } else {
+            LazyColumn {
+                items(filtered, key = { it.pid }) { reading ->
+                    ListItem(
+                        headlineContent = { Text(reading.name) },
+                        overlineContent = { Text("PID 01%02X".format(reading.pid)) },
+                        supportingContent = {
+                            Text(
+                                when {
+                                    !reading.supported -> "Not supported by this vehicle"
+                                    reading.value == null -> "Waiting for a valid response"
+                                    else -> "Range ${reading.minimum ?: "—"}–${reading.maximum ?: "—"}"
+                                },
+                            )
+                        },
+                        trailingContent = {
+                            Text(reading.value?.let { "%.1f ${reading.unit}".format(it) } ?: "—")
+                        },
+                    )
+                    HorizontalDivider()
+                }
             }
         }
     }
@@ -303,24 +263,41 @@ fun LiveData(viewModel: MainViewModel) {
 @Composable
 fun Diagnostics(viewModel: MainViewModel) {
     val dtcs by viewModel.dtcs.collectAsState()
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Stored diagnostic trouble codes", style = MaterialTheme.typography.headlineSmall)
-        Text("Read-only scan. Descriptions may vary by manufacturer.")
-        Button(
-            onClick = { viewModel.scan() },
-            modifier = Modifier.padding(vertical = 12.dp),
-        ) {
-            Text("Scan stored DTCs")
+    val connectionState by viewModel.connection.collectAsState()
+
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        item {
+            Text("Stored diagnostic trouble codes", style = MaterialTheme.typography.headlineSmall)
+            Text("Read-only scan. NTU never clears codes or changes the ECU.")
+            Button(
+                onClick = viewModel::scan,
+                enabled = connectionState == ConnectionState.CONNECTED,
+                modifier = Modifier.padding(vertical = 12.dp),
+            ) { Text("Scan stored DTCs") }
         }
-        if (dtcs.isEmpty()) {
-            Text("No scan results")
+        if (connectionState != ConnectionState.CONNECTED) {
+            item {
+                MessageCard(
+                    title = "Connect before scanning",
+                    message = "Turn the ignition on and establish an OBD-II connection first.",
+                    actionLabel = "Connect",
+                    onAction = viewModel::toggleConnection,
+                )
+            }
+        } else if (dtcs.isEmpty()) {
+            item {
+                MessageCard(
+                    title = "No scan results yet",
+                    message = "Run a read-only scan to check stored diagnostic trouble codes.",
+                )
+            }
         } else {
-            dtcs.forEach { dtc ->
+            items(dtcs, key = { it.code }) { dtc ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(dtc.code, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Text(dtc.description ?: "Manufacturer-specific description unavailable")
-                        Text(dtc.status)
+                        Text(dtc.status, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -331,18 +308,19 @@ fun Diagnostics(viewModel: MainViewModel) {
 @Composable
 fun Trips(viewModel: MainViewModel) {
     val trips by viewModel.trips.collectAsState(initial = emptyList())
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Trip history", style = MaterialTheme.typography.headlineSmall)
-        Button(
-            onClick = { viewModel.toggleTrip() },
-            modifier = Modifier.padding(vertical = 12.dp),
-        ) {
-            Text("Start / stop recording")
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        item {
+            Text("Trip history", style = MaterialTheme.typography.headlineSmall)
+            Text("Record local vehicle readings for later review.")
+            Button(
+                onClick = viewModel::toggleTrip,
+                modifier = Modifier.padding(vertical = 12.dp),
+            ) { Text("Start / stop recording") }
         }
         if (trips.isEmpty()) {
-            Text("No recorded trips yet")
+            item { MessageCard("No recorded trips", "Start recording after connecting to the vehicle.") }
         } else {
-            trips.forEach { trip ->
+            items(trips, key = { it.id }) { trip ->
                 ListItem(
                     headlineContent = { Text("Trip #${trip.id}") },
                     supportingContent = { Text(Date(trip.startTime).toString()) },
@@ -356,77 +334,130 @@ fun Trips(viewModel: MainViewModel) {
 fun Settings(viewModel: MainViewModel) {
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val dashboards by viewModel.dashboards.collectAsState()
+    val connectionState by viewModel.connection.collectAsState()
 
-    Column(modifier = Modifier.padding(16.dp)) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
-        Text("Dashboard preset", style = MaterialTheme.typography.titleMedium)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            dashboards.take(3).forEach { dashboard ->
-                FilterChip(
-                    selected = preferences.selectedDashboardId == dashboard.id,
-                    onClick = { viewModel.selectDashboard(dashboard.id) },
-                    label = { Text(dashboard.name) },
-                )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+        item { SettingsHeading("Dashboard", "Choose the information layout used while driving.") }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                dashboards.forEach { dashboard ->
+                    FilterChip(
+                        selected = preferences.selectedDashboardId == dashboard.id,
+                        onClick = { viewModel.selectDashboard(dashboard.id) },
+                        label = { Text(dashboard.name) },
+                    )
+                }
             }
         }
 
-        Text(
-            "Theme",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            DashboardDefaults.themes.take(3).forEach { theme ->
-                FilterChip(
-                    selected = preferences.theme.name == theme.name,
-                    onClick = { viewModel.selectTheme(theme) },
-                    label = { Text(theme.name) },
-                )
+        item { SettingsHeading("Appearance", "Theme colors apply immediately without disconnecting OBD-II.") }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DashboardDefaults.themes.forEach { theme ->
+                    FilterChip(
+                        selected = preferences.theme.name == theme.name,
+                        onClick = { viewModel.selectTheme(theme) },
+                        label = { Text(theme.name) },
+                    )
+                }
             }
         }
-
-        ListItem(
-            headlineContent = { Text("Reduce Motion") },
-            supportingContent = { Text("Limits gauge and screen animation") },
-            trailingContent = {
-                Switch(
-                    checked = preferences.reduceMotion,
-                    onCheckedChange = viewModel::setReduceMotion,
-                )
-            },
-        )
-        ListItem(
-            headlineContent = { Text("Driving Mode") },
-            supportingContent = { Text("Larger essentials and locks dashboard editing") },
-            trailingContent = {
-                Switch(
-                    checked = preferences.drivingMode,
-                    onCheckedChange = viewModel::setDrivingMode,
-                )
-            },
-        )
-
-        Text("Refresh rate", style = MaterialTheme.typography.titleMedium)
-        Row {
-            RefreshRate.entries.forEach { rate ->
-                FilterChip(
-                    selected = preferences.refreshRate == rate,
-                    onClick = { viewModel.setRefreshRate(rate) },
-                    label = { Text(rate.name) },
-                    modifier = Modifier.padding(end = 6.dp),
-                )
-            }
+        item {
+            ListItem(
+                headlineContent = { Text("Reduce motion") },
+                supportingContent = { Text("Limits gauge animation for comfort and performance") },
+                trailingContent = {
+                    Switch(preferences.reduceMotion, viewModel::setReduceMotion)
+                },
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text("Driving mode") },
+                supportingContent = { Text("Larger essentials and locks dashboard editing") },
+                trailingContent = {
+                    Switch(preferences.drivingMode, viewModel::setDrivingMode)
+                },
+            )
         }
 
-        Text(
-            text = "NTU 1.1.0 • Local-first • Read-only OBD-II",
-            modifier = Modifier.padding(16.dp),
-        )
+        item { SettingsHeading("Connection", "${connectionState.shortLabel()} · USB ELM327") }
+        item {
+            Button(onClick = viewModel::toggleConnection, modifier = Modifier.fillMaxWidth()) {
+                Text(if (connectionState == ConnectionState.CONNECTED) "Disconnect OBD-II" else "Connect OBD-II")
+            }
+        }
+        item { Text("Refresh rate", style = MaterialTheme.typography.titleMedium) }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RefreshRate.entries.forEach { rate ->
+                    FilterChip(
+                        selected = preferences.refreshRate == rate,
+                        onClick = { viewModel.setRefreshRate(rate) },
+                        label = { Text(rate.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    )
+                }
+            }
+        }
+        item {
+            Text(
+                "NTU 1.1.1 • Android 8+ • Local-first • Read-only OBD-II",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(vertical = 16.dp),
+            )
+        }
     }
+}
+
+@Composable
+private fun SettingsHeading(title: String, detail: String) {
+    Column {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(detail, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun MessageCard(
+    title: String,
+    message: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(message, style = MaterialTheme.typography.bodyMedium)
+            if (actionLabel != null && onAction != null) {
+                Row {
+                    Button(onClick = onAction) { Text(actionLabel) }
+                    Spacer(Modifier.width(8.dp))
+                }
+            }
+        }
+    }
+}
+
+private fun ConnectionState.shortLabel(): String = when (this) {
+    ConnectionState.DISCONNECTED -> "Disconnected"
+    ConnectionState.DEVICE_DETECTED -> "USB detected"
+    ConnectionState.REQUESTING_PERMISSION -> "USB permission"
+    ConnectionState.CONNECTING -> "Connecting"
+    ConnectionState.INITIALIZING -> "Initializing"
+    ConnectionState.CONNECTED -> "Connected"
+    ConnectionState.ERROR -> "Connection error"
 }

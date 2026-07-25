@@ -12,9 +12,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: bundled-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-commit:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +33,7 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Build and sign APK 1.1.0
+      - name: Build and sign APK 1.1.1
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
@@ -42,9 +47,13 @@ jobs:
       - name: Verify and bundle APK with website
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.1.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.1.1-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
+          unzip -t "$SOURCE" >/dev/null
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$SOURCE"
           mkdir -p "$(dirname "$TARGET")"
           cp "$SOURCE" "$TARGET"
           SHA256="$(sha256sum "$TARGET" | awk '{print $1}')"
@@ -58,15 +67,15 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.1.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.1.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 2,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.1.1",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.1.1",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 3,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "Dashboard customization with Digital, Analog and Hybrid modes, theme presets, editable layouts, threshold colors, Reduce Motion, Driving Mode and adjustable refresh rate.",',
+              'releaseNotes: "Usability update with guided USB/ELM327 connection steps, clearer loading and error states, improved default dashboards, practical mobile settings, resizable widgets and distinct Classic, Sport, Minimal, Neon and OEM gauges.",',
               text,
           )
           path.write_text(text)
@@ -82,12 +91,12 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.1.0 with website"
+          git commit -m "Bundle NowTuneUp APK 1.1.1 with website"
           git push
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.1.0
+          name: NowTuneUp-1.1.1
           path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error
