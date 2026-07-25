@@ -35,9 +35,9 @@ jobs:
 
       - name: Sync in-app version label
         run: |
-          sed -i 's/NTU 1\.2\.0/NTU 1.2.1/g' android-app/app/src/main/java/com/nowtuneup/app/MainActivity.kt
+          sed -i 's/NTU 1\.2\.1/NTU 1.2.2/g' android-app/app/src/main/java/com/nowtuneup/app/MainActivity.kt
 
-      - name: Build and sign APK 1.2.1
+      - name: Build and sign APK 1.2.2
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
@@ -51,7 +51,7 @@ jobs:
       - name: Verify and bundle APK with website
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.2.1-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.2.2-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -71,15 +71,15 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.2.1",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.2.1",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 5,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.2.2",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.2.2",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 6,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "Adds a segmented Digital Ring Gauge with a large center value, animated outer segments, scale labels, threshold-aware colors, Amber, Cyan, Green, Red, Purple and White presets, fully custom colors, and JSON import/export support.",',
+              'releaseNotes: "Restores Digital Ring Gauge source and adds responsive portrait and landscape dashboard layouts, independent orientation editing, copy-layout actions, compact landscape connection UI, responsive grid spacing, and JSON persistence for both orientations.",',
               text,
           )
           path.write_text(text)
@@ -98,12 +98,12 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.2.1 with website"
+          git commit -m "Bundle NowTuneUp APK 1.2.2 with website"
           git push
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.2.1
+          name: NowTuneUp-1.2.2
           path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error
