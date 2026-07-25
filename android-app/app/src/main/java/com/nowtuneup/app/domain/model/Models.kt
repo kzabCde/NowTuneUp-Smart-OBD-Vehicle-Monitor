@@ -17,8 +17,9 @@ data class DashboardProfile(val id:Long=0,val name:String,val widgets:List<Dashb
 
 /** Persisted dashboard models are deliberately independent from live OBD state. */
 enum class DashboardMode { DIGITAL, ANALOG, HYBRID }
-enum class DashboardWidgetType { DIGITAL, ANALOG, MINI_GAUGE, PROGRESS, DTC_CARD }
+enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, DTC_CARD }
 enum class GaugeStyle { CLASSIC, SPORT, MINIMAL, NEON, OEM }
+enum class DigitalRingColorPreset { AMBER, CYAN, GREEN, RED, PURPLE, WHITE, CUSTOM }
 enum class DisplayUnit { RPM, KMH, MPH, CELSIUS, FAHRENHEIT, VOLT, PERCENT, KPA, BAR, PSI, LITER, GALLON, NONE }
 enum class RefreshRate(val intervalMillis: Long) { LOW(1_000), BALANCED(500), FAST(200) }
 
@@ -38,6 +39,52 @@ data class ColorConfig(
     val critical: Long = 0xFFFF5252,
 )
 
+data class DigitalRingConfig(
+    val preset: DigitalRingColorPreset = DigitalRingColorPreset.AMBER,
+    val segmentCount: Int = 36,
+    val digitColor: Long = 0xFFFFC400,
+    val activeSegmentColor: Long = 0xFFFFC400,
+    val inactiveSegmentColor: Long = 0xFF3A3000,
+    val scaleColor: Long = 0xFFFFC400,
+    val titleColor: Long = 0xFFFFC400,
+    val bezelColor: Long = 0xFF30343B,
+    val showScaleLabels: Boolean = true,
+)
+
+fun digitalRingPreset(
+    preset: DigitalRingColorPreset,
+    segmentCount: Int = 36,
+): DigitalRingConfig {
+    val active = when (preset) {
+        DigitalRingColorPreset.AMBER -> 0xFFFFC400
+        DigitalRingColorPreset.CYAN -> 0xFF00C8FF
+        DigitalRingColorPreset.GREEN -> 0xFF2CFF35
+        DigitalRingColorPreset.RED -> 0xFFFF3045
+        DigitalRingColorPreset.PURPLE -> 0xFFB45CFF
+        DigitalRingColorPreset.WHITE -> 0xFFF5F7FA
+        DigitalRingColorPreset.CUSTOM -> 0xFFFFC400
+    }
+    val inactive = when (preset) {
+        DigitalRingColorPreset.AMBER -> 0xFF3A3000
+        DigitalRingColorPreset.CYAN -> 0xFF003647
+        DigitalRingColorPreset.GREEN -> 0xFF073A0A
+        DigitalRingColorPreset.RED -> 0xFF430812
+        DigitalRingColorPreset.PURPLE -> 0xFF2E1647
+        DigitalRingColorPreset.WHITE -> 0xFF35383C
+        DigitalRingColorPreset.CUSTOM -> 0xFF3A3000
+    }
+    return DigitalRingConfig(
+        preset = preset,
+        segmentCount = segmentCount.coerceIn(12, 72),
+        digitColor = active,
+        activeSegmentColor = active,
+        inactiveSegmentColor = inactive,
+        scaleColor = active,
+        titleColor = active,
+        bezelColor = 0xFF30343B,
+    )
+}
+
 data class DashboardWidgetConfig(
     val id: String,
     val pid: Int,
@@ -53,6 +100,7 @@ data class DashboardWidgetConfig(
     val gaugeStyle: GaugeStyle = GaugeStyle.CLASSIC,
     val colors: ColorConfig = ColorConfig(),
     val threshold: WarningThreshold = WarningThreshold(),
+    val digitalRing: DigitalRingConfig? = null,
 )
 
 data class DashboardLayout(val columns: Int = 2, val widgets: List<DashboardWidgetConfig> = emptyList())
