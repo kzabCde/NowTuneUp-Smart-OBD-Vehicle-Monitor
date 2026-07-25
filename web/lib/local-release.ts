@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.2.1",
-  tagName: "v1.2.1",
-  versionCode: 5,
+  version: "1.2.2",
+  tagName: "v1.2.2",
+  versionCode: 6,
   apkName: "NowTuneUp.apk",
-  apkSize: 12625394,
+  apkSize: 12641778,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "d85f405a27ed793d4a73815928382d08d368d35e9f922622c77397b09dc3b72f",
+  sha256: "7c6def5add5bc459c97cab9deab220a9027f5ac2ea3a2d76a3d754e0029ba231",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-07-25T10:09:13.000Z",
-  releaseNotes: "Adds a segmented Digital Ring Gauge with a large center value, animated outer segments, scale labels, threshold-aware colors, Amber, Cyan, Green, Red, Purple and White presets, fully custom colors, and JSON import/export support.",
+  publishedAt: "2026-07-25T11:03:34.000Z",
+  releaseNotes: "Restores Digital Ring Gauge source and adds responsive portrait and landscape dashboard layouts, independent orientation editing, copy-layout actions, compact landscape connection UI, responsive grid spacing, and JSON persistence for both orientations.",
 };
 
 export function getLocalRelease(version?: string) {
