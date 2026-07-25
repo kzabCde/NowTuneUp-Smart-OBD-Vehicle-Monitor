@@ -7,6 +7,8 @@ import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
+import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.WarningThreshold
@@ -16,8 +18,8 @@ import org.junit.Test
 
 class DashboardCodecTest {
     @Test
-    fun releaseVersionIs120() {
-        assertEquals("1.2.0", BuildConfig.VERSION_NAME)
+    fun releaseVersionIs121() {
+        assertEquals("1.2.1", BuildConfig.VERSION_NAME)
     }
 
     @Test
@@ -59,6 +61,48 @@ class DashboardCodecTest {
     }
 
     @Test
+    fun roundTripPreservesDigitalRingPresetAndCustomColors() {
+        val ring = DigitalRingConfig(
+            preset = DigitalRingColorPreset.CUSTOM,
+            segmentCount = 48,
+            digitColor = 0xFF00C8FF,
+            activeSegmentColor = 0xFF00C8FF,
+            inactiveSegmentColor = 0xFF003647,
+            scaleColor = 0xFFFFFFFF,
+            titleColor = 0xFF00C8FF,
+            bezelColor = 0xFF252A30,
+            showScaleLabels = false,
+        )
+        val widget = DashboardWidgetConfig(
+            id = "boost-ring",
+            pid = 0x0B,
+            type = DashboardWidgetType.DIGITAL_RING,
+            title = "Boost",
+            unit = DisplayUnit.PSI,
+            decimals = 1,
+            valueSize = 58,
+            columnSpan = 2,
+            rowSpan = 2,
+            digitalRing = ring,
+        )
+        val config = DashboardConfig(
+            id = "ring-test",
+            name = "Digital Ring",
+            mode = DashboardMode.HYBRID,
+            portrait = DashboardLayout(columns = 2, widgets = listOf(widget)),
+        )
+
+        val imported = DashboardCodec.import(DashboardCodec.export(config)).getOrThrow()
+        val restored = imported.portrait.widgets.single()
+
+        assertEquals(DashboardWidgetType.DIGITAL_RING, restored.type)
+        assertEquals(DigitalRingColorPreset.CUSTOM, restored.digitalRing?.preset)
+        assertEquals(48, restored.digitalRing?.segmentCount)
+        assertEquals(0xFF00C8FF, restored.digitalRing?.activeSegmentColor)
+        assertEquals(false, restored.digitalRing?.showScaleLabels)
+    }
+
+    @Test
     fun digitalCanBecomeAnalogWithoutChangingParameter() {
         val widget = DashboardDefaults.presets.first().portrait.widgets[1]
         val analog = widget.copy(type = DashboardWidgetType.ANALOG)
@@ -77,6 +121,19 @@ class DashboardCodecTest {
                 ),
             )
         }
+
+        assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
+    }
+
+    @Test
+    fun importRejectsInvalidDigitalRingSegmentCount() {
+        val invalidWidget = DashboardDefaults.presets.first().portrait.widgets.first().copy(
+            type = DashboardWidgetType.DIGITAL_RING,
+            digitalRing = DigitalRingConfig(segmentCount = 100),
+        )
+        val invalid = DashboardDefaults.presets.first().copy(
+            portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
+        )
 
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }

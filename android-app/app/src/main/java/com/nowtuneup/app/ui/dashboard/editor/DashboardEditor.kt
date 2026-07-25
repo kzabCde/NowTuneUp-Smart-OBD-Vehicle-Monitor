@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,10 +50,13 @@ import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
+import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.WarningThreshold
+import com.nowtuneup.app.domain.model.digitalRingPreset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,10 +175,7 @@ fun DashboardEditor(
             }
             item {
                 SectionTitle("Display mode", "Choose a base style for all widgets.")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ScrollableChips {
                     DashboardMode.entries.forEach { mode ->
                         FilterChip(
                             selected = draft.mode == mode,
@@ -206,10 +207,7 @@ fun DashboardEditor(
             }
             item {
                 SectionTitle("Dashboard theme", "Apply a preset or edit colors for every widget.")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ScrollableChips {
                     DashboardDefaults.themes.forEach { theme ->
                         FilterChip(
                             selected = false,
@@ -283,9 +281,7 @@ fun DashboardEditor(
                     onClick = {
                         val source = DashboardDefaults.presets
                             .flatMap { it.portrait.widgets }
-                            .firstOrNull { candidate ->
-                                draft.portrait.widgets.none { it.pid == candidate.pid }
-                            }
+                            .firstOrNull { candidate -> draft.portrait.widgets.none { it.pid == candidate.pid } }
                         if (source != null) {
                             draft = draft.copy(
                                 portrait = draft.portrait.copy(
@@ -300,7 +296,10 @@ fun DashboardEditor(
                 ) { Text("Add available widget") }
             }
             item {
-                SectionTitle("Import and export", "Dashboard JSON includes order, size, colors and thresholds.")
+                SectionTitle(
+                    "Import and export",
+                    "Dashboard JSON includes order, size, colors, thresholds and Digital Ring settings.",
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -394,6 +393,7 @@ private fun WidgetConfigurationSheet(
     onDismiss: () -> Unit,
     onSave: (DashboardWidgetConfig) -> Unit,
 ) {
+    val initialRing = widget.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
     var draft by remember(widget.id) { mutableStateOf(widget) }
     var warningLow by remember(widget.id) { mutableStateOf(widget.threshold.warningLow.text()) }
     var warningHigh by remember(widget.id) { mutableStateOf(widget.threshold.warningHigh.text()) }
@@ -405,6 +405,30 @@ private fun WidgetConfigurationSheet(
     var borderColor by remember(widget.id) { mutableStateOf(widget.colors.border.hex()) }
     var warningColor by remember(widget.id) { mutableStateOf(widget.colors.warning.hex()) }
     var criticalColor by remember(widget.id) { mutableStateOf(widget.colors.critical.hex()) }
+    var ringPreset by remember(widget.id) { mutableStateOf(initialRing.preset) }
+    var segmentCount by remember(widget.id) { mutableFloatStateOf(initialRing.segmentCount.toFloat()) }
+    var showScaleLabels by remember(widget.id) { mutableStateOf(initialRing.showScaleLabels) }
+    var digitColor by remember(widget.id) { mutableStateOf(initialRing.digitColor.hex()) }
+    var activeSegmentColor by remember(widget.id) { mutableStateOf(initialRing.activeSegmentColor.hex()) }
+    var inactiveSegmentColor by remember(widget.id) { mutableStateOf(initialRing.inactiveSegmentColor.hex()) }
+    var scaleColor by remember(widget.id) { mutableStateOf(initialRing.scaleColor.hex()) }
+    var titleColor by remember(widget.id) { mutableStateOf(initialRing.titleColor.hex()) }
+    var bezelColor by remember(widget.id) { mutableStateOf(initialRing.bezelColor.hex()) }
+
+    fun applyPreset(preset: DigitalRingColorPreset) {
+        val selected = digitalRingPreset(preset, segmentCount.toInt())
+        ringPreset = preset
+        digitColor = selected.digitColor.hex()
+        activeSegmentColor = selected.activeSegmentColor.hex()
+        inactiveSegmentColor = selected.inactiveSegmentColor.hex()
+        scaleColor = selected.scaleColor.hex()
+        titleColor = selected.titleColor.hex()
+        bezelColor = selected.bezelColor.hex()
+        valueColor = selected.digitColor.hex()
+        labelColor = selected.scaleColor.hex()
+        backgroundColor = "#FF000000"
+        borderColor = selected.bezelColor.hex()
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -425,7 +449,13 @@ private fun WidgetConfigurationSheet(
                 DashboardWidgetType.entries.forEach { type ->
                     FilterChip(
                         selected = draft.type == type,
-                        onClick = { draft = draft.copy(type = type) },
+                        onClick = {
+                            draft = if (type == DashboardWidgetType.DIGITAL_RING) {
+                                draft.copy(type = type, digitalRing = draft.digitalRing ?: initialRing)
+                            } else {
+                                draft.copy(type = type)
+                            }
+                        },
                         label = { Text(type.label()) },
                     )
                 }
@@ -442,6 +472,44 @@ private fun WidgetConfigurationSheet(
                         )
                     }
                 }
+            }
+
+            if (draft.type == DashboardWidgetType.DIGITAL_RING) {
+                HorizontalDivider()
+                SheetHeading("Digital Ring Gauge")
+                Text(
+                    "Choose a ready-made color, or select Custom and edit every display layer.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                ScrollableChips {
+                    DigitalRingColorPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = ringPreset == preset,
+                            onClick = {
+                                if (preset == DigitalRingColorPreset.CUSTOM) ringPreset = preset else applyPreset(preset)
+                            },
+                            label = { Text(preset.label()) },
+                        )
+                    }
+                }
+                Text("Segments: ${segmentCount.toInt()}")
+                Slider(
+                    value = segmentCount,
+                    onValueChange = { segmentCount = it.coerceIn(12f, 72f) },
+                    valueRange = 12f..72f,
+                    steps = 59,
+                )
+                FilterChip(
+                    selected = showScaleLabels,
+                    onClick = { showScaleLabels = !showScaleLabels },
+                    label = { Text(if (showScaleLabels) "Scale labels shown" else "Scale labels hidden") },
+                )
+                ColorField("Center digits", digitColor) { digitColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Active segments", activeSegmentColor) { activeSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Inactive segments", inactiveSegmentColor) { inactiveSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Scale numbers", scaleColor) { scaleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Gauge title", titleColor) { titleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorField("Bezel", bezelColor) { bezelColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
             }
 
             SheetHeading("Unit")
@@ -503,6 +571,22 @@ private fun WidgetConfigurationSheet(
 
             Button(
                 onClick = {
+                    val currentRing = draft.digitalRing ?: initialRing
+                    val ring = if (draft.type == DashboardWidgetType.DIGITAL_RING) {
+                        DigitalRingConfig(
+                            preset = ringPreset,
+                            segmentCount = segmentCount.toInt().coerceIn(12, 72),
+                            digitColor = digitColor.argbOr(currentRing.digitColor),
+                            activeSegmentColor = activeSegmentColor.argbOr(currentRing.activeSegmentColor),
+                            inactiveSegmentColor = inactiveSegmentColor.argbOr(currentRing.inactiveSegmentColor),
+                            scaleColor = scaleColor.argbOr(currentRing.scaleColor),
+                            titleColor = titleColor.argbOr(currentRing.titleColor),
+                            bezelColor = bezelColor.argbOr(currentRing.bezelColor),
+                            showScaleLabels = showScaleLabels,
+                        )
+                    } else {
+                        draft.digitalRing
+                    }
                     onSave(
                         draft.copy(
                             threshold = WarningThreshold(
@@ -519,6 +603,7 @@ private fun WidgetConfigurationSheet(
                                 warning = warningColor.argbOr(widget.colors.warning),
                                 critical = criticalColor.argbOr(widget.colors.critical),
                             ),
+                            digitalRing = ring,
                         ),
                     )
                 },
@@ -684,16 +769,27 @@ private fun DashboardConfig.dashboardTheme(): ThemeConfig {
 }
 
 private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardConfig {
-    fun themed(widget: DashboardWidgetConfig): DashboardWidgetConfig = widget.copy(
-        colors = widget.colors.copy(
-            value = theme.gaugeNeedle,
-            label = theme.text,
-            background = theme.card,
-            border = theme.border,
-            warning = theme.warning,
-            critical = theme.critical,
-        ),
-    )
+    fun themed(widget: DashboardWidgetConfig): DashboardWidgetConfig {
+        val ring = widget.digitalRing?.copy(
+            preset = DigitalRingColorPreset.CUSTOM,
+            digitColor = theme.gaugeNeedle,
+            activeSegmentColor = theme.gaugeNeedle,
+            scaleColor = theme.gaugeTick,
+            titleColor = theme.text,
+            bezelColor = theme.border,
+        )
+        return widget.copy(
+            colors = widget.colors.copy(
+                value = theme.gaugeNeedle,
+                label = theme.text,
+                background = theme.card,
+                border = theme.border,
+                warning = theme.warning,
+                critical = theme.critical,
+            ),
+            digitalRing = ring,
+        )
+    }
     return copy(
         portrait = portrait.copy(widgets = portrait.widgets.map(::themed)),
         landscape = landscape.copy(widgets = landscape.widgets.map(::themed)),
@@ -703,6 +799,7 @@ private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardCo
 private fun DashboardMode.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DashboardWidgetType.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
 private fun GaugeStyle.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
+private fun DigitalRingColorPreset.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DisplayUnit.label(): String = when (this) {
     DisplayUnit.KMH -> "km/h"
     DisplayUnit.MPH -> "mph"

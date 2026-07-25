@@ -1,5 +1,7 @@
 package com.nowtuneup.app.ui.dashboard.components
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -26,15 +28,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.VehicleReading
+import com.nowtuneup.app.domain.model.digitalRingPreset
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -64,9 +71,14 @@ fun DashboardWidgetView(
 ) {
     val value = reading?.takeIf { it.supported }?.value
     val status = config.readingStatus(value)
+    val normalColor = if (config.type == DashboardWidgetType.DIGITAL_RING) {
+        Color((config.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)).digitColor)
+    } else {
+        Color(config.colors.value)
+    }
     val statusColor = when (status) {
         ReadingStatus.NO_DATA -> MaterialTheme.colorScheme.onSurfaceVariant
-        ReadingStatus.NORMAL -> Color(config.colors.value)
+        ReadingStatus.NORMAL -> normalColor
         ReadingStatus.WARNING -> Color(config.colors.warning)
         ReadingStatus.CRITICAL -> Color(config.colors.critical)
     }
@@ -83,6 +95,15 @@ fun DashboardWidgetView(
             DashboardWidgetType.ANALOG,
             DashboardWidgetType.MINI_GAUGE,
             -> AnalogGauge(config, reading, status, statusColor, reduceMotion, minimumHeight)
+
+            DashboardWidgetType.DIGITAL_RING -> DigitalRingGauge(
+                config = config,
+                reading = reading,
+                status = status,
+                statusColor = statusColor,
+                reduceMotion = reduceMotion,
+                minimumHeight = minimumHeight,
+            )
 
             DashboardWidgetType.PROGRESS -> ProgressWidget(config, value, status, statusColor)
             DashboardWidgetType.DTC_CARD -> DtcWidget(dtcCount)
@@ -148,6 +169,148 @@ private fun ProgressWidget(
             color = color,
             trackColor = Color(config.colors.border),
         )
+    }
+}
+
+@Composable
+private fun DigitalRingGauge(
+    config: DashboardWidgetConfig,
+    reading: VehicleReading?,
+    status: ReadingStatus,
+    statusColor: Color,
+    reduceMotion: Boolean,
+    minimumHeight: Dp,
+) {
+    val ring = config.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
+    val minimum = reading?.minimum ?: 0.0
+    val maximum = reading?.maximum?.takeIf { it > minimum } ?: 100.0
+    val value = reading?.takeIf { it.supported }?.value
+    val target = value?.let { ((it - minimum) / (maximum - minimum)).toFloat().coerceIn(0f, 1f) } ?: 0f
+    val progress by animateFloatAsState(
+        targetValue = target,
+        animationSpec = if (reduceMotion) {
+            spring(stiffness = 10_000f)
+        } else {
+            spring(dampingRatio = 0.86f, stiffness = 110f)
+        },
+        label = "digital ring progress",
+    )
+    val activeColor = when (status) {
+        ReadingStatus.WARNING -> Color(config.colors.warning)
+        ReadingStatus.CRITICAL -> Color(config.colors.critical)
+        else -> Color(ring.activeSegmentColor)
+    }
+    val digitColor = when (status) {
+        ReadingStatus.WARNING, ReadingStatus.CRITICAL -> statusColor
+        else -> Color(ring.digitColor)
+    }
+    val segmentCount = ring.segmentCount.coerceIn(12, 72)
+    val activeSegments = ceil(progress * segmentCount).toInt().coerceIn(0, segmentCount)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(minimumHeight.coerceAtLeast(230.dp))
+            .padding(8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val startAngle = 135f
+            val sweepAngle = 270f
+            val radius = size.minDimension * 0.40f
+            val segmentStroke = (radius * 0.13f).coerceIn(10f, 28f)
+            val gapDegrees = (sweepAngle / segmentCount) * 0.24f
+            val segmentSweep = (sweepAngle / segmentCount) - gapDegrees
+            val arcTopLeft = Offset(center.x - radius, center.y - radius)
+            val arcSize = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f)
+
+            drawCircle(
+                color = Color(ring.bezelColor),
+                radius = radius + segmentStroke * 0.95f,
+                center = center,
+                style = Stroke(width = segmentStroke * 0.55f),
+            )
+            drawCircle(
+                color = Color.Black,
+                radius = radius - segmentStroke * 0.58f,
+                center = center,
+            )
+
+            repeat(segmentCount) { index ->
+                val lit = index < activeSegments
+                val segmentColor = if (lit) activeColor else Color(ring.inactiveSegmentColor)
+                val segmentStart = startAngle + index * (sweepAngle / segmentCount) + gapDegrees / 2f
+                if (lit) {
+                    drawArc(
+                        color = segmentColor.copy(alpha = 0.14f),
+                        startAngle = segmentStart,
+                        sweepAngle = segmentSweep,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = segmentStroke * 1.75f, cap = StrokeCap.Butt),
+                    )
+                }
+                drawArc(
+                    color = segmentColor,
+                    startAngle = segmentStart,
+                    sweepAngle = segmentSweep,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = segmentStroke, cap = StrokeCap.Butt),
+                )
+            }
+
+            if (ring.showScaleLabels) {
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color(ring.scaleColor).toArgb()
+                    textAlign = Paint.Align.CENTER
+                    textSize = (radius * 0.13f).coerceIn(12f, 26f)
+                    typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+                }
+                val labelRadius = radius - segmentStroke * 1.55f
+                repeat(5) { index ->
+                    val fraction = index / 4f
+                    val angle = Math.toRadians((startAngle + fraction * sweepAngle).toDouble())
+                    val labelValue = minimum + (maximum - minimum) * fraction
+                    val label = if (maximum - minimum <= 20.0) {
+                        "%.1f".format(labelValue)
+                    } else {
+                        "%.0f".format(labelValue)
+                    }
+                    val x = center.x + cos(angle).toFloat() * labelRadius
+                    val y = center.y + sin(angle).toFloat() * labelRadius - (paint.ascent() + paint.descent()) / 2f
+                    drawContext.canvas.nativeCanvas.drawText(label, x, y, paint)
+                }
+            }
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(top = 18.dp),
+        ) {
+            Text(
+                config.title.uppercase(),
+                color = Color(ring.titleColor),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                value?.let { "%.${config.decimals}f".format(it) } ?: "--",
+                color = digitColor,
+                fontSize = config.valueSize.coerceIn(34, 80).sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                if (value == null) "WAITING" else config.unit.label().uppercase(),
+                color = Color(ring.scaleColor),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            StatusLabel(status, statusColor)
+        }
     }
 }
 
@@ -311,10 +474,14 @@ private fun StatusLabel(status: ReadingStatus, color: Color) {
 }
 
 private fun DashboardWidgetConfig.minimumHeight(): Dp = when (rowSpan.coerceIn(1, 4)) {
-    1 -> if (type == DashboardWidgetType.ANALOG || type == DashboardWidgetType.MINI_GAUGE) 190.dp else 132.dp
-    2 -> 230.dp
-    3 -> 310.dp
-    else -> 390.dp
+    1 -> when (type) {
+        DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE -> 190.dp
+        DashboardWidgetType.DIGITAL_RING -> 230.dp
+        else -> 132.dp
+    }
+    2 -> 250.dp
+    3 -> 330.dp
+    else -> 410.dp
 }
 
 private fun DashboardWidgetConfig.readingStatus(value: Double?): ReadingStatus = when {
