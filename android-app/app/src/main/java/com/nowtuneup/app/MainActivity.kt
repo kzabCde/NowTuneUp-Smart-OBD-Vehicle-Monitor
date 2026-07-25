@@ -1,6 +1,13 @@
 package com.nowtuneup.app
 
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.horizontalScroll
@@ -15,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -43,6 +52,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,12 +62,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ConnectionState
+import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.RefreshRate
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
@@ -64,6 +78,7 @@ import com.nowtuneup.app.ui.dashboard.DashboardScreen
 import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Date
+import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -91,44 +106,77 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
+    val context = LocalContext.current
+    val view = LocalView.current
+    val focusActive = selectedDestination == 0 && preferences.focusMode
+
+    DisposableEffect(preferences.keepScreenOn, connectionState) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = preferences.keepScreenOn && connectionState == ConnectionState.CONNECTED
+        onDispose { view.keepScreenOn = previous }
+    }
+
+    LaunchedEffect(connectionState, preferences.autoFocusOnConnect) {
+        if (connectionState == ConnectionState.CONNECTED && preferences.autoFocusOnConnect) {
+            selectedDestination = 0
+            viewModel.setFocusMode(true)
+        }
+    }
+
+    LaunchedEffect(preferences.alertSound, preferences.alertVibration, preferences.muteAlerts) {
+        viewModel.alertEvents.collect { alert ->
+            if (preferences.muteAlerts) return@collect
+            if (preferences.alertSound) {
+                val tone = ToneGenerator(AudioManager.STREAM_ALARM, 80)
+                tone.startTone(
+                    if (alert.severity.name == "CRITICAL") ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD
+                    else ToneGenerator.TONE_PROP_BEEP,
+                    420,
+                )
+                delay(450)
+                tone.release()
+            }
+            if (preferences.alertVibration) vibrateAlert(context, alert.severity.name == "CRITICAL")
+        }
+    }
 
     NtuTheme(preferences.theme) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("NTU", fontWeight = FontWeight.Black)
-                            Text("Vehicle monitor", fontSize = 11.sp)
-                        }
-                    },
-                    actions = {
-                        AssistChip(
-                            onClick = viewModel::toggleConnection,
-                            label = { Text(connectionState.shortLabel()) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (connectionState == ConnectionState.CONNECTED) {
-                                        Icons.Default.CheckCircle
-                                    } else {
-                                        Icons.Default.Usb
-                                    },
-                                    contentDescription = "OBD connection",
-                                )
-                            },
-                        )
-                    },
-                )
+                if (!focusActive) {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text("NTU", fontWeight = FontWeight.Black)
+                                Text("Vehicle monitor", fontSize = 11.sp)
+                            }
+                        },
+                        actions = {
+                            AssistChip(
+                                onClick = viewModel::toggleConnection,
+                                label = { Text(connectionState.shortLabel()) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Usb,
+                                        contentDescription = "OBD connection",
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
             },
             bottomBar = {
-                NavigationBar {
-                    destinations.forEachIndexed { index, destination ->
-                        NavigationBarItem(
-                            selected = selectedDestination == index,
-                            onClick = { selectedDestination = index },
-                            icon = { Icon(destination.icon, contentDescription = null) },
-                            label = { Text(destination.title, fontSize = 10.sp) },
-                        )
+                if (!focusActive) {
+                    NavigationBar {
+                        destinations.forEachIndexed { index, destination ->
+                            NavigationBarItem(
+                                selected = selectedDestination == index,
+                                onClick = { selectedDestination = index },
+                                icon = { Icon(destination.icon, contentDescription = null) },
+                                label = { Text(destination.title, fontSize = 10.sp) },
+                            )
+                        }
                     }
                 }
             },
@@ -147,9 +195,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         errorMessage?.let { message ->
             AlertDialog(
                 onDismissRequest = viewModel::dismissError,
-                confirmButton = {
-                    TextButton(onClick = viewModel::dismissError) { Text("OK") }
-                },
+                confirmButton = { TextButton(onClick = viewModel::dismissError) { Text("OK") } },
                 title = { Text("Communication problem") },
                 text = { Text(message) },
             )
@@ -164,11 +210,31 @@ fun Dashboard(viewModel: MainViewModel) {
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
     val dtcs by viewModel.dtcs.collectAsState()
-    val selected = dashboards.firstOrNull { it.id == preferences.selectedDashboardId }
-        ?: dashboards.firstOrNull()
-        ?: DashboardDefaults.presets.first()
+    val stats by viewModel.readingStats.collectAsState()
+    val alerts by viewModel.activeAlerts.collectAsState()
+    val pages = dashboards.ifEmpty { DashboardDefaults.presets }
+    val initialPage = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pages.size })
     var editing by remember { mutableStateOf(false) }
+    var controlsVisible by remember(preferences.focusMode) { mutableStateOf(!preferences.focusMode) }
 
+    LaunchedEffect(preferences.selectedDashboardId, pages.size) {
+        val target = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
+        if (target != pagerState.currentPage) pagerState.scrollToPage(target)
+    }
+    LaunchedEffect(pagerState.currentPage, pages.size) {
+        pages.getOrNull(pagerState.currentPage)?.let { page ->
+            if (page.id != preferences.selectedDashboardId) viewModel.selectDashboard(page.id)
+        }
+    }
+    LaunchedEffect(preferences.focusMode, controlsVisible, preferences.controlsAutoHideSeconds) {
+        if (preferences.focusMode && controlsVisible && !preferences.touchLock) {
+            delay(preferences.controlsAutoHideSeconds * 1_000L)
+            controlsVisible = false
+        }
+    }
+
+    val selected = pages.getOrNull(pagerState.currentPage) ?: pages.first()
     if (editing) {
         DashboardEditor(
             config = selected,
@@ -180,15 +246,41 @@ fun Dashboard(viewModel: MainViewModel) {
             onCancel = { editing = false },
         )
     } else {
-        DashboardScreen(
-            config = selected,
-            readings = readings,
-            preferences = preferences,
-            connectionState = connectionState,
-            dtcCount = dtcs.size,
-            onConnectionAction = viewModel::toggleConnection,
-            onEdit = { editing = true },
-        )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = preferences.swipePages && !preferences.touchLock,
+            key = { pages[it].id },
+        ) { page ->
+            DashboardScreen(
+                config = pages[page],
+                readings = readings,
+                readingStats = stats,
+                preferences = preferences,
+                connectionState = connectionState,
+                dtcCount = dtcs.size,
+                activeAlerts = alerts,
+                pageIndex = page,
+                pageCount = pages.size,
+                controlsVisible = controlsVisible,
+                onConnectionAction = viewModel::toggleConnection,
+                onEdit = { editing = true },
+                onEnterFocus = {
+                    controlsVisible = true
+                    viewModel.setFocusMode(true)
+                },
+                onExitFocus = {
+                    controlsVisible = true
+                    viewModel.setFocusMode(false)
+                },
+                onToggleControls = { controlsVisible = !controlsVisible },
+                onToggleTouchLock = {
+                    controlsVisible = true
+                    viewModel.setTouchLock(!preferences.touchLock)
+                },
+                onResetStats = viewModel::resetReadingStats,
+            )
+        }
     }
 }
 
@@ -208,31 +300,16 @@ fun LiveData(viewModel: MainViewModel) {
             singleLine = true,
         )
         Row(modifier = Modifier.padding(horizontal = 12.dp)) {
-            Button(
-                onClick = viewModel::pause,
-                enabled = connectionState == ConnectionState.CONNECTED,
-            ) { Text("Pause") }
-            TextButton(
-                onClick = viewModel::resume,
-                enabled = connectionState == ConnectionState.CONNECTED,
-            ) { Text("Resume") }
+            Button(onClick = viewModel::pause, enabled = connectionState == ConnectionState.CONNECTED) { Text("Pause") }
+            TextButton(onClick = viewModel::resume, enabled = connectionState == ConnectionState.CONNECTED) { Text("Resume") }
         }
 
         if (connectionState != ConnectionState.CONNECTED) {
-            MessageCard(
-                title = "Vehicle is not connected",
-                message = "Connect the USB OBD-II adapter before reading live parameters.",
-                actionLabel = "Connect",
-                onAction = viewModel::toggleConnection,
-            )
+            MessageCard("Vehicle is not connected", "Connect the USB OBD-II adapter before reading live parameters.", "Connect", viewModel::toggleConnection)
         } else if (filtered.isEmpty()) {
             MessageCard(
-                title = if (query.isBlank()) "Waiting for ECU data" else "No matching parameter",
-                message = if (query.isBlank()) {
-                    "Keep the ignition on while NTU checks the supported OBD-II PIDs."
-                } else {
-                    "Try a different search term."
-                },
+                if (query.isBlank()) "Waiting for ECU data" else "No matching parameter",
+                if (query.isBlank()) "Keep the ignition on while NTU checks supported OBD-II PIDs." else "Try a different search term.",
             )
         } else {
             LazyColumn {
@@ -245,13 +322,11 @@ fun LiveData(viewModel: MainViewModel) {
                                 when {
                                     !reading.supported -> "Not supported by this vehicle"
                                     reading.value == null -> "Waiting for a valid response"
-                                    else -> "Range ${reading.minimum ?: "—"}–${reading.maximum ?: "—"}"
+                                    else -> "Updated ${System.currentTimeMillis() - reading.updatedAt} ms ago"
                                 },
                             )
                         },
-                        trailingContent = {
-                            Text(reading.value?.let { "%.1f ${reading.unit}".format(it) } ?: "—")
-                        },
+                        trailingContent = { Text(reading.value?.let { "%.1f ${reading.unit}".format(it) } ?: "—") },
                     )
                     HorizontalDivider()
                 }
@@ -264,33 +339,18 @@ fun LiveData(viewModel: MainViewModel) {
 fun Diagnostics(viewModel: MainViewModel) {
     val dtcs by viewModel.dtcs.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
-
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
             Text("Stored diagnostic trouble codes", style = MaterialTheme.typography.headlineSmall)
             Text("Read-only scan. NTU never clears codes or changes the ECU.")
-            Button(
-                onClick = viewModel::scan,
-                enabled = connectionState == ConnectionState.CONNECTED,
-                modifier = Modifier.padding(vertical = 12.dp),
-            ) { Text("Scan stored DTCs") }
+            Button(onClick = viewModel::scan, enabled = connectionState == ConnectionState.CONNECTED, modifier = Modifier.padding(vertical = 12.dp)) {
+                Text("Scan stored DTCs")
+            }
         }
         if (connectionState != ConnectionState.CONNECTED) {
-            item {
-                MessageCard(
-                    title = "Connect before scanning",
-                    message = "Turn the ignition on and establish an OBD-II connection first.",
-                    actionLabel = "Connect",
-                    onAction = viewModel::toggleConnection,
-                )
-            }
+            item { MessageCard("Connect before scanning", "Turn the ignition on and establish an OBD-II connection first.", "Connect", viewModel::toggleConnection) }
         } else if (dtcs.isEmpty()) {
-            item {
-                MessageCard(
-                    title = "No scan results yet",
-                    message = "Run a read-only scan to check stored diagnostic trouble codes.",
-                )
-            }
+            item { MessageCard("No scan results yet", "Run a read-only scan to check stored diagnostic trouble codes.") }
         } else {
             items(dtcs, key = { it.code }) { dtc ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -311,20 +371,14 @@ fun Trips(viewModel: MainViewModel) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
             Text("Trip history", style = MaterialTheme.typography.headlineSmall)
-            Text("Record local vehicle readings for later review.")
-            Button(
-                onClick = viewModel::toggleTrip,
-                modifier = Modifier.padding(vertical = 12.dp),
-            ) { Text("Start / stop recording") }
+            Text("Record local vehicle readings for later review. Peak and Min/Max reset when a new trip starts.")
+            Button(onClick = viewModel::toggleTrip, modifier = Modifier.padding(vertical = 12.dp)) { Text("Start / stop recording") }
         }
         if (trips.isEmpty()) {
             item { MessageCard("No recorded trips", "Start recording after connecting to the vehicle.") }
         } else {
             items(trips, key = { it.id }) { trip ->
-                ListItem(
-                    headlineContent = { Text("Trip #${trip.id}") },
-                    supportingContent = { Text(Date(trip.startTime).toString()) },
-                )
+                ListItem(headlineContent = { Text("Trip #${trip.id}") }, supportingContent = { Text(Date(trip.startTime).toString()) })
             }
         }
     }
@@ -339,15 +393,12 @@ fun Settings(viewModel: MainViewModel) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
-        item { SettingsHeading("Dashboard", "Choose the information layout used while driving.") }
+        item { SettingsHeading("Dashboard pages", "Swipe between saved dashboards while Focus Mode is active.") }
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ScrollableChips {
                 dashboards.forEach { dashboard ->
                     FilterChip(
                         selected = preferences.selectedDashboardId == dashboard.id,
@@ -357,13 +408,45 @@ fun Settings(viewModel: MainViewModel) {
                 }
             }
         }
+        item { ToggleSetting("Swipe dashboard pages", "Disable to lock the current page while driving.", preferences.swipePages, viewModel::setSwipePages) }
+
+        item { SettingsHeading("Focus Mode", "Show only gauges and reveal controls with a tap.") }
+        item { ToggleSetting("Gauge Focus Mode", "Hides app bars and expands the configured gauges.", preferences.focusMode, viewModel::setFocusMode) }
+        item { ToggleSetting("Auto focus after connection", "Enter Focus Mode when ECU initialization succeeds.", preferences.autoFocusOnConnect, viewModel::setAutoFocusOnConnect) }
+        item { ToggleSetting("Resume Focus Mode", "Restore the previous driving view after reopening the app.", preferences.resumeFocusMode, viewModel::setResumeFocusMode) }
+        item { ToggleSetting("Keep screen on", "Keeps the display awake only while OBD-II is connected.", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
+        item { ToggleSetting("Touch lock", "Long-press the dashboard to lock or unlock touches.", preferences.touchLock, viewModel::setTouchLock) }
+        item {
+            ChoiceSetting("Controls auto-hide", listOf(3, 4, 5, 8), preferences.controlsAutoHideSeconds, { "$it s" }, viewModel::setControlsAutoHideSeconds)
+        }
+
+        item { SettingsHeading("Peak and Min/Max", "Statistics reset when a trip starts or Reset peak is tapped.") }
+        item { ToggleSetting("Peak hold", "Shows the highest value reached for each PID.", preferences.showPeakHold, viewModel::setShowPeakHold) }
+        item { ToggleSetting("Minimum and maximum", "Shows the observed range for each PID.", preferences.showMinMax, viewModel::setShowMinMax) }
+        item { Button(onClick = viewModel::resetReadingStats, modifier = Modifier.fillMaxWidth()) { Text("Reset peak and Min/Max") } }
+
+        item { SettingsHeading("Warnings", "Threshold alerts use hysteresis and cooldown to avoid repeated triggers.") }
+        item { ToggleSetting("Alert sound", "Plays an audible warning for new alert events.", preferences.alertSound, viewModel::setAlertSound) }
+        item { ToggleSetting("Alert vibration", "Vibrates for warning and critical events.", preferences.alertVibration, viewModel::setAlertVibration) }
+        item { ToggleSetting("Mute alerts", "Keeps visual warnings but suppresses sound and vibration.", preferences.muteAlerts, viewModel::setMuteAlerts) }
+        item { ChoiceSetting("Alert cooldown", listOf(10, 15, 30, 60), preferences.alertCooldownSeconds, { "$it s" }, viewModel::setAlertCooldownSeconds) }
+        item { ChoiceSetting("Hysteresis", listOf(1, 2, 3, 5), preferences.hysteresis.toInt(), { "$it units" }) { viewModel.setHysteresis(it.toDouble()) } }
+
+        item { SettingsHeading("Data freshness", "Stale values are replaced with -- instead of being shown as current.") }
+        item {
+            ChoiceSetting("Mark data stale after", listOf(2, 3, 5, 10), (preferences.staleAfterMillis / 1_000L).toInt(), { "$it s" }) {
+                viewModel.setStaleAfterMillis(it * 1_000L)
+            }
+        }
+
+        item { SettingsHeading("Auto reconnect", "Retries the last USB ELM327 connection after an unexpected disconnect.") }
+        item { ToggleSetting("Auto reconnect", "Manual Disconnect never starts a reconnect loop.", preferences.autoReconnect, viewModel::setAutoReconnect) }
+        item { ChoiceSetting("Retry interval", listOf(2, 3, 5, 10), preferences.reconnectIntervalSeconds, { "$it s" }, viewModel::setReconnectIntervalSeconds) }
+        item { ChoiceSetting("Retry attempts", listOf(3, 5, 10, 15), preferences.reconnectAttempts, { "$it" }, viewModel::setReconnectAttempts) }
 
         item { SettingsHeading("Appearance", "Theme colors apply immediately without disconnecting OBD-II.") }
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ScrollableChips {
                 DashboardDefaults.themes.forEach { theme ->
                     FilterChip(
                         selected = preferences.theme.name == theme.name,
@@ -373,24 +456,8 @@ fun Settings(viewModel: MainViewModel) {
                 }
             }
         }
-        item {
-            ListItem(
-                headlineContent = { Text("Reduce motion") },
-                supportingContent = { Text("Limits gauge animation for comfort and performance") },
-                trailingContent = {
-                    Switch(preferences.reduceMotion, viewModel::setReduceMotion)
-                },
-            )
-        }
-        item {
-            ListItem(
-                headlineContent = { Text("Driving mode") },
-                supportingContent = { Text("Larger essentials and locks dashboard editing") },
-                trailingContent = {
-                    Switch(preferences.drivingMode, viewModel::setDrivingMode)
-                },
-            )
-        }
+        item { ToggleSetting("Reduce motion", "Limits gauge animation for comfort and performance.", preferences.reduceMotion, viewModel::setReduceMotion) }
+        item { ToggleSetting("Driving mode", "Larger essentials and locks dashboard editing.", preferences.drivingMode, viewModel::setDrivingMode) }
 
         item { SettingsHeading("Connection", "${connectionState.shortLabel()} · USB ELM327") }
         item {
@@ -398,29 +465,45 @@ fun Settings(viewModel: MainViewModel) {
                 Text(if (connectionState == ConnectionState.CONNECTED) "Disconnect OBD-II" else "Connect OBD-II")
             }
         }
-        item { Text("Refresh rate", style = MaterialTheme.typography.titleMedium) }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                RefreshRate.entries.forEach { rate ->
-                    FilterChip(
-                        selected = preferences.refreshRate == rate,
-                        onClick = { viewModel.setRefreshRate(rate) },
-                        label = { Text(rate.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                    )
-                }
-            }
-        }
+        item { ChoiceSetting("Refresh rate", RefreshRate.entries, preferences.refreshRate, { it.name.lowercase().replaceFirstChar(Char::uppercase) }, viewModel::setRefreshRate) }
         item {
             Text(
-                "NTU 1.2.2 • Android 8+ • Local-first • Read-only OBD-II",
+                "NTU 1.3.1 • Android 8+ • Local-first • Read-only OBD-II",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 16.dp),
             )
         }
     }
+}
+
+@Composable
+private fun ToggleSetting(title: String, detail: String, value: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        trailingContent = { Switch(checked = value, onCheckedChange = onChange) },
+    )
+}
+
+@Composable
+private fun <T> ChoiceSetting(title: String, choices: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        ScrollableChips {
+            choices.forEach { choice ->
+                FilterChip(selected = choice == selected, onClick = { onSelect(choice) }, label = { Text(label(choice)) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScrollableChips(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
 }
 
 @Composable
@@ -432,12 +515,7 @@ private fun SettingsHeading(title: String, detail: String) {
 }
 
 @Composable
-private fun MessageCard(
-    title: String,
-    message: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-) {
+private fun MessageCard(title: String, message: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
     Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -460,4 +538,15 @@ private fun ConnectionState.shortLabel(): String = when (this) {
     ConnectionState.INITIALIZING -> "Initializing"
     ConnectionState.CONNECTED -> "Connected"
     ConnectionState.ERROR -> "Connection error"
+}
+
+private fun vibrateAlert(context: Context, critical: Boolean) {
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    } ?: return
+    val pattern = if (critical) longArrayOf(0, 220, 100, 220) else longArrayOf(0, 180)
+    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
 }
