@@ -53,7 +53,11 @@ import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.DataFreshness
 import com.nowtuneup.app.domain.model.ReadingStats
 import com.nowtuneup.app.domain.model.VehicleReading
+import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
+import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
 import com.nowtuneup.app.ui.dashboard.components.DrivingDashboardWidget
+import com.nowtuneup.app.ui.hud.HudDashboard
+import com.nowtuneup.app.util.DisplayReadingAdapter
 import kotlinx.coroutines.delay
 
 @Composable
@@ -72,14 +76,38 @@ fun DashboardScreen(
     onEdit: () -> Unit,
     onEnterFocus: () -> Unit,
     onExitFocus: () -> Unit,
+    onExitHud: () -> Unit,
+    onToggleHudMirror: () -> Unit,
     onToggleControls: () -> Unit,
     onToggleTouchLock: () -> Unit,
     onResetStats: () -> Unit,
 ) {
+    if (preferences.hudMode) {
+        HudDashboard(
+            readings = readings,
+            preferences = preferences,
+            connectionState = connectionState,
+            activeAlerts = activeAlerts,
+            onExitHud = onExitHud,
+            onToggleMirror = onToggleHudMirror,
+            onToggleTouchLock = onToggleTouchLock,
+        )
+        return
+    }
+
     val device = LocalConfiguration.current
     val landscape = device.screenWidthDp > device.screenHeightDp
+    val deviceLayout = AdaptiveLayoutResolver.resolve(
+        requested = preferences.adaptiveLayoutProfile,
+        screenWidthDp = device.screenWidthDp,
+        screenHeightDp = device.screenHeightDp,
+        smallestWidthDp = device.smallestScreenWidthDp,
+    )
     val layout = if (landscape) config.landscape else config.portrait
-    val columns = layout.columns.coerceIn(1, 6)
+    val columns = AdaptiveLayoutResolver.dashboardColumns(layout.columns, deviceLayout, landscape)
+    val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
+    val immersiveDashboard = preferences.focusMode || headUnitImmersive
+    val compact = landscape || deviceLayout != ResolvedDeviceLayout.PHONE
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
@@ -104,12 +132,13 @@ fun DashboardScreen(
             },
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (!preferences.focusMode) {
-                ConnectionSetupCard(connectionState, onConnectionAction, compact = landscape)
+            if (!immersiveDashboard) {
+                ConnectionSetupCard(connectionState, onConnectionAction, compact = compact)
                 DashboardHeader(
                     config = config,
                     landscape = landscape,
                     columns = columns,
+                    deviceLayout = deviceLayout,
                     drivingMode = preferences.drivingMode,
                     onEdit = onEdit,
                     onEnterFocus = onEnterFocus,
@@ -117,7 +146,7 @@ fun DashboardScreen(
             }
 
             activeAlerts.firstOrNull()?.let { alert ->
-                AlertBanner(alert, compact = preferences.focusMode || landscape)
+                AlertBanner(alert, compact = immersiveDashboard || compact)
             }
 
             if (layout.widgets.isEmpty()) {
@@ -125,24 +154,40 @@ fun DashboardScreen(
                     Text("This orientation has no widgets. Open the editor or copy the other layout.")
                 }
             } else {
+                val spacing = when (deviceLayout) {
+                    ResolvedDeviceLayout.PHONE -> if (immersiveDashboard || landscape) 6.dp else 10.dp
+                    ResolvedDeviceLayout.TABLET -> 10.dp
+                    ResolvedDeviceLayout.HEAD_UNIT -> 12.dp
+                }
+                val padding = when (deviceLayout) {
+                    ResolvedDeviceLayout.PHONE -> if (immersiveDashboard || landscape) 6.dp else 12.dp
+                    ResolvedDeviceLayout.TABLET -> 14.dp
+                    ResolvedDeviceLayout.HEAD_UNIT -> 16.dp
+                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(columns),
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(if (preferences.focusMode || landscape) 6.dp else 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(if (preferences.focusMode || landscape) 6.dp else 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(if (preferences.focusMode || landscape) 6.dp else 10.dp),
+                    contentPadding = PaddingValues(padding),
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                    verticalArrangement = Arrangement.spacedBy(spacing),
                 ) {
                     items(
                         items = layout.widgets,
                         key = { it.id },
                         span = { widget -> GridItemSpan(widget.columnSpan.coerceIn(1, columns)) },
                     ) { widget ->
-                        val reading = readings.firstOrNull { it.pid == widget.pid }
+                        val nativeReading = readings.firstOrNull { it.pid == widget.pid }
+                        val displayReading = DisplayReadingAdapter.reading(nativeReading, widget.unit)
+                        val displayStats = DisplayReadingAdapter.stats(
+                            stats = readingStats[widget.pid],
+                            sourceUnit = nativeReading?.unit.orEmpty(),
+                            target = widget.unit,
+                        )
                         DrivingDashboardWidget(
                             config = widget,
-                            reading = reading,
-                            stats = readingStats[widget.pid],
-                            freshness = readingFreshness(reading, connectionState, now, preferences),
+                            reading = displayReading,
+                            stats = displayStats,
+                            freshness = readingFreshness(nativeReading, connectionState, now, preferences),
                             reduceMotion = preferences.reduceMotion || preferences.drivingMode,
                             dtcCount = dtcCount,
                             showPeakHold = preferences.showPeakHold,
@@ -153,7 +198,7 @@ fun DashboardScreen(
             }
         }
 
-        if (preferences.focusMode) {
+        if (immersiveDashboard) {
             CompactConnectionIndicator(
                 state = connectionState,
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
@@ -163,15 +208,15 @@ fun DashboardScreen(
                 pageCount = pageCount,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
             )
-            if (controlsVisible) {
-                FocusControls(
-                    touchLocked = preferences.touchLock,
-                    onToggleTouchLock = onToggleTouchLock,
-                    onResetStats = onResetStats,
-                    onExitFocus = onExitFocus,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
-                )
-            }
+        }
+        if (preferences.focusMode && controlsVisible) {
+            FocusControls(
+                touchLocked = preferences.touchLock,
+                onToggleTouchLock = onToggleTouchLock,
+                onResetStats = onResetStats,
+                onExitFocus = onExitFocus,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+            )
         }
     }
 }
@@ -181,6 +226,7 @@ private fun DashboardHeader(
     config: DashboardConfig,
     landscape: Boolean,
     columns: Int,
+    deviceLayout: ResolvedDeviceLayout,
     drivingMode: Boolean,
     onEdit: () -> Unit,
     onEnterFocus: () -> Unit,
@@ -197,7 +243,7 @@ private fun DashboardHeader(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (landscape) "Landscape" else "Portrait"} · $columns columns",
+                "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${deviceLayout.label()} · $columns columns",
                 style = MaterialTheme.typography.labelMedium,
             )
         }
@@ -245,7 +291,10 @@ private fun CompactConnectionIndicator(state: ConnectionState, modifier: Modifie
         else -> Color(0xFFFFC107)
     }
     Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.62f), shape = CircleShape) {
-        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(Modifier.size(8.dp).background(color, CircleShape))
             Text("  ${state.shortLabel()}", style = MaterialTheme.typography.labelSmall)
         }
@@ -285,7 +334,12 @@ private fun readingFreshness(
     preferences: DashboardPreferences,
 ): DataFreshness {
     if (connectionState != ConnectionState.CONNECTED) {
-        return if (connectionState in setOf(ConnectionState.CONNECTING, ConnectionState.INITIALIZING, ConnectionState.DEVICE_DETECTED)) {
+        return if (connectionState in setOf(
+                ConnectionState.CONNECTING,
+                ConnectionState.INITIALIZING,
+                ConnectionState.DEVICE_DETECTED,
+            )
+        ) {
             DataFreshness.RECONNECTING
         } else {
             DataFreshness.NO_DATA
@@ -335,7 +389,9 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
         else -> MaterialTheme.colorScheme.secondary
     }
 
-    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp),
+    ) {
         Column(
             modifier = Modifier.padding(if (compact) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
@@ -349,7 +405,9 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
                 }
                 Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (!compact || state != ConnectionState.CONNECTED) Text(detail, style = MaterialTheme.typography.bodySmall)
+                    if (!compact || state != ConnectionState.CONNECTED) {
+                        Text(detail, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 if (!busy) {
                     Button(onClick = onAction) {
@@ -392,7 +450,8 @@ private fun ConnectionSteps(state: ConnectionState) {
                     Text(
                         if (completed) "✓" else "${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -400,6 +459,12 @@ private fun ConnectionSteps(state: ConnectionState) {
             }
         }
     }
+}
+
+private fun ResolvedDeviceLayout.label(): String = when (this) {
+    ResolvedDeviceLayout.PHONE -> "Phone"
+    ResolvedDeviceLayout.TABLET -> "Tablet"
+    ResolvedDeviceLayout.HEAD_UNIT -> "Head unit"
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {
