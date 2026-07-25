@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.1.1",
-  tagName: "v1.1.1",
-  versionCode: 3,
+  version: "1.2.0",
+  tagName: "v1.2.0",
+  versionCode: 4,
   apkName: "NowTuneUp.apk",
-  apkSize: 12609006,
+  apkSize: 12625394,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "1924463d037b4b42ca68d76fd01f6808dd34fd96d62142942802801bcdb4c85e",
+  sha256: "ec835e9560708bb25f7377ba752c142c60ebf3f28459f70c2cb95e6732bc2a1b",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-07-25T05:41:40.000Z",
-  releaseNotes: "Usability update with guided USB/ELM327 connection steps, clearer loading and error states, improved default dashboards, practical mobile settings, resizable widgets and distinct Classic, Sport, Minimal, Neon and OEM gauges.",
+  publishedAt: "2026-07-25T06:15:56.000Z",
+  releaseNotes: "Dashboard Editor release with long-press drag and drop, width and height resizing, a full widget configuration sheet, dashboard theme editor, warning and critical thresholds, five selectable analog gauge styles, and JSON file import/export.",
 };
 
 export function getLocalRelease(version?: string) {
