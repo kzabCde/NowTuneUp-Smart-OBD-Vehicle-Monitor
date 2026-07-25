@@ -1,6 +1,7 @@
 package com.nowtuneup.app.ui.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,86 +29,183 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nowtuneup.app.domain.model.AlertSeverity
 import com.nowtuneup.app.domain.model.ConnectionState
+import com.nowtuneup.app.domain.model.DashboardAlert
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardPreferences
+import com.nowtuneup.app.domain.model.DataFreshness
+import com.nowtuneup.app.domain.model.ReadingStats
 import com.nowtuneup.app.domain.model.VehicleReading
-import com.nowtuneup.app.ui.dashboard.components.DashboardWidgetView
+import com.nowtuneup.app.ui.dashboard.components.DrivingDashboardWidget
+import kotlinx.coroutines.delay
 
 @Composable
 fun DashboardScreen(
     config: DashboardConfig,
     readings: List<VehicleReading>,
+    readingStats: Map<Int, ReadingStats>,
     preferences: DashboardPreferences,
     connectionState: ConnectionState,
     dtcCount: Int,
+    activeAlerts: List<DashboardAlert>,
+    pageIndex: Int,
+    pageCount: Int,
+    controlsVisible: Boolean,
     onConnectionAction: () -> Unit,
     onEdit: () -> Unit,
+    onEnterFocus: () -> Unit,
+    onExitFocus: () -> Unit,
+    onToggleControls: () -> Unit,
+    onToggleTouchLock: () -> Unit,
+    onResetStats: () -> Unit,
 ) {
     val device = LocalConfiguration.current
     val landscape = device.screenWidthDp > device.screenHeightDp
     val layout = if (landscape) config.landscape else config.portrait
     val columns = layout.columns.coerceIn(1, 6)
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ConnectionSetupCard(connectionState, onConnectionAction, compact = landscape)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(
-                horizontal = 14.dp,
-                vertical = if (landscape) 2.dp else 6.dp,
-            ),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text(
-                    config.name,
-                    style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            now = System.currentTimeMillis()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(preferences.focusMode, preferences.touchLock) {
+                detectTapGestures(
+                    onTap = {
+                        if (preferences.focusMode && !preferences.touchLock) onToggleControls()
+                    },
+                    onLongPress = {
+                        if (preferences.focusMode) onToggleTouchLock()
+                    },
                 )
-                Text(
-                    "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (landscape) "Landscape" else "Portrait"} · $columns columns",
-                    style = MaterialTheme.typography.labelMedium,
+            },
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (!preferences.focusMode) {
+                ConnectionSetupCard(connectionState, onConnectionAction, compact = landscape)
+                DashboardHeader(
+                    config = config,
+                    landscape = landscape,
+                    columns = columns,
+                    drivingMode = preferences.drivingMode,
+                    onEdit = onEdit,
+                    onEnterFocus = onEnterFocus,
                 )
             }
-            if (!preferences.drivingMode) {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit dashboard")
+
+            activeAlerts.firstOrNull()?.let { alert ->
+                AlertBanner(alert, compact = preferences.focusMode || landscape)
+            }
+
+            if (layout.widgets.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("This orientation has no widgets. Open the editor or copy the other layout.")
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(if (preferences.focusMode || landscape) 6.dp else 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (preferences.focusMode || landscape) 6.dp else 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (preferences.focusMode || landscape) 6.dp else 10.dp),
+                ) {
+                    items(
+                        items = layout.widgets,
+                        key = { it.id },
+                        span = { widget -> GridItemSpan(widget.columnSpan.coerceIn(1, columns)) },
+                    ) { widget ->
+                        val reading = readings.firstOrNull { it.pid == widget.pid }
+                        DrivingDashboardWidget(
+                            config = widget,
+                            reading = reading,
+                            stats = readingStats[widget.pid],
+                            freshness = readingFreshness(reading, connectionState, now, preferences),
+                            reduceMotion = preferences.reduceMotion || preferences.drivingMode,
+                            dtcCount = dtcCount,
+                            showPeakHold = preferences.showPeakHold,
+                            showMinMax = preferences.showMinMax,
+                        )
+                    }
                 }
             }
         }
 
-        if (layout.widgets.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("This orientation has no widgets. Open the editor or copy the other layout.")
+        if (preferences.focusMode) {
+            CompactConnectionIndicator(
+                state = connectionState,
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+            )
+            PageIndicator(
+                pageIndex = pageIndex,
+                pageCount = pageCount,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
+            )
+            if (controlsVisible) {
+                FocusControls(
+                    touchLocked = preferences.touchLock,
+                    onToggleTouchLock = onToggleTouchLock,
+                    onResetStats = onResetStats,
+                    onExitFocus = onExitFocus,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                )
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(if (landscape) 8.dp else 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 10.dp),
-                verticalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 10.dp),
-            ) {
-                items(
-                    items = layout.widgets,
-                    key = { it.id },
-                    span = { widget -> GridItemSpan(widget.columnSpan.coerceIn(1, columns)) },
-                ) { widget ->
-                    DashboardWidgetView(
-                        config = widget,
-                        reading = readings.firstOrNull { it.pid == widget.pid },
-                        reduceMotion = preferences.reduceMotion || preferences.drivingMode,
-                        dtcCount = dtcCount,
-                    )
+        }
+    }
+}
+
+@Composable
+private fun DashboardHeader(
+    config: DashboardConfig,
+    landscape: Boolean,
+    columns: Int,
+    drivingMode: Boolean,
+    onEdit: () -> Unit,
+    onEnterFocus: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = if (landscape) 2.dp else 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                config.name,
+                style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (landscape) "Landscape" else "Portrait"} · $columns columns",
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onEnterFocus) { Text("Focus") }
+            if (!drivingMode) {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit dashboard")
                 }
             }
         }
@@ -115,11 +213,97 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun ConnectionSetupCard(
-    state: ConnectionState,
-    onAction: () -> Unit,
-    compact: Boolean,
+private fun FocusControls(
+    touchLocked: Boolean,
+    onToggleTouchLock: () -> Unit,
+    onResetStats: () -> Unit,
+    onExitFocus: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    Surface(
+        modifier = modifier,
+        color = Color.Black.copy(alpha = 0.78f),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onToggleTouchLock) { Text(if (touchLocked) "Unlock" else "Lock") }
+            TextButton(onClick = onResetStats) { Text("Reset peak") }
+            TextButton(onClick = onExitFocus) { Text("Exit") }
+        }
+    }
+}
+
+@Composable
+private fun CompactConnectionIndicator(state: ConnectionState, modifier: Modifier = Modifier) {
+    val color = when (state) {
+        ConnectionState.CONNECTED -> Color(0xFF4CAF50)
+        ConnectionState.ERROR -> Color(0xFFFF5252)
+        ConnectionState.DISCONNECTED -> Color(0xFF90A4AE)
+        else -> Color(0xFFFFC107)
+    }
+    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.62f), shape = CircleShape) {
+        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).background(color, CircleShape))
+            Text("  ${state.shortLabel()}", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun PageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
+    if (pageCount <= 1) return
+    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.55f), shape = CircleShape) {
+        Text(
+            text = "${pageIndex + 1} / $pageCount",
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+@Composable
+private fun AlertBanner(alert: DashboardAlert, compact: Boolean) {
+    val color = if (alert.severity == AlertSeverity.CRITICAL) Color(0xFFD50000) else Color(0xFFFFA000)
+    Surface(color = color, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "${alert.severity.name}: ${alert.title} ${"%.1f".format(alert.value)} ${alert.unit.name.lowercase()}",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = if (compact) 5.dp else 9.dp),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+private fun readingFreshness(
+    reading: VehicleReading?,
+    connectionState: ConnectionState,
+    now: Long,
+    preferences: DashboardPreferences,
+): DataFreshness {
+    if (connectionState != ConnectionState.CONNECTED) {
+        return if (connectionState in setOf(ConnectionState.CONNECTING, ConnectionState.INITIALIZING, ConnectionState.DEVICE_DETECTED)) {
+            DataFreshness.RECONNECTING
+        } else {
+            DataFreshness.NO_DATA
+        }
+    }
+    if (reading == null) return DataFreshness.NO_DATA
+    if (!reading.supported) return DataFreshness.UNSUPPORTED
+    if (reading.value == null) return DataFreshness.NO_DATA
+    val age = (now - reading.updatedAt).coerceAtLeast(0L)
+    return when {
+        age <= preferences.delayedAfterMillis -> DataFreshness.LIVE
+        age <= preferences.staleAfterMillis -> DataFreshness.DELAYED
+        else -> DataFreshness.STALE
+    }
+}
+
+@Composable
+private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, compact: Boolean) {
     val connected = state == ConnectionState.CONNECTED
     val busy = state in setOf(
         ConnectionState.DEVICE_DETECTED,
@@ -151,12 +335,7 @@ private fun ConnectionSetupCard(
         else -> MaterialTheme.colorScheme.secondary
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(
-            horizontal = 12.dp,
-            vertical = if (compact) 4.dp else 8.dp,
-        ),
-    ) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp)) {
         Column(
             modifier = Modifier.padding(if (compact) 10.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
@@ -170,9 +349,7 @@ private fun ConnectionSetupCard(
                 }
                 Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (!compact || state != ConnectionState.CONNECTED) {
-                        Text(detail, style = MaterialTheme.typography.bodySmall)
-                    }
+                    if (!compact || state != ConnectionState.CONNECTED) Text(detail, style = MaterialTheme.typography.bodySmall)
                 }
                 if (!busy) {
                     Button(onClick = onAction) {
@@ -196,7 +373,6 @@ private fun ConnectionSteps(state: ConnectionState) {
         ConnectionState.ERROR -> 0
     }
     val labels = listOf("USB", "Permission", "Adapter", "ECU")
-
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         labels.forEachIndexed { index, label ->
             val completed = activeStep > index
@@ -216,8 +392,7 @@ private fun ConnectionSteps(state: ConnectionState) {
                     Text(
                         if (completed) "✓" else "${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -225,4 +400,14 @@ private fun ConnectionSteps(state: ConnectionState) {
             }
         }
     }
+}
+
+private fun ConnectionState.shortLabel(): String = when (this) {
+    ConnectionState.DISCONNECTED -> "Disconnected"
+    ConnectionState.DEVICE_DETECTED -> "USB detected"
+    ConnectionState.REQUESTING_PERMISSION -> "Permission"
+    ConnectionState.CONNECTING -> "Connecting"
+    ConnectionState.INITIALIZING -> "Initializing"
+    ConnectionState.CONNECTED -> "Connected"
+    ConnectionState.ERROR -> "Error"
 }
