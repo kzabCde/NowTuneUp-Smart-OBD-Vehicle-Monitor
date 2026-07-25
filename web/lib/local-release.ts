@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.3.1",
-  tagName: "v1.3.1",
-  versionCode: 7,
+  version: "1.4.0",
+  tagName: "v1.4.0",
+  versionCode: 8,
   apkName: "NowTuneUp.apk",
-  apkSize: 12690958,
+  apkSize: 12723726,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "b831721321c984234cb5cd26a8949d48ab4ee51a10e5bcd6957f320225791ff8",
+  sha256: "2f8fab66f2c8906e95110fa3f3e02414d830eea5c051d5dc3e52c5410e03d994",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-07-25T12:00:50.000Z",
-  releaseNotes: "Adds Gauge Focus Mode with tap-to-hide controls, touch lock, keep-screen-on, automatic focus, swipeable dashboard pages and compact connection status. Adds Peak/Min/Max, threshold alerts with sound, vibration, hysteresis and cooldown, data freshness and stale-value protection, automatic reconnect and last-dashboard resume.",
+  publishedAt: "2026-07-25T13:40:45.000Z",
+  releaseNotes: "Adds calculated Turbo Pressure from MAP and barometric OBD-II PIDs with kPa, bar and PSI display. Adds mirrored HUD Mode with brightness, color and burn-in protection controls. Adds adaptive Phone, Tablet and Android Head Unit layouts with navigation rail, wide-screen dashboard density and immersive operation.",
 };
 
 export function getLocalRelease(version?: string) {

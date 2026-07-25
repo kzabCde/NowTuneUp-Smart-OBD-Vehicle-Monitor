@@ -10,8 +10,8 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.nowtuneup.app.domain.model.DashboardPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore("ntu_settings")
 
@@ -72,6 +72,17 @@ class SettingsRepository @Inject constructor(
             alertSound = if (root.has("alertSound")) parsed.alertSound else defaults.alertSound,
             alertVibration = if (root.has("alertVibration")) parsed.alertVibration else defaults.alertVibration,
             autoReconnect = if (root.has("autoReconnect")) parsed.autoReconnect else defaults.autoReconnect,
+            hudMode = if (root.has("hudMode")) parsed.hudMode else defaults.hudMode,
+            hudMirror = if (root.has("hudMirror")) parsed.hudMirror else defaults.hudMirror,
+            hudBurnInProtection = if (root.has("hudBurnInProtection")) parsed.hudBurnInProtection else defaults.hudBurnInProtection,
+            hudBrightnessPercent = if (root.has("hudBrightnessPercent")) parsed.hudBrightnessPercent else defaults.hudBrightnessPercent,
+            hudColorPreset = if (root.has("hudColorPreset")) parsed.hudColorPreset else defaults.hudColorPreset,
+            adaptiveLayoutProfile = if (root.has("adaptiveLayoutProfile")) {
+                parsed.adaptiveLayoutProfile
+            } else {
+                defaults.adaptiveLayoutProfile
+            },
+            headUnitImmersive = if (root.has("headUnitImmersive")) parsed.headUnitImmersive else defaults.headUnitImmersive,
         ).normalized()
     }
 
@@ -83,5 +94,6 @@ class SettingsRepository @Inject constructor(
         staleAfterMillis = staleAfterMillis.coerceAtLeast(delayedAfterMillis + 500L).coerceAtMost(30_000L),
         reconnectIntervalSeconds = reconnectIntervalSeconds.coerceIn(1, 30),
         reconnectAttempts = reconnectAttempts.coerceIn(1, 20),
+        hudBrightnessPercent = hudBrightnessPercent.coerceIn(20, 100),
     )
 }

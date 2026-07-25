@@ -1,5 +1,6 @@
 package com.nowtuneup.app
 
+import android.app.Activity
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -8,6 +9,7 @@ import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.horizontalScroll
@@ -45,6 +47,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -62,18 +66,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
+import com.nowtuneup.app.data.obd.pid.DerivedPids
+import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
 import com.nowtuneup.app.domain.model.ConnectionState
-import com.nowtuneup.app.domain.model.DashboardPreferences
+import com.nowtuneup.app.domain.model.HudColorPreset
 import com.nowtuneup.app.domain.model.RefreshRate
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
+import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
+import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
 import com.nowtuneup.app.ui.dashboard.DashboardScreen
 import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
 import dagger.hilt.android.AndroidEntryPoint
@@ -108,12 +119,47 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val context = LocalContext.current
     val view = LocalView.current
-    val focusActive = selectedDestination == 0 && preferences.focusMode
+    val configuration = LocalConfiguration.current
+    val deviceLayout = AdaptiveLayoutResolver.resolve(
+        requested = preferences.adaptiveLayoutProfile,
+        screenWidthDp = configuration.screenWidthDp,
+        screenHeightDp = configuration.screenHeightDp,
+        smallestWidthDp = configuration.smallestScreenWidthDp,
+    )
+    val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
+    val chromeHidden = selectedDestination == 0 && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
+    val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE
+    val activity = context as? Activity
 
     DisposableEffect(preferences.keepScreenOn, connectionState) {
         val previous = view.keepScreenOn
         view.keepScreenOn = preferences.keepScreenOn && connectionState == ConnectionState.CONNECTED
         onDispose { view.keepScreenOn = previous }
+    }
+
+    DisposableEffect(preferences.hudMode, preferences.hudBrightnessPercent) {
+        val window = activity?.window
+        val previous = window?.attributes?.screenBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (preferences.hudMode && window != null) {
+            val attributes = window.attributes
+            attributes.screenBrightness = preferences.hudBrightnessPercent.coerceIn(20, 100) / 100f
+            window.attributes = attributes
+        }
+        onDispose {
+            if (window != null) {
+                val attributes = window.attributes
+                attributes.screenBrightness = previous
+                window.attributes = attributes
+            }
+        }
+    }
+
+    DisposableEffect(chromeHidden) {
+        val window = activity?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        if (chromeHidden) controller?.hide(WindowInsetsCompat.Type.systemBars())
+        else controller?.show(WindowInsetsCompat.Type.systemBars())
+        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 
     LaunchedEffect(connectionState, preferences.autoFocusOnConnect) {
@@ -143,12 +189,19 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     NtuTheme(preferences.theme) {
         Scaffold(
             topBar = {
-                if (!focusActive) {
+                if (!chromeHidden) {
                     TopAppBar(
                         title = {
                             Column {
                                 Text("NTU", fontWeight = FontWeight.Black)
-                                Text("Vehicle monitor", fontSize = 11.sp)
+                                Text(
+                                    when (deviceLayout) {
+                                        ResolvedDeviceLayout.PHONE -> "Vehicle monitor"
+                                        ResolvedDeviceLayout.TABLET -> "Tablet vehicle monitor"
+                                        ResolvedDeviceLayout.HEAD_UNIT -> "Android head unit"
+                                    },
+                                    fontSize = 11.sp,
+                                )
                             }
                         },
                         actions = {
@@ -167,7 +220,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 }
             },
             bottomBar = {
-                if (!focusActive) {
+                if (!chromeHidden && !useNavigationRail) {
                     NavigationBar {
                         destinations.forEachIndexed { index, destination ->
                             NavigationBarItem(
@@ -181,13 +234,27 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 }
             },
         ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
-                when (selectedDestination) {
-                    0 -> Dashboard(viewModel)
-                    1 -> LiveData(viewModel)
-                    2 -> Diagnostics(viewModel)
-                    3 -> Trips(viewModel)
-                    else -> Settings(viewModel)
+            Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                if (!chromeHidden && useNavigationRail) {
+                    NavigationRail {
+                        destinations.forEachIndexed { index, destination ->
+                            NavigationRailItem(
+                                selected = selectedDestination == index,
+                                onClick = { selectedDestination = index },
+                                icon = { Icon(destination.icon, contentDescription = destination.title) },
+                                label = { Text(destination.title, fontSize = 11.sp) },
+                            )
+                        }
+                    }
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    when (selectedDestination) {
+                        0 -> Dashboard(viewModel)
+                        1 -> LiveData(viewModel)
+                        2 -> Diagnostics(viewModel)
+                        3 -> Trips(viewModel)
+                        else -> Settings(viewModel)
+                    }
                 }
             }
         }
@@ -249,7 +316,7 @@ fun Dashboard(viewModel: MainViewModel) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = preferences.swipePages && !preferences.touchLock,
+            userScrollEnabled = preferences.swipePages && !preferences.touchLock && !preferences.hudMode,
             key = { pages[it].id },
         ) { page ->
             DashboardScreen(
@@ -273,6 +340,8 @@ fun Dashboard(viewModel: MainViewModel) {
                     controlsVisible = true
                     viewModel.setFocusMode(false)
                 },
+                onExitHud = { viewModel.setHudMode(false) },
+                onToggleHudMirror = { viewModel.setHudMirror(!preferences.hudMirror) },
                 onToggleControls = { controlsVisible = !controlsVisible },
                 onToggleTouchLock = {
                     controlsVisible = true
@@ -316,11 +385,17 @@ fun LiveData(viewModel: MainViewModel) {
                 items(filtered, key = { it.pid }) { reading ->
                     ListItem(
                         headlineContent = { Text(reading.name) },
-                        overlineContent = { Text("PID 01%02X".format(reading.pid)) },
+                        overlineContent = {
+                            Text(if (reading.pid == DerivedPids.TURBO_PRESSURE) "DERIVED · MAP − BARO" else "PID 01%02X".format(reading.pid))
+                        },
                         supportingContent = {
                             Text(
                                 when {
-                                    !reading.supported -> "Not supported by this vehicle"
+                                    !reading.supported -> if (reading.pid == DerivedPids.TURBO_PRESSURE) {
+                                        "Vehicle must support MAP PID 0x0B and barometric PID 0x33"
+                                    } else {
+                                        "Not supported by this vehicle"
+                                    }
                                     reading.value == null -> "Waiting for a valid response"
                                     else -> "Updated ${System.currentTimeMillis() - reading.updatedAt} ms ago"
                                 },
@@ -343,9 +418,11 @@ fun Diagnostics(viewModel: MainViewModel) {
         item {
             Text("Stored diagnostic trouble codes", style = MaterialTheme.typography.headlineSmall)
             Text("Read-only scan. NTU never clears codes or changes the ECU.")
-            Button(onClick = viewModel::scan, enabled = connectionState == ConnectionState.CONNECTED, modifier = Modifier.padding(vertical = 12.dp)) {
-                Text("Scan stored DTCs")
-            }
+            Button(
+                onClick = viewModel::scan,
+                enabled = connectionState == ConnectionState.CONNECTED,
+                modifier = Modifier.padding(vertical = 12.dp),
+            ) { Text("Scan stored DTCs") }
         }
         if (connectionState != ConnectionState.CONNECTED) {
             item { MessageCard("Connect before scanning", "Turn the ignition on and establish an OBD-II connection first.", "Connect", viewModel::toggleConnection) }
@@ -396,6 +473,34 @@ fun Settings(viewModel: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
+
+        item { SettingsHeading("Turbo pressure", "Calculated from MAP PID 0x0B minus barometric pressure PID 0x33.") }
+        item {
+            MessageCard(
+                "True gauge pressure",
+                "Turbo pressure is shown only when the vehicle supports both standard PIDs. Choose kPa, bar or PSI in Dashboard Editor.",
+            )
+        }
+
+        item { SettingsHeading("HUD Mode", "Mirrored high-contrast display for reflection on the windscreen.") }
+        item { ToggleSetting("HUD Mode", "Shows Speed, RPM and Turbo on a black full-screen display.", preferences.hudMode, viewModel::setHudMode) }
+        item { ToggleSetting("Mirror horizontally", "Required when reflecting the display on the windscreen.", preferences.hudMirror, viewModel::setHudMirror) }
+        item { ToggleSetting("Burn-in protection", "Moves HUD content by a few pixels every minute.", preferences.hudBurnInProtection, viewModel::setHudBurnInProtection) }
+        item { ChoiceSetting("HUD color", HudColorPreset.entries, preferences.hudColorPreset, { it.name.lowercase().replaceFirstChar(Char::uppercase) }, viewModel::setHudColorPreset) }
+        item { ChoiceSetting("HUD brightness", listOf(40, 60, 80, 100), preferences.hudBrightnessPercent, { "$it%" }, viewModel::setHudBrightnessPercent) }
+
+        item { SettingsHeading("Tablet and head unit", "Adaptive navigation and dashboard density for larger displays.") }
+        item {
+            ChoiceSetting(
+                "Layout profile",
+                AdaptiveLayoutProfile.entries,
+                preferences.adaptiveLayoutProfile,
+                { it.name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase) },
+                viewModel::setAdaptiveLayoutProfile,
+            )
+        }
+        item { ToggleSetting("Head unit immersive", "Hides dashboard headers and uses the maximum gauge area on wide displays.", preferences.headUnitImmersive, viewModel::setHeadUnitImmersive) }
+
         item { SettingsHeading("Dashboard pages", "Swipe between saved dashboards while Focus Mode is active.") }
         item {
             ScrollableChips {
@@ -416,9 +521,7 @@ fun Settings(viewModel: MainViewModel) {
         item { ToggleSetting("Resume Focus Mode", "Restore the previous driving view after reopening the app.", preferences.resumeFocusMode, viewModel::setResumeFocusMode) }
         item { ToggleSetting("Keep screen on", "Keeps the display awake only while OBD-II is connected.", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
         item { ToggleSetting("Touch lock", "Long-press the dashboard to lock or unlock touches.", preferences.touchLock, viewModel::setTouchLock) }
-        item {
-            ChoiceSetting("Controls auto-hide", listOf(3, 4, 5, 8), preferences.controlsAutoHideSeconds, { "$it s" }, viewModel::setControlsAutoHideSeconds)
-        }
+        item { ChoiceSetting("Controls auto-hide", listOf(3, 4, 5, 8), preferences.controlsAutoHideSeconds, { "$it s" }, viewModel::setControlsAutoHideSeconds) }
 
         item { SettingsHeading("Peak and Min/Max", "Statistics reset when a trip starts or Reset peak is tapped.") }
         item { ToggleSetting("Peak hold", "Shows the highest value reached for each PID.", preferences.showPeakHold, viewModel::setShowPeakHold) }
@@ -468,7 +571,7 @@ fun Settings(viewModel: MainViewModel) {
         item { ChoiceSetting("Refresh rate", RefreshRate.entries, preferences.refreshRate, { it.name.lowercase().replaceFirstChar(Char::uppercase) }, viewModel::setRefreshRate) }
         item {
             Text(
-                "NTU 1.3.1 • Android 8+ • Local-first • Read-only OBD-II",
+                "NTU 1.4.0 • Android 8+ • Local-first • Read-only OBD-II",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 16.dp),
             )
@@ -486,7 +589,13 @@ private fun ToggleSetting(title: String, detail: String, value: Boolean, onChang
 }
 
 @Composable
-private fun <T> ChoiceSetting(title: String, choices: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+private fun <T> ChoiceSetting(
+    title: String,
+    choices: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         ScrollableChips {
@@ -515,7 +624,12 @@ private fun SettingsHeading(title: String, detail: String) {
 }
 
 @Composable
-private fun MessageCard(title: String, message: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
+private fun MessageCard(
+    title: String,
+    message: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)

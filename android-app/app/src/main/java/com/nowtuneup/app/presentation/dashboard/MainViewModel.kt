@@ -11,16 +11,19 @@ import com.nowtuneup.app.data.local.entity.TripEntity
 import com.nowtuneup.app.data.obd.session.ObdSessionManager
 import com.nowtuneup.app.data.preferences.SettingsRepository
 import com.nowtuneup.app.domain.alert.AlertEngine
+import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
 import com.nowtuneup.app.domain.model.AlertSeverity
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.DashboardAlert
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.Dtc
+import com.nowtuneup.app.domain.model.HudColorPreset
 import com.nowtuneup.app.domain.model.ReadingStats
 import com.nowtuneup.app.domain.model.RefreshRate
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.VehicleReading
+import com.nowtuneup.app.util.DisplayReadingAdapter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -112,7 +115,9 @@ class MainViewModel @Inject constructor(
     fun selectTheme(theme: ThemeConfig) = updatePreferences { it.copy(theme = theme) }
     fun setReduceMotion(value: Boolean) = updatePreferences { it.copy(reduceMotion = value) }
     fun setDrivingMode(value: Boolean) = updatePreferences { it.copy(drivingMode = value) }
-    fun setFocusMode(value: Boolean) = updatePreferences { it.copy(focusMode = value, touchLock = if (value) it.touchLock else false) }
+    fun setFocusMode(value: Boolean) = updatePreferences {
+        it.copy(focusMode = value, touchLock = if (value) it.touchLock else false)
+    }
     fun setAutoFocusOnConnect(value: Boolean) = updatePreferences { it.copy(autoFocusOnConnect = value) }
     fun setTouchLock(value: Boolean) = updatePreferences { it.copy(touchLock = value) }
     fun setKeepScreenOn(value: Boolean) = updatePreferences { it.copy(keepScreenOn = value) }
@@ -130,6 +135,16 @@ class MainViewModel @Inject constructor(
     fun setStaleAfterMillis(value: Long) = updatePreferences { it.copy(staleAfterMillis = value) }
     fun setReconnectIntervalSeconds(value: Int) = updatePreferences { it.copy(reconnectIntervalSeconds = value) }
     fun setReconnectAttempts(value: Int) = updatePreferences { it.copy(reconnectAttempts = value) }
+    fun setHudMode(value: Boolean) = updatePreferences {
+        it.copy(hudMode = value, focusMode = if (value) true else it.focusMode, touchLock = false)
+    }
+    fun setHudMirror(value: Boolean) = updatePreferences { it.copy(hudMirror = value) }
+    fun setHudBurnInProtection(value: Boolean) = updatePreferences { it.copy(hudBurnInProtection = value) }
+    fun setHudBrightnessPercent(value: Int) = updatePreferences { it.copy(hudBrightnessPercent = value) }
+    fun setHudColorPreset(value: HudColorPreset) = updatePreferences { it.copy(hudColorPreset = value) }
+    fun setAdaptiveLayoutProfile(value: AdaptiveLayoutProfile) = updatePreferences { it.copy(adaptiveLayoutProfile = value) }
+    fun setHeadUnitImmersive(value: Boolean) = updatePreferences { it.copy(headUnitImmersive = value) }
+
     fun setRefreshRate(value: RefreshRate) {
         session.setRefreshInterval(value.intervalMillis)
         updatePreferences { it.copy(refreshRate = value) }
@@ -227,9 +242,11 @@ class MainViewModel @Inject constructor(
         val alerts = mutableListOf<DashboardAlert>()
 
         widgets.forEach { widget ->
-            val reading = readingsByPid[widget.pid]
-            val value = reading?.value
-            val fresh = reading != null && reading.supported && value != null && now - reading.updatedAt <= preferences.staleAfterMillis
+            val nativeReading = readingsByPid[widget.pid]
+            val displayReading = DisplayReadingAdapter.reading(nativeReading, widget.unit)
+            val value = displayReading?.value
+            val fresh = nativeReading != null && nativeReading.supported && value != null &&
+                now - nativeReading.updatedAt <= preferences.staleAfterMillis
             if (!fresh || value == null) {
                 previousAlertSeverity[widget.id] = AlertSeverity.NORMAL
                 return@forEach

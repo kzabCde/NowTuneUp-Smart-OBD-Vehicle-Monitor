@@ -1,15 +1,18 @@
 package com.nowtuneup.app.data.dashboard
 
+import com.nowtuneup.app.data.obd.pid.DerivedPids
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.WarningThreshold
+import com.nowtuneup.app.domain.model.digitalRingPreset
 
 object DashboardDefaults {
     private fun widget(
@@ -55,6 +58,20 @@ object DashboardDefaults {
         widget("throttle", 0x11, "Throttle", DisplayUnit.PERCENT, DashboardWidgetType.DIGITAL, 2),
     )
 
+    private val turbo = widget(
+        id = "turbo-pressure",
+        pid = DerivedPids.TURBO_PRESSURE,
+        title = "Turbo pressure",
+        unit = DisplayUnit.PSI,
+        type = DashboardWidgetType.DIGITAL_RING,
+        row = 0,
+        columnSpan = 2,
+        valueSize = 58,
+    ).copy(
+        rowSpan = 2,
+        digitalRing = digitalRingPreset(DigitalRingColorPreset.CYAN, segmentCount = 48),
+    )
+
     val presets = listOf(
         DashboardConfig(
             id = "daily",
@@ -66,13 +83,42 @@ object DashboardDefaults {
         ),
         DashboardConfig(
             id = "sport",
-            name = "Sport",
+            name = "Sport & Turbo",
             mode = DashboardMode.ANALOG,
             portrait = DashboardLayout(
                 columns = 2,
-                widgets = core.take(2).map {
-                    it.copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.SPORT)
-                },
+                widgets = listOf(
+                    core[0].copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.SPORT),
+                    turbo,
+                ),
+            ),
+            landscape = DashboardLayout(
+                columns = 4,
+                widgets = listOf(
+                    core[0].copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.SPORT, columnSpan = 1),
+                    core[1].copy(type = DashboardWidgetType.DIGITAL_RING, columnSpan = 1, digitalRing = digitalRingPreset(DigitalRingColorPreset.AMBER)),
+                    turbo.copy(columnSpan = 2),
+                ),
+            ),
+        ),
+        DashboardConfig(
+            id = "hud",
+            name = "HUD Essentials",
+            mode = DashboardMode.DIGITAL,
+            portrait = DashboardLayout(
+                columns = 1,
+                widgets = listOf(
+                    core[1].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 72, rowSpan = 2),
+                    turbo.copy(columnSpan = 1, rowSpan = 2),
+                ),
+            ),
+            landscape = DashboardLayout(
+                columns = 3,
+                widgets = listOf(
+                    core[1].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 72, rowSpan = 2),
+                    core[0].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 64, rowSpan = 2),
+                    turbo.copy(columnSpan = 1, rowSpan = 2),
+                ),
             ),
         ),
         DashboardConfig(

@@ -1,6 +1,7 @@
 package com.nowtuneup.app.domain.model
 
 enum class ConnectionState { DISCONNECTED, DEVICE_DETECTED, REQUESTING_PERMISSION, CONNECTING, INITIALIZING, CONNECTED, ERROR }
+
 sealed interface ObdError {
     data object UsbPermissionDenied : ObdError
     data object DeviceNotFound : ObdError
@@ -15,6 +16,7 @@ sealed interface ObdError {
 }
 
 data class UsbDeviceInfo(val id: Int, val name: String, val vendorId: Int, val productId: Int, val supported: Boolean)
+
 data class VehicleReading(
     val pid: Int,
     val name: String,
@@ -25,8 +27,23 @@ data class VehicleReading(
     val minimum: Double? = null,
     val maximum: Double? = null,
 )
-data class Dtc(val code: String, val category: String, val status: String = "Stored", val description: String?, val raw: String, val readAt: Long = System.currentTimeMillis())
-data class DashboardWidget(val pid: Int, val type: WidgetType = WidgetType.CARD, val size: WidgetSize = WidgetSize.MEDIUM, val history: Boolean = false)
+
+data class Dtc(
+    val code: String,
+    val category: String,
+    val status: String = "Stored",
+    val description: String?,
+    val raw: String,
+    val readAt: Long = System.currentTimeMillis(),
+)
+
+data class DashboardWidget(
+    val pid: Int,
+    val type: WidgetType = WidgetType.CARD,
+    val size: WidgetSize = WidgetSize.MEDIUM,
+    val history: Boolean = false,
+)
+
 enum class WidgetType { GAUGE, DIGITAL, CARD, METER, CHART }
 enum class WidgetSize { SMALL, MEDIUM, LARGE }
 data class DashboardProfile(val id: Long = 0, val name: String, val widgets: List<DashboardWidget>)
@@ -39,6 +56,8 @@ enum class DisplayUnit { RPM, KMH, MPH, CELSIUS, FAHRENHEIT, VOLT, PERCENT, KPA,
 enum class RefreshRate(val intervalMillis: Long) { LOW(1_000), BALANCED(500), FAST(200) }
 enum class DataFreshness { LIVE, DELAYED, STALE, NO_DATA, UNSUPPORTED, RECONNECTING }
 enum class AlertSeverity { NORMAL, WARNING, CRITICAL }
+enum class AdaptiveLayoutProfile { AUTO, PHONE, TABLET, HEAD_UNIT }
+enum class HudColorPreset { GREEN, AMBER, CYAN, WHITE, RED }
 
 data class WarningThreshold(
     val warningLow: Double? = null,
@@ -118,6 +137,7 @@ data class DashboardWidgetConfig(
 )
 
 data class DashboardLayout(val columns: Int = 2, val widgets: List<DashboardWidgetConfig> = emptyList())
+
 data class DashboardConfig(
     val id: String,
     val name: String,
@@ -184,4 +204,11 @@ data class DashboardPreferences(
     val autoReconnect: Boolean = true,
     val reconnectIntervalSeconds: Int = 3,
     val reconnectAttempts: Int = 5,
+    val hudMode: Boolean = false,
+    val hudMirror: Boolean = true,
+    val hudBurnInProtection: Boolean = true,
+    val hudBrightnessPercent: Int = 100,
+    val hudColorPreset: HudColorPreset = HudColorPreset.GREEN,
+    val adaptiveLayoutProfile: AdaptiveLayoutProfile = AdaptiveLayoutProfile.AUTO,
+    val headUnitImmersive: Boolean = true,
 )
