@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -68,7 +67,7 @@ fun DashboardScreen(
             Column {
                 Text(config.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "${config.mode.name.lowercase().replaceFirstChar(Char::uppercase)} dashboard",
+                    "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} dashboard",
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
