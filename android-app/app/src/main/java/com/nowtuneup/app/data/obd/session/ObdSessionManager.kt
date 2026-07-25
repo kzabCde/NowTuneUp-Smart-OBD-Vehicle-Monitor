@@ -4,11 +4,13 @@ import com.nowtuneup.app.data.obd.command.ObdCommandQueue
 import com.nowtuneup.app.data.obd.command.ObdRequest
 import com.nowtuneup.app.data.obd.parser.DtcParser
 import com.nowtuneup.app.data.obd.parser.ObdResponseParser
+import com.nowtuneup.app.data.obd.pid.DerivedPids
 import com.nowtuneup.app.data.obd.pid.StandardPids
 import com.nowtuneup.app.data.obd.pid.SupportedPidParser
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.VehicleReading
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,7 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 class ObdSessionManager @Inject constructor(private val transport: ObdTransport) {
     val connectionState = transport.connectionState
@@ -30,14 +31,19 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
     val readings: StateFlow<List<VehicleReading>> = _readings
     private var supportedPids: Set<Int> = emptySet()
     private var polling: Job? = null
-    @Volatile private var refreshIntervalMillis: Long = 500
+
+    @Volatile
+    private var refreshIntervalMillis: Long = 500
 
     suspend fun connect(): Result<Unit> {
         transport.connect().onFailure { return Result.failure(it) }
         val initialization = listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP0")
         for (command in initialization) {
             val raw = queue.execute(ObdRequest(command, timeoutMillis = 3_000, retryLimit = 0))
-                .getOrElse { disconnect(); return Result.failure(IllegalStateException("Initialization failed at $command", it)) }
+                .getOrElse {
+                    disconnect()
+                    return Result.failure(IllegalStateException("Initialization failed at $command", it))
+                }
             val upper = raw.uppercase()
             if (listOf("ERROR", "?", "UNABLE TO CONNECT", "CAN ERROR", "BUS INIT ERROR", "STOPPED").any(upper::contains)) {
                 disconnect()
@@ -45,7 +51,15 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
             }
         }
         supportedPids = discoverSupportedPids()
-        _readings.update { values -> values.map { it.copy(supported = it.pid in supportedPids, value = null) } }
+        val turboSupported = DerivedPids.MAP in supportedPids && DerivedPids.BAROMETRIC_PRESSURE in supportedPids
+        _readings.update { values ->
+            values.map { reading ->
+                reading.copy(
+                    supported = if (reading.pid == DerivedPids.TURBO_PRESSURE) turboSupported else reading.pid in supportedPids,
+                    value = null,
+                )
+            }
+        }
         startPolling()
         return Result.success(Unit)
     }
@@ -71,35 +85,96 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
 
     fun startPolling() {
         if (polling?.isActive == true || connectionState.value != ConnectionState.CONNECTED) return
-        val schedule = listOf(0x0C, 0x0D, 0x0C, 0x0D, 0x04, 0x11, 0x05, 0x42)
+        val schedule = listOf(
+            0x0C,
+            0x0D,
+            DerivedPids.MAP,
+            0x0C,
+            0x0D,
+            DerivedPids.MAP,
+            0x04,
+            0x11,
+            0x05,
+            0x42,
+            DerivedPids.BAROMETRIC_PRESSURE,
+        )
         polling = scope.launch {
             var tick = 0
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
                 val supportedSchedule = schedule.filter { it in supportedPids }
-                if (supportedSchedule.isEmpty()) { delay(1_000); continue }
+                if (supportedSchedule.isEmpty()) {
+                    delay(1_000)
+                    continue
+                }
                 val pid = supportedSchedule[tick % supportedSchedule.size]
                 val command = "01%02X".format(pid)
                 queue.execute(ObdRequest(command)).onSuccess { raw ->
                     ObdResponseParser.parseMode1(raw, pid, command).onSuccess { publish(pid, it) }
                 }
                 tick++
-                delay(if (pid == 0x0C || pid == 0x0D) refreshIntervalMillis else maxOf(refreshIntervalMillis, 700))
+                val fastPid = pid == 0x0C || pid == 0x0D || pid == DerivedPids.MAP
+                delay(if (fastPid) refreshIntervalMillis else maxOf(refreshIntervalMillis, 700))
             }
         }
     }
 
-    fun pause() { polling?.cancel(); polling = null }
-    fun setRefreshInterval(intervalMillis: Long) { refreshIntervalMillis = intervalMillis.coerceIn(200, 1_000) }
+    fun pause() {
+        polling?.cancel()
+        polling = null
+    }
+
+    fun setRefreshInterval(intervalMillis: Long) {
+        refreshIntervalMillis = intervalMillis.coerceIn(200, 1_000)
+    }
+
     suspend fun readDtcs() = queue.execute(ObdRequest("03", 4_000)).map(DtcParser::parse)
+
     fun close() = scope.cancel()
 
     private fun publish(pid: Int, value: Double) {
-        _readings.update { readings -> readings.map { if (it.pid == pid) it.copy(value = value, updatedAt = System.currentTimeMillis()) else it } }
+        val now = System.currentTimeMillis()
+        _readings.update { readings ->
+            val updated = readings.map { reading ->
+                if (reading.pid == pid) reading.copy(value = value, updatedAt = now) else reading
+            }
+            val map = updated.firstOrNull { it.pid == DerivedPids.MAP }
+            val barometric = updated.firstOrNull { it.pid == DerivedPids.BAROMETRIC_PRESSURE }
+            val supported = map?.supported == true && barometric?.supported == true
+            val turboValue = if (supported && map?.value != null && barometric?.value != null) {
+                DerivedPids.turboPressureKpa(map.value, barometric.value)
+            } else {
+                null
+            }
+            val derivedTimestamp = if (turboValue != null) minOf(map!!.updatedAt, barometric!!.updatedAt) else now
+            updated.map { reading ->
+                if (reading.pid == DerivedPids.TURBO_PRESSURE) {
+                    reading.copy(value = turboValue, supported = supported, updatedAt = derivedTimestamp)
+                } else {
+                    reading
+                }
+            }
+        }
     }
 
     companion object {
-        fun defaultReadings() = StandardPids.all.map {
-            VehicleReading(it.pid, it.name, null, it.unit, supported = false, minimum = it.minimum, maximum = it.maximum)
-        }
+        fun defaultReadings(): List<VehicleReading> = StandardPids.all.map { definition ->
+            VehicleReading(
+                pid = definition.pid,
+                name = definition.name,
+                value = null,
+                unit = definition.unit,
+                supported = false,
+                minimum = definition.minimum,
+                maximum = definition.maximum,
+            )
+        } + VehicleReading(
+            pid = DerivedPids.TURBO_PRESSURE,
+            name = "Turbo pressure",
+            value = null,
+            unit = "kPa",
+            supported = false,
+            minimum = -100.0,
+            maximum = 250.0,
+        )
     }
 }
