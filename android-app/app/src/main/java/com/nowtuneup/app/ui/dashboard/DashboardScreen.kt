@@ -58,16 +58,23 @@ fun DashboardScreen(
     val columns = layout.columns.coerceIn(1, 6)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        ConnectionSetupCard(connectionState, onConnectionAction)
+        ConnectionSetupCard(connectionState, onConnectionAction, compact = landscape)
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(
+                horizontal = 14.dp,
+                vertical = if (landscape) 2.dp else 6.dp,
+            ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text(config.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} dashboard",
+                    config.name,
+                    style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${if (landscape) "Landscape" else "Portrait"} · $columns columns",
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -80,15 +87,15 @@ fun DashboardScreen(
 
         if (layout.widgets.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("This dashboard has no widgets. Open the editor to add one.")
+                Text("This orientation has no widgets. Open the editor or copy the other layout.")
             }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(if (landscape) 8.dp else 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 10.dp),
+                verticalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 10.dp),
             ) {
                 items(
                     items = layout.widgets,
@@ -108,7 +115,11 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit) {
+private fun ConnectionSetupCard(
+    state: ConnectionState,
+    onAction: () -> Unit,
+    compact: Boolean,
+) {
     val connected = state == ConnectionState.CONNECTED
     val busy = state in setOf(
         ConnectionState.DEVICE_DETECTED,
@@ -126,13 +137,13 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit) {
         ConnectionState.ERROR -> "Connection needs attention"
     }
     val detail = when (state) {
-        ConnectionState.DISCONNECTED -> "Plug in the USB OBD-II adapter, turn the ignition on, then tap Connect."
-        ConnectionState.DEVICE_DETECTED -> "NTU found a compatible USB device and is preparing the serial port."
-        ConnectionState.REQUESTING_PERMISSION -> "Approve the Android USB permission dialog to continue."
-        ConnectionState.CONNECTING -> "Opening the serial connection to the ELM327 adapter."
-        ConnectionState.INITIALIZING -> "Initializing the adapter and asking the ECU for supported data."
-        ConnectionState.CONNECTED -> "Live vehicle data is available. Keep your attention on the road."
-        ConnectionState.ERROR -> "Check USB OTG, adapter power and ignition, then try again."
+        ConnectionState.DISCONNECTED -> "Plug in USB OBD-II, turn the ignition on, then tap Connect."
+        ConnectionState.DEVICE_DETECTED -> "A compatible USB device was found."
+        ConnectionState.REQUESTING_PERMISSION -> "Approve the Android USB permission dialog."
+        ConnectionState.CONNECTING -> "Opening the serial connection to ELM327."
+        ConnectionState.INITIALIZING -> "Initializing the adapter and ECU protocol."
+        ConnectionState.CONNECTED -> "Live vehicle data is available."
+        ConnectionState.ERROR -> "Check USB OTG, adapter power and ignition, then retry."
     }
     val accent = when (state) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -140,8 +151,16 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit) {
         else -> MaterialTheme.colorScheme.secondary
     }
 
-    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(
+            horizontal = 12.dp,
+            vertical = if (compact) 4.dp else 8.dp,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(if (compact) 10.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
                     busy -> CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
@@ -151,7 +170,9 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit) {
                 }
                 Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(detail, style = MaterialTheme.typography.bodySmall)
+                    if (!compact || state != ConnectionState.CONNECTED) {
+                        Text(detail, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 if (!busy) {
                     Button(onClick = onAction) {
@@ -159,7 +180,7 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit) {
                     }
                 }
             }
-            ConnectionSteps(state)
+            if (!compact) ConnectionSteps(state)
         }
     }
 }
@@ -182,26 +203,21 @@ private fun ConnectionSteps(state: ConnectionState) {
             val active = activeStep == index && state !in setOf(ConnectionState.DISCONNECTED, ConnectionState.ERROR)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .background(
-                            color = when {
-                                completed -> MaterialTheme.colorScheme.primary
-                                active -> MaterialTheme.colorScheme.secondary
-                                else -> Color.Transparent
-                            },
-                            shape = CircleShape,
-                        ),
+                    modifier = Modifier.size(22.dp).background(
+                        color = when {
+                            completed -> MaterialTheme.colorScheme.primary
+                            active -> MaterialTheme.colorScheme.secondary
+                            else -> Color.Transparent
+                        },
+                        shape = CircleShape,
+                    ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         if (completed) "✓" else "${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (completed || active) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
