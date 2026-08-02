@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.nowtuneup.app.data.logging.DiagnosticLogger
+import com.nowtuneup.app.data.obd.elm.Elm327StreamBuffer
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.BluetoothDeviceInfo
 import com.nowtuneup.app.domain.model.ConnectionState
@@ -41,7 +42,7 @@ class BluetoothClassicObdTransport @Inject constructor(
 
     private val writeMutex = Mutex()
     private val readMutex = Mutex()
-    private val receiveBuffer = StringBuilder()
+    private val receiveBuffer = Elm327StreamBuffer()
     private var selectedAddress: String? = null
     private var socket: BluetoothSocket? = null
     private var input: InputStream? = null
@@ -143,7 +144,7 @@ class BluetoothClassicObdTransport @Inject constructor(
     override suspend fun readUntilPrompt(timeoutMillis: Long): Result<String> = withContext(Dispatchers.IO) {
         readMutex.withLock {
             runCatching {
-                extractCompleteResponse()?.let { return@runCatching it }
+                receiveBuffer.pollResponse()?.let { return@runCatching it }
                 withTimeout(timeoutMillis) {
                     val stream = input ?: error("Bluetooth socket is not connected")
                     val chunk = ByteArray(512)
@@ -152,11 +153,7 @@ class BluetoothClassicObdTransport @Inject constructor(
                         if (count < 0) error("Bluetooth socket closed")
                         if (count == 0) continue
                         receiveBuffer.append(String(chunk, 0, count, Charsets.US_ASCII))
-                        if (receiveBuffer.length > MAX_BUFFER_CHARS) {
-                            receiveBuffer.clear()
-                            error("ELM327 response buffer exceeded safe limit")
-                        }
-                        extractCompleteResponse()?.let { response ->
+                        receiveBuffer.pollResponse()?.let { response ->
                             logger.debug("ELM327 RX", response.replace('\r', ' ').replace('\n', ' ').take(300))
                             return@withTimeout response
                         }
@@ -169,14 +166,6 @@ class BluetoothClassicObdTransport @Inject constructor(
                 if (error.message?.contains("socket", ignoreCase = true) == true) state.value = ConnectionState.ERROR
             }
         }
-    }
-
-    private fun extractCompleteResponse(): String? {
-        val promptIndex = receiveBuffer.indexOf(">")
-        if (promptIndex < 0) return null
-        val response = receiveBuffer.substring(0, promptIndex + 1)
-        receiveBuffer.delete(0, promptIndex + 1)
-        return response
     }
 
     private fun closeSocketOnly() {
@@ -192,7 +181,6 @@ class BluetoothClassicObdTransport @Inject constructor(
     companion object {
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private const val CONNECT_TIMEOUT_MILLIS = 15_000L
-        private const val MAX_BUFFER_CHARS = 65_536
         private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
 
         private fun looksLikeElm327(name: String): Boolean {
