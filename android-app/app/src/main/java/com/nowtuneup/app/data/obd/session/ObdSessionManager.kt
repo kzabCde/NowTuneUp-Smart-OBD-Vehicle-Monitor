@@ -2,14 +2,15 @@ package com.nowtuneup.app.data.obd.session
 
 import com.nowtuneup.app.data.logging.DiagnosticLogger
 import com.nowtuneup.app.data.obd.elm.Elm327Client
+import com.nowtuneup.app.data.obd.elm.toObdError
 import com.nowtuneup.app.data.obd.parser.ObdResponseParser
 import com.nowtuneup.app.data.obd.pid.DerivedPids
 import com.nowtuneup.app.data.obd.pid.StandardPids
 import com.nowtuneup.app.data.obd.pid.SupportedPidParser
 import com.nowtuneup.app.data.obd.polling.PidPollingScheduler
-import com.nowtuneup.app.data.obd.polling.PollingGroup
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.ConnectionState
+import com.nowtuneup.app.domain.model.ObdError
 import com.nowtuneup.app.domain.model.VehicleReading
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -100,26 +101,68 @@ class ObdSessionManager @Inject constructor(
         val scheduler = PidPollingScheduler(_supportedPids.value)
         if (scheduler.isEmpty()) return
         polling = scope.launch {
-            logger.info("Polling", "Sequential polling started with ${scheduler.snapshot().size} weighted slots")
+            var consecutiveTransportFailures = 0
+            var successfulCommands = 0L
+            val startedAt = System.currentTimeMillis()
+            logger.info(
+                "Polling",
+                "Realtime polling started with ${scheduler.snapshot().size} interleaved slots",
+            )
+
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
                 val slot = scheduler.next()
                 if (slot == null) {
-                    delay(1_000L)
+                    delay(250L)
                     continue
                 }
+
+                val commandStartedAt = System.currentTimeMillis()
                 elm327.requestPid(slot.pid).onSuccess { reading ->
+                    consecutiveTransportFailures = 0
+                    successfulCommands += 1
                     publish(reading.pid, reading.value ?: return@onSuccess)
                 }.onFailure { error ->
-                    logger.warning("Polling", "PID 01%02X failed: ${error.message}".format(slot.pid))
+                    if (isTransportHealthFailure(error)) {
+                        consecutiveTransportFailures += 1
+                    } else {
+                        // NO DATA or an individual malformed PID still proves that the adapter link is alive.
+                        consecutiveTransportFailures = 0
+                    }
+                    logger.warning(
+                        "Polling",
+                        "PID 01%02X failed (%d/%d transport failures): %s".format(
+                            slot.pid,
+                            consecutiveTransportFailures,
+                            MAX_CONSECUTIVE_TRANSPORT_FAILURES,
+                            error.message.orEmpty(),
+                        ),
+                    )
+
+                    if (consecutiveTransportFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
+                        logger.error(
+                            "Polling",
+                            "ELM327 transport is unhealthy after $consecutiveTransportFailures consecutive failures; reconnecting",
+                            error,
+                        )
+                    }
                 }
-                val delayMillis = when (slot.group) {
-                    PollingGroup.FAST -> refreshIntervalMillis
-                    PollingGroup.NORMAL -> maxOf(refreshIntervalMillis, 650L)
-                    PollingGroup.SLOW -> maxOf(refreshIntervalMillis, 1_200L)
+
+                if (consecutiveTransportFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
+                    transport.disconnect()
+                    break
                 }
-                delay(delayMillis)
+
+                val elapsed = System.currentTimeMillis() - commandStartedAt
+                val pacing = commandPacingMillis()
+                if (elapsed < pacing) delay(pacing - elapsed)
+
+                if (successfulCommands > 0 && successfulCommands % HEALTH_LOG_EVERY_COMMANDS == 0L) {
+                    val totalElapsed = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
+                    val commandsPerSecond = successfulCommands * 1_000.0 / totalElapsed
+                    logger.info("Polling", "Live rate %.2f successful commands/s".format(commandsPerSecond))
+                }
             }
-            logger.info("Polling", "Sequential polling stopped")
+            logger.info("Polling", "Realtime polling stopped")
         }
     }
 
@@ -148,6 +191,26 @@ class ObdSessionManager @Inject constructor(
         scope.cancel()
     }
 
+    private fun commandPacingMillis(): Long = when {
+        refreshIntervalMillis <= 250L -> 15L
+        refreshIntervalMillis <= 600L -> 50L
+        else -> 150L
+    }
+
+    private fun isTransportHealthFailure(error: Throwable): Boolean = when (error.toObdError()) {
+        ObdError.Timeout,
+        ObdError.DeviceDisconnected,
+        ObdError.BufferFull,
+        ObdError.EcuNotResponding,
+        -> true
+        else -> {
+            val message = error.message.orEmpty()
+            message.contains("socket", ignoreCase = true) ||
+                message.contains("closed", ignoreCase = true) ||
+                message.contains("broken pipe", ignoreCase = true)
+        }
+    }
+
     private fun publish(pid: Int, value: Double) {
         val now = System.currentTimeMillis()
         _readings.update { readings ->
@@ -174,6 +237,9 @@ class ObdSessionManager @Inject constructor(
     }
 
     companion object {
+        private const val MAX_CONSECUTIVE_TRANSPORT_FAILURES = 4
+        private const val HEALTH_LOG_EVERY_COMMANDS = 50L
+
         fun defaultReadings(): List<VehicleReading> = StandardPids.all.map { definition ->
             VehicleReading(
                 pid = definition.pid,
