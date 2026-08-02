@@ -1,0 +1,203 @@
+package com.nowtuneup.app.data.transport.bluetooth
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
+import com.nowtuneup.app.data.logging.DiagnosticLogger
+import com.nowtuneup.app.data.transport.ObdTransport
+import com.nowtuneup.app.domain.model.BluetoothDeviceInfo
+import com.nowtuneup.app.domain.model.ConnectionState
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+@Singleton
+class BluetoothClassicObdTransport @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val logger: DiagnosticLogger,
+) : ObdTransport {
+    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+    private val adapter: BluetoothAdapter? get() = bluetoothManager?.adapter
+    private val state = MutableStateFlow(ConnectionState.DISCONNECTED)
+    override val connectionState: StateFlow<ConnectionState> = state
+
+    private val writeMutex = Mutex()
+    private val readMutex = Mutex()
+    private val receiveBuffer = StringBuilder()
+    private var selectedAddress: String? = null
+    private var socket: BluetoothSocket? = null
+    private var input: InputStream? = null
+    private var output: OutputStream? = null
+
+    fun isSupported(): Boolean = adapter != null
+
+    @SuppressLint("MissingPermission")
+    fun isEnabled(): Boolean = hasConnectPermission() && adapter?.isEnabled == true
+
+    fun hasConnectPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+    fun hasScanPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+
+    @SuppressLint("MissingPermission")
+    fun pairedDevices(): Result<List<BluetoothDeviceInfo>> = runCatching {
+        val localAdapter = adapter ?: error("Bluetooth is not supported on this device")
+        check(hasConnectPermission()) { "Bluetooth permission is required" }
+        localAdapter.bondedDevices
+            .map { device ->
+                BluetoothDeviceInfo(
+                    name = device.name?.takeIf { it.isNotBlank() } ?: "Unnamed Bluetooth device",
+                    address = device.address,
+                    bonded = device.bondState == BluetoothDevice.BOND_BONDED,
+                )
+            }
+            .sortedWith(compareBy<BluetoothDeviceInfo> { !looksLikeElm327(it.name) }.thenBy { it.name.lowercase() })
+    }
+
+    fun selectDevice(address: String?) {
+        require(address == null || MAC_ADDRESS.matches(address)) { "Invalid Bluetooth address" }
+        selectedAddress = address
+    }
+
+    fun selectedAddress(): String? = selectedAddress
+
+    @SuppressLint("MissingPermission")
+    override suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (state.value in setOf(ConnectionState.CONNECTING, ConnectionState.INITIALIZING, ConnectionState.CONNECTED)) {
+                error("Bluetooth connection is already in progress")
+            }
+            val localAdapter = adapter ?: error("Bluetooth is not supported on this device")
+            check(hasConnectPermission()) { "Bluetooth permission is required" }
+            check(localAdapter.isEnabled) { "Bluetooth is disabled" }
+            val address = selectedAddress ?: error("Select a paired ELM327 adapter first")
+            val device = localAdapter.getRemoteDevice(address)
+            check(device.bondState == BluetoothDevice.BOND_BONDED) { "Bluetooth device is not paired" }
+
+            state.value = ConnectionState.DEVICE_DETECTED
+            logger.info("Bluetooth", "Connecting to ${logger.safeDeviceLabel(device.name, device.address)} with RFCOMM SPP")
+            localAdapter.cancelDiscovery()
+            closeSocketOnly()
+            val candidate = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            socket = candidate
+            state.value = ConnectionState.CONNECTING
+            withTimeout(CONNECT_TIMEOUT_MILLIS) {
+                runInterruptible { candidate.connect() }
+            }
+            input = candidate.inputStream
+            output = candidate.outputStream
+            receiveBuffer.clear()
+            state.value = ConnectionState.CONNECTED
+            logger.info("Bluetooth", "RFCOMM socket connected")
+        }.onFailure { error ->
+            logger.error("Bluetooth", "RFCOMM connection failed", error)
+            closeSocketOnly()
+            state.value = ConnectionState.ERROR
+        }
+    }
+
+    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+        logger.info("Bluetooth", "Disconnect requested")
+        closeSocketOnly()
+        state.value = ConnectionState.DISCONNECTED
+    }
+
+    override suspend fun write(command: String): Result<Unit> = withContext(Dispatchers.IO) {
+        writeMutex.withLock {
+            runCatching {
+                val stream = output ?: error("Bluetooth socket is not connected")
+                val bytes = command.toByteArray(Charsets.US_ASCII)
+                runInterruptible {
+                    stream.write(bytes)
+                    stream.flush()
+                }
+                logger.debug("ELM327 TX", command.trim().take(64))
+            }.onFailure {
+                logger.error("Bluetooth", "Write failed", it)
+                state.value = ConnectionState.ERROR
+            }
+        }
+    }
+
+    override suspend fun readUntilPrompt(timeoutMillis: Long): Result<String> = withContext(Dispatchers.IO) {
+        readMutex.withLock {
+            runCatching {
+                extractCompleteResponse()?.let { return@runCatching it }
+                withTimeout(timeoutMillis) {
+                    val stream = input ?: error("Bluetooth socket is not connected")
+                    val chunk = ByteArray(512)
+                    while (true) {
+                        val count = runInterruptible { stream.read(chunk) }
+                        if (count < 0) error("Bluetooth socket closed")
+                        if (count == 0) continue
+                        receiveBuffer.append(String(chunk, 0, count, Charsets.US_ASCII))
+                        if (receiveBuffer.length > MAX_BUFFER_CHARS) {
+                            receiveBuffer.clear()
+                            error("ELM327 response buffer exceeded safe limit")
+                        }
+                        extractCompleteResponse()?.let { response ->
+                            logger.debug("ELM327 RX", response.replace('\r', ' ').replace('\n', ' ').take(300))
+                            return@withTimeout response
+                        }
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    error("No ELM327 prompt")
+                }
+            }.onFailure { error ->
+                logger.error("Bluetooth", "Read failed or timed out", error)
+                if (error.message?.contains("socket", ignoreCase = true) == true) state.value = ConnectionState.ERROR
+            }
+        }
+    }
+
+    private fun extractCompleteResponse(): String? {
+        val promptIndex = receiveBuffer.indexOf(">")
+        if (promptIndex < 0) return null
+        val response = receiveBuffer.substring(0, promptIndex + 1)
+        receiveBuffer.delete(0, promptIndex + 1)
+        return response
+    }
+
+    private fun closeSocketOnly() {
+        runCatching { input?.close() }
+        runCatching { output?.close() }
+        runCatching { socket?.close() }
+        input = null
+        output = null
+        socket = null
+        receiveBuffer.clear()
+    }
+
+    companion object {
+        val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+        private const val CONNECT_TIMEOUT_MILLIS = 15_000L
+        private const val MAX_BUFFER_CHARS = 65_536
+        private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
+
+        private fun looksLikeElm327(name: String): Boolean {
+            val normalized = name.uppercase()
+            return listOf("OBD", "ELM", "V-LINK", "VLINK", "KONNWEI").any(normalized::contains)
+        }
+    }
+}
