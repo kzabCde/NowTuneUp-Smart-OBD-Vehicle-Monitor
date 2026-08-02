@@ -25,6 +25,13 @@ class DiagnosticLogger @Inject constructor() {
     private val _entries = MutableStateFlow<List<DiagnosticLogEntry>>(emptyList())
     val entries: StateFlow<List<DiagnosticLogEntry>> = _entries.asStateFlow()
 
+    @Volatile
+    private var enabled: Boolean = true
+
+    fun setEnabled(value: Boolean) {
+        enabled = value
+    }
+
     fun debug(category: String, message: String) = append(LogLevel.DEBUG, category, message)
     fun info(category: String, message: String) = append(LogLevel.INFO, category, message)
     fun warning(category: String, message: String) = append(LogLevel.WARNING, category, message)
@@ -54,6 +61,7 @@ class DiagnosticLogger @Inject constructor() {
     }
 
     private fun append(level: LogLevel, category: String, rawMessage: String) {
+        if (!enabled) return
         if (level == LogLevel.DEBUG && !BuildConfig.DEBUG) return
         val message = if (BuildConfig.DEBUG) rawMessage else redactAddresses(rawMessage)
         val entry = DiagnosticLogEntry(System.currentTimeMillis(), level, category, message)
