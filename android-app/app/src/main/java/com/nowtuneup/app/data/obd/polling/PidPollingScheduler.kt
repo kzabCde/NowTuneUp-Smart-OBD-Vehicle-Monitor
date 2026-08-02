@@ -5,12 +5,10 @@ enum class PollingGroup { FAST, NORMAL, SLOW }
 data class PollingSlot(val pid: Int, val group: PollingGroup)
 
 /**
- * Produces a deterministic, interleaved command schedule.
+ * Produces a deterministic interleaved schedule optimized for dashboard responsiveness.
  *
- * The previous implementation placed every fast slot, then every normal slot, then every slow
- * slot in one long cycle. Combined with a delay after every command, even RPM and speed could be
- * several seconds old. This schedule keeps a 4:2:1 weighting while spreading lower-priority PIDs
- * between fast PIDs so the command queue never builds a long latency tail.
+ * RPM, speed and throttle are intentionally queried much more often than temperatures, voltage
+ * and fuel level. Lower-priority groups are still rotated fairly and never removed from polling.
  */
 class PidPollingScheduler(supportedPids: Set<Int>) {
     private val schedule: List<PollingSlot> = buildInterleavedSchedule(supportedPids)
@@ -49,11 +47,14 @@ class PidPollingScheduler(supportedPids: Set<Int>) {
                     add(PollingSlot(fast[fastIndex % fast.size], PollingGroup.FAST))
                     fastIndex += 1
                 }
-                if (normal.isNotEmpty() && (fast.isEmpty() || round % 2 == 1)) {
+                if (normal.isNotEmpty() && (fast.isEmpty() || round % NORMAL_INTERVAL == NORMAL_INTERVAL - 1)) {
                     add(PollingSlot(normal[normalIndex % normal.size], PollingGroup.NORMAL))
                     normalIndex += 1
                 }
-                if (slow.isNotEmpty() && ((fast.isEmpty() && normal.isEmpty()) || round % 4 == 3)) {
+                if (
+                    slow.isNotEmpty() &&
+                    ((fast.isEmpty() && normal.isEmpty()) || round % SLOW_INTERVAL == SLOW_INTERVAL - 1)
+                ) {
                     add(PollingSlot(slow[slowIndex % slow.size], PollingGroup.SLOW))
                     slowIndex += 1
                 }
@@ -62,8 +63,10 @@ class PidPollingScheduler(supportedPids: Set<Int>) {
     }
 
     private companion object {
-        const val FAST_WEIGHT = 4
-        const val NORMAL_WEIGHT = 2
+        const val FAST_WEIGHT = 8
+        const val NORMAL_WEIGHT = 3
         const val SLOW_WEIGHT = 1
+        const val NORMAL_INTERVAL = 3
+        const val SLOW_INTERVAL = 8
     }
 }
