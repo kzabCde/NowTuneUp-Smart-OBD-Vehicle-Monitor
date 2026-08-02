@@ -1,6 +1,7 @@
 name: Build bundled website APK
 
 # NowTuneUp 1.6.1 Bluetooth realtime stability hotfix pipeline.
+# Manual production bundle trigger: 2026-08-02
 on:
   workflow_dispatch:
   push:
