@@ -49,6 +49,9 @@ class BluetoothClassicObdTransport @Inject constructor(
     private var input: InputStream? = null
     private var output: OutputStream? = null
 
+    @Volatile
+    private var lastByteAtMillis: Long = 0L
+
     fun isSupported(): Boolean = adapter != null
 
     @SuppressLint("MissingPermission")
@@ -101,17 +104,16 @@ class BluetoothClassicObdTransport @Inject constructor(
             logger.info("Bluetooth", "Connecting to ${logger.safeDeviceLabel(device.name, device.address)} with RFCOMM SPP")
             localAdapter.cancelDiscovery()
             closeSocketOnly()
-            val candidate = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            socket = candidate
             state.value = ConnectionState.CONNECTING
-            withTimeout(CONNECT_TIMEOUT_MILLIS) {
-                runInterruptible { candidate.connect() }
-            }
-            input = candidate.inputStream
-            output = candidate.outputStream
+
+            val connectedSocket = connectRfcomm(device)
+            socket = connectedSocket
+            input = connectedSocket.inputStream
+            output = connectedSocket.outputStream
             receiveBuffer.clear()
+            lastByteAtMillis = System.currentTimeMillis()
             state.value = ConnectionState.CONNECTED
-            logger.info("Bluetooth", "RFCOMM socket connected")
+            logger.info("Bluetooth", "RFCOMM socket connected and stream ready")
         }.onFailure { error ->
             logger.error("Bluetooth", "RFCOMM connection failed", error)
             closeSocketOnly()
@@ -128,7 +130,21 @@ class BluetoothClassicObdTransport @Inject constructor(
     override suspend fun write(command: String): Result<Unit> = withContext(Dispatchers.IO) {
         writeMutex.withLock {
             runCatching {
+                val activeSocket = socket ?: error("Bluetooth socket is not connected")
+                check(activeSocket.isConnected) { "Bluetooth socket is closed" }
                 val stream = output ?: error("Bluetooth socket is not connected")
+
+                // A late prompt from a timed-out clone must never become the next PID response.
+                var discardedResponses = 0
+                while (receiveBuffer.pollResponse() != null) discardedResponses += 1
+                if (receiveBuffer.pendingCharacters() > 0) {
+                    receiveBuffer.clear()
+                    discardedResponses += 1
+                }
+                if (discardedResponses > 0) {
+                    logger.warning("Bluetooth", "Discarded $discardedResponses stale response fragment(s) before transmit")
+                }
+
                 val bytes = command.toByteArray(Charsets.US_ASCII)
                 runInterruptible {
                     stream.write(bytes)
@@ -150,9 +166,24 @@ class BluetoothClassicObdTransport @Inject constructor(
                     val stream = input ?: error("Bluetooth socket is not connected")
                     val chunk = ByteArray(512)
                     while (true) {
-                        val count = runInterruptible { stream.read(chunk) }
+                        val activeSocket = socket ?: error("Bluetooth socket closed")
+                        check(activeSocket.isConnected) { "Bluetooth socket closed" }
+                        val available = runCatching { stream.available() }
+                            .getOrElse { error -> throw IllegalStateException("Bluetooth socket read failed", error) }
+                        if (available <= 0) {
+                            delay(READ_POLL_INTERVAL_MILLIS)
+                            continue
+                        }
+
+                        val count = runInterruptible {
+                            stream.read(chunk, 0, minOf(chunk.size, available))
+                        }
                         if (count < 0) error("Bluetooth socket closed")
-                        if (count == 0) continue
+                        if (count == 0) {
+                            delay(READ_POLL_INTERVAL_MILLIS)
+                            continue
+                        }
+                        lastByteAtMillis = System.currentTimeMillis()
                         receiveBuffer.append(String(chunk, 0, count, Charsets.US_ASCII))
                         receiveBuffer.pollResponse()?.let { response ->
                             logger.debug("ELM327 RX", response.replace('\r', ' ').replace('\n', ' ').take(300))
@@ -164,7 +195,12 @@ class BluetoothClassicObdTransport @Inject constructor(
                 }
             }.onFailure { error ->
                 logger.error("Bluetooth", "Read failed or timed out", error)
-                if (error.message?.contains("socket", ignoreCase = true) == true) state.value = ConnectionState.ERROR
+                if (
+                    error.message?.contains("socket", ignoreCase = true) == true ||
+                    error.message?.contains("closed", ignoreCase = true) == true
+                ) {
+                    state.value = ConnectionState.ERROR
+                }
             }
         }
     }
@@ -173,27 +209,60 @@ class BluetoothClassicObdTransport @Inject constructor(
         readMutex.withLock {
             receiveBuffer.clear()
             val stream = input ?: return@withLock
-
-            // Give a slow clone a brief chance to finish the timed-out response, then discard it.
-            delay(TIMEOUT_DRAIN_GRACE_MILLIS)
-            val chunk = ByteArray(512)
+            val startedAt = System.currentTimeMillis()
+            var quietSince = startedAt
             var drained = 0
-            while (true) {
-                val available = try {
-                    stream.available()
-                } catch (_: Throwable) {
-                    0
+            val chunk = ByteArray(512)
+
+            // Cheap ELM327 clones can finish hundreds of milliseconds after the app timeout.
+            // Wait for a real quiet window so that a late answer cannot be parsed as the next PID.
+            while (System.currentTimeMillis() - startedAt < MAX_TIMEOUT_RECOVERY_MILLIS) {
+                val available = runCatching { stream.available() }.getOrDefault(0)
+                if (available > 0) {
+                    val count = runCatching {
+                        runInterruptible { stream.read(chunk, 0, minOf(chunk.size, available)) }
+                    }.getOrDefault(0)
+                    if (count > 0) {
+                        drained += count
+                        lastByteAtMillis = System.currentTimeMillis()
+                        quietSince = lastByteAtMillis
+                    }
+                } else {
+                    val now = System.currentTimeMillis()
+                    if (now - quietSince >= TIMEOUT_QUIET_WINDOW_MILLIS) break
+                    delay(RECOVERY_POLL_INTERVAL_MILLIS)
                 }
-                if (available <= 0) break
-                val count = runCatching {
-                    runInterruptible { stream.read(chunk, 0, minOf(chunk.size, available)) }
-                }.getOrDefault(0)
-                if (count <= 0) break
-                drained += count
             }
             receiveBuffer.clear()
-            logger.warning("Bluetooth", "Recovered command stream after timeout; discarded $drained stale bytes")
+            logger.warning(
+                "Bluetooth",
+                "Recovered command stream after timeout; discarded $drained late byte(s) after ${System.currentTimeMillis() - startedAt} ms",
+            )
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun connectRfcomm(device: BluetoothDevice): BluetoothSocket {
+        var firstFailure: Throwable? = null
+        val factories: List<Pair<String, () -> BluetoothSocket>> = listOf(
+            "insecure" to { device.createInsecureRfcommSocketToServiceRecord(SPP_UUID) },
+            "secure" to { device.createRfcommSocketToServiceRecord(SPP_UUID) },
+        )
+        factories.forEach { (mode, factory) ->
+            val candidate = factory()
+            try {
+                withTimeout(CONNECT_TIMEOUT_MILLIS) {
+                    runInterruptible { candidate.connect() }
+                }
+                logger.info("Bluetooth", "Connected using $mode RFCOMM SPP socket")
+                return candidate
+            } catch (error: Throwable) {
+                runCatching { candidate.close() }
+                if (firstFailure == null) firstFailure = error
+                logger.warning("Bluetooth", "$mode RFCOMM connection attempt failed: ${error.message}")
+            }
+        }
+        throw firstFailure ?: IllegalStateException("Unable to open RFCOMM socket")
     }
 
     private fun closeSocketOnly() {
@@ -203,13 +272,17 @@ class BluetoothClassicObdTransport @Inject constructor(
         input = null
         output = null
         socket = null
+        lastByteAtMillis = 0L
         receiveBuffer.clear()
     }
 
     companion object {
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private const val CONNECT_TIMEOUT_MILLIS = 15_000L
-        private const val TIMEOUT_DRAIN_GRACE_MILLIS = 120L
+        private const val READ_POLL_INTERVAL_MILLIS = 4L
+        private const val RECOVERY_POLL_INTERVAL_MILLIS = 10L
+        private const val TIMEOUT_QUIET_WINDOW_MILLIS = 180L
+        private const val MAX_TIMEOUT_RECOVERY_MILLIS = 900L
         private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
 
         private fun looksLikeElm327(name: String): Boolean {
