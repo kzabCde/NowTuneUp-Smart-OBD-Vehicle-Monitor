@@ -1,16 +1,78 @@
 package com.nowtuneup.app.domain.model
 
-enum class ConnectionState { DISCONNECTED, DEVICE_DETECTED, REQUESTING_PERMISSION, CONNECTING, INITIALIZING, CONNECTED, ERROR }
+enum class ConnectionState {
+    DISCONNECTED,
+    DEVICE_DETECTED,
+    REQUESTING_PERMISSION,
+    CONNECTING,
+    INITIALIZING,
+    CONNECTED,
+    ERROR,
+}
+
+enum class ObdTransportType { USB, BLUETOOTH_CLASSIC, BLE_EXPERIMENTAL, MOCK }
+
+enum class ConnectionPhase {
+    BLUETOOTH_UNAVAILABLE,
+    BLUETOOTH_DISABLED,
+    PERMISSION_REQUIRED,
+    SCANNING,
+    DEVICE_SELECTION,
+    CONNECTING,
+    INITIALIZING_ADAPTER,
+    CONNECTED,
+    RECONNECTING,
+    DISCONNECTED,
+    CONNECTION_FAILED,
+    UNSUPPORTED_ADAPTER,
+}
+
+data class BluetoothDeviceInfo(
+    val name: String,
+    val address: String,
+    val bonded: Boolean = true,
+)
+
+data class AdapterInitializationStatus(
+    val currentCommand: String? = null,
+    val completedSteps: Int = 0,
+    val totalSteps: Int = 0,
+    val adapterIdentity: String? = null,
+    val bluetoothConnected: Boolean = false,
+    val adapterInitialized: Boolean = false,
+    val ecuConnected: Boolean = false,
+)
+
+data class ConnectionUiState(
+    val transportType: ObdTransportType = ObdTransportType.USB,
+    val phase: ConnectionPhase = ConnectionPhase.DISCONNECTED,
+    val bluetoothSupported: Boolean = true,
+    val bluetoothEnabled: Boolean = false,
+    val permissionGranted: Boolean = false,
+    val pairedDevices: List<BluetoothDeviceInfo> = emptyList(),
+    val selectedDevice: BluetoothDeviceInfo? = null,
+    val initialization: AdapterInitializationStatus = AdapterInitializationStatus(),
+    val lastErrorThai: String? = null,
+    val technicalError: String? = null,
+    val reconnectAttempt: Int = 0,
+)
 
 sealed interface ObdError {
     data object UsbPermissionDenied : ObdError
+    data object BluetoothUnavailable : ObdError
+    data object BluetoothDisabled : ObdError
+    data object BluetoothPermissionDenied : ObdError
     data object DeviceNotFound : ObdError
+    data object DeviceNotPaired : ObdError
     data object PortOpenFailed : ObdError
+    data object ConnectionTimeout : ObdError
     data class InitializationFailed(val step: String) : ObdError
+    data object UnsupportedAdapter : ObdError
     data object EcuNotResponding : ObdError
     data object NoData : ObdError
     data object Timeout : ObdError
     data object DeviceDisconnected : ObdError
+    data object BufferFull : ObdError
     data class InvalidResponse(val raw: String) : ObdError
     data class Unknown(val message: String) : ObdError
 }
@@ -204,6 +266,7 @@ data class DashboardPreferences(
     val autoReconnect: Boolean = true,
     val reconnectIntervalSeconds: Int = 3,
     val reconnectAttempts: Int = 5,
+    val reconnectMaxDelaySeconds: Int = 30,
     val hudMode: Boolean = false,
     val hudMirror: Boolean = true,
     val hudBurnInProtection: Boolean = true,
@@ -211,4 +274,9 @@ data class DashboardPreferences(
     val hudColorPreset: HudColorPreset = HudColorPreset.GREEN,
     val adaptiveLayoutProfile: AdaptiveLayoutProfile = AdaptiveLayoutProfile.AUTO,
     val headUnitImmersive: Boolean = true,
+    val preferredTransport: ObdTransportType = ObdTransportType.USB,
+    val lastBluetoothAddress: String? = null,
+    val autoConnectLastAdapter: Boolean = false,
+    val continuousMonitoring: Boolean = false,
+    val diagnosticLogging: Boolean = true,
 )
