@@ -29,9 +29,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
+        manifestPlaceholders["appLabel"] = "NowTuneUp"
     }
     buildTypes {
         debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-bluetooth-test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp Bluetooth Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -59,7 +63,7 @@ android {
             output.outputFileName = if (buildType.name == "release") {
                 "NowTuneUp-v1.6.1-release.apk"
             } else {
-                "NowTuneUp-debug.apk"
+                "NowTuneUp-v1.6.1-bluetooth-test.apk"
             }
         }
     }
