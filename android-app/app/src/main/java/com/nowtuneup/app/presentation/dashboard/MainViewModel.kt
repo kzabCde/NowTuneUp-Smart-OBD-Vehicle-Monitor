@@ -9,11 +9,11 @@ import com.nowtuneup.app.data.local.entity.DiagnosticScanEntity
 import com.nowtuneup.app.data.local.entity.SampleEntity
 import com.nowtuneup.app.data.local.entity.TripEntity
 import com.nowtuneup.app.data.logging.DiagnosticLogger
-import com.nowtuneup.app.data.logging.DiagnosticLogEntry
 import com.nowtuneup.app.data.obd.session.ObdSessionManager
 import com.nowtuneup.app.data.preferences.SettingsRepository
 import com.nowtuneup.app.data.transport.ObdTransportManager
 import com.nowtuneup.app.domain.alert.AlertEngine
+import com.nowtuneup.app.domain.connection.ReconnectBackoff
 import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
 import com.nowtuneup.app.domain.model.AlertSeverity
 import com.nowtuneup.app.domain.model.BluetoothDeviceInfo
@@ -33,7 +33,6 @@ import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.util.DisplayReadingAdapter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlin.math.min
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -94,16 +93,36 @@ class MainViewModel @Inject constructor(
     private var reconnectJob: Job? = null
     private var manualDisconnect = false
     private var wasEcuConnected = false
+    private var autoConnectAttemptedAddress: String? = null
 
     init {
         viewModelScope.launch {
             dashboardPreferences.collect { preferences ->
                 session.setRefreshInterval(preferences.refreshRate.intervalMillis)
-                if (connection.value == ConnectionState.DISCONNECTED && transportManager.activeType() != preferences.preferredTransport) {
+                logger.setEnabled(preferences.diagnosticLogging)
+                if (
+                    connection.value == ConnectionState.DISCONNECTED &&
+                    transportManager.activeType() != preferences.preferredTransport
+                ) {
                     transportManager.selectTransport(preferences.preferredTransport)
                 }
                 if (preferences.preferredTransport == ObdTransportType.BLUETOOTH_CLASSIC) {
-                    transportManager.selectBluetoothDevice(preferences.lastBluetoothAddress)
+                    val address = preferences.lastBluetoothAddress
+                    transportManager.selectBluetoothDevice(address)
+                    if (
+                        preferences.autoConnectLastAdapter &&
+                        address != null &&
+                        autoConnectAttemptedAddress != address &&
+                        connection.value == ConnectionState.DISCONNECTED &&
+                        transportManager.bluetoothSupported() &&
+                        transportManager.bluetoothPermissionGranted() &&
+                        transportManager.bluetoothEnabled()
+                    ) {
+                        autoConnectAttemptedAddress = address
+                        connectSelected()
+                    }
+                } else {
+                    autoConnectAttemptedAddress = null
                 }
                 rebuildConnectionUiState()
             }
@@ -166,12 +185,14 @@ class MainViewModel @Inject constructor(
             showConnectionError(it)
             return
         }
+        autoConnectAttemptedAddress = null
         updatePreferences { it.copy(preferredTransport = type) }
         if (type == ObdTransportType.BLUETOOTH_CLASSIC) refreshBluetoothState()
     }
 
     fun selectBluetoothDevice(device: BluetoothDeviceInfo) {
         transportManager.selectBluetoothDevice(device.address)
+        autoConnectAttemptedAddress = null
         updatePreferences {
             it.copy(
                 preferredTransport = ObdTransportType.BLUETOOTH_CLASSIC,
@@ -225,7 +246,7 @@ class MainViewModel @Inject constructor(
         session.connect().onSuccess {
             wasEcuConnected = true
             reconnectAttempt.value = 0
-            logger.info("Connection", "Bluetooth/transport, ELM327 and ECU validation succeeded")
+            logger.info("Connection", "Transport, ELM327 and ECU validation succeeded")
         }.onFailure(::showConnectionError)
     }
 
@@ -247,14 +268,19 @@ class MainViewModel @Inject constructor(
 
     fun pause() = session.pause()
     fun resume() = session.startPolling()
+
     fun onAppBackgrounded() {
         if (!dashboardPreferences.value.continuousMonitoring) session.pause()
     }
+
     fun onAppForegrounded() {
         if (connection.value == ConnectionState.CONNECTED) session.startPolling()
     }
 
-    fun dismissError() { _error.value = null }
+    fun dismissError() {
+        _error.value = null
+    }
+
     fun selectDashboard(id: String) = updatePreferences { it.copy(selectedDashboardId = id) }
     fun selectTheme(theme: ThemeConfig) = updatePreferences { it.copy(theme = theme) }
     fun setReduceMotion(value: Boolean) = updatePreferences { it.copy(reduceMotion = value) }
@@ -302,7 +328,9 @@ class MainViewModel @Inject constructor(
         settingsRepository.saveDashboardPreferences(change(dashboardPreferences.value))
     }
 
-    fun saveDashboard(config: DashboardConfig) = viewModelScope.launch { dashboardRepository.save(config) }
+    fun saveDashboard(config: DashboardConfig) = viewModelScope.launch {
+        dashboardRepository.save(config)
+    }
 
     fun duplicateDashboard(config: DashboardConfig) = viewModelScope.launch {
         val copy = config.copy(
@@ -456,11 +484,17 @@ class MainViewModel @Inject constructor(
             repeat(preferences.reconnectAttempts) { index ->
                 val attempt = index + 1
                 reconnectAttempt.value = attempt
-                val exponential = preferences.reconnectIntervalSeconds * (1 shl index.coerceAtMost(6))
-                val delaySeconds = min(exponential, preferences.reconnectMaxDelaySeconds)
+                val delaySeconds = ReconnectBackoff.delaySeconds(
+                    baseSeconds = preferences.reconnectIntervalSeconds,
+                    maximumSeconds = preferences.reconnectMaxDelaySeconds,
+                    attemptIndex = index,
+                )
                 logger.info("Reconnect", "Attempt $attempt/${preferences.reconnectAttempts} in ${delaySeconds}s")
                 delay(delaySeconds * 1_000L)
-                if (manualDisconnect || connection.value == ConnectionState.CONNECTED && initialization.value.ecuConnected) {
+                if (
+                    manualDisconnect ||
+                    connection.value == ConnectionState.CONNECTED && initialization.value.ecuConnected
+                ) {
                     reconnectAttempt.value = 0
                     return@launch
                 }
