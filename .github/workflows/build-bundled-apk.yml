@@ -36,11 +36,25 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Validate signing configuration
+        id: signing
+        env:
+          NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+          NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+          NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -s android-app/keystore/nowtuneup-web-release.jks
+          test -n "$NTU_KEYSTORE_PASSWORD"
+          test -n "$NTU_KEY_ALIAS"
+          test -n "$NTU_KEY_PASSWORD"
+
       - name: Sync in-app version label
         run: |
           sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.6.1/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
 
       - name: Build and sign APK 1.6.1
+        id: build
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
@@ -52,6 +66,7 @@ jobs:
           ./gradlew test lint assembleRelease
 
       - name: Verify and bundle APK with website
+        id: bundle
         run: |
           set -euo pipefail
           SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.1-release.apk"
@@ -90,6 +105,7 @@ jobs:
           test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
 
       - name: Commit generated APK
+        id: commit_bundle
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -102,6 +118,24 @@ jobs:
             exit 0
           fi
           git commit -m "Bundle NowTuneUp APK 1.6.1 with website"
+          git push
+
+      - name: Record release failure stage
+        if: failure()
+        env:
+          SIGNING_OUTCOME: ${{ steps.signing.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          BUNDLE_OUTCOME: ${{ steps.bundle.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p .release-status
+          printf 'version=1.6.1\nsigning=%s\nbuild=%s\nbundle=%s\n' \
+            "$SIGNING_OUTCOME" "$BUILD_OUTCOME" "$BUNDLE_OUTCOME" \
+            > .release-status/1.6.1.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .release-status/1.6.1.txt
+          git diff --cached --quiet || git commit -m "Record NowTuneUp 1.6.1 release failure stage"
           git push
 
       - name: Upload build artifact
