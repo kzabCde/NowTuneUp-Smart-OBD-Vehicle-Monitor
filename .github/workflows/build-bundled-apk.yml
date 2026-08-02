@@ -35,9 +35,9 @@ jobs:
 
       - name: Sync in-app version label
         run: |
-          sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.4.0/g' android-app/app/src/main/java/com/nowtuneup/app/MainActivity.kt
+          sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.5.0/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
 
-      - name: Build and sign APK 1.4.0
+      - name: Build and sign APK 1.5.0
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
@@ -51,7 +51,7 @@ jobs:
       - name: Verify and bundle APK with website
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.4.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.5.0-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -71,15 +71,15 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.4.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.4.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 8,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.5.0",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.5.0",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 9,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "Adds calculated Turbo Pressure from MAP and barometric OBD-II PIDs with kPa, bar and PSI display. Adds mirrored HUD Mode with brightness, color and burn-in protection controls. Adds adaptive Phone, Tablet and Android Head Unit layouts with navigation rail, wide-screen dashboard density and immersive operation.",',
+              'releaseNotes: "Adds Bluetooth Classic SPP support for paired ELM327 adapters with Android 12+ permissions, RFCOMM device selection, controlled ELM327 initialization, ECU verification, supported-PID polling, Thai connection guidance, exponential reconnect, diagnostic logs and confirmed Mode 04 DTC clearing. USB, Dashboard, Turbo, HUD, Tablet and Head Unit features remain available. BLE remains an experimental disabled transport placeholder until adapter-specific GATT UUIDs are known.",',
               text,
           )
           path.write_text(text)
@@ -91,19 +91,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f \
-            android-app/app/src/main/java/com/nowtuneup/app/MainActivity.kt \
+            android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt \
             web/public/downloads/NowTuneUp.apk \
             web/lib/local-release.ts
           if git diff --cached --quiet; then
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.4.0 with website"
+          git commit -m "Bundle NowTuneUp APK 1.5.0 with website"
           git push
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.4.0
+          name: NowTuneUp-1.5.0
           path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error
