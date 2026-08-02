@@ -100,9 +100,13 @@ class Elm327Client @Inject constructor(
             }
     }
 
-    suspend fun requestPid(pid: Int, timeoutMillis: Long = 2_500L): Result<VehicleReading> {
+    suspend fun requestPid(
+        pid: Int,
+        timeoutMillis: Long = LIVE_PID_TIMEOUT_MILLIS,
+        retryLimit: Int = 0,
+    ): Result<VehicleReading> {
         val command = "01%02X".format(pid)
-        return executeCommand(command, timeoutMillis).mapCatching { response ->
+        return executeCommand(command, timeoutMillis, retryLimit).mapCatching { response ->
             val value = ObdResponseParser.parseMode1(response.raw, pid, command).getOrThrow()
             val definition = com.nowtuneup.app.data.obd.pid.StandardPids.find(pid)
                 ?: error("Unsupported PID 0x%02X".format(pid))
@@ -136,6 +140,7 @@ class Elm327Client @Inject constructor(
 
     companion object {
         private const val DEFAULT_RESET_DELAY_MILLIS = 1_000L
+        private const val LIVE_PID_TIMEOUT_MILLIS = 1_500L
     }
 }
 
