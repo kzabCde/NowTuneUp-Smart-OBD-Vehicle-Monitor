@@ -22,6 +22,7 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runInterruptible
@@ -168,6 +169,33 @@ class BluetoothClassicObdTransport @Inject constructor(
         }
     }
 
+    override suspend fun recoverAfterTimeout() = withContext(Dispatchers.IO) {
+        readMutex.withLock {
+            receiveBuffer.clear()
+            val stream = input ?: return@withLock
+
+            // Give a slow clone a brief chance to finish the timed-out response, then discard it.
+            delay(TIMEOUT_DRAIN_GRACE_MILLIS)
+            val chunk = ByteArray(512)
+            var drained = 0
+            while (true) {
+                val available = try {
+                    stream.available()
+                } catch (_: Throwable) {
+                    0
+                }
+                if (available <= 0) break
+                val count = runCatching {
+                    runInterruptible { stream.read(chunk, 0, minOf(chunk.size, available)) }
+                }.getOrDefault(0)
+                if (count <= 0) break
+                drained += count
+            }
+            receiveBuffer.clear()
+            logger.warning("Bluetooth", "Recovered command stream after timeout; discarded $drained stale bytes")
+        }
+    }
+
     private fun closeSocketOnly() {
         runCatching { input?.close() }
         runCatching { output?.close() }
@@ -181,6 +209,7 @@ class BluetoothClassicObdTransport @Inject constructor(
     companion object {
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
         private const val CONNECT_TIMEOUT_MILLIS = 15_000L
+        private const val TIMEOUT_DRAIN_GRACE_MILLIS = 120L
         private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
 
         private fun looksLikeElm327(name: String): Boolean {
