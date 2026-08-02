@@ -24,8 +24,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.6.0"
+        versionCode = 11
+        versionName = "1.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -57,7 +57,7 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.6.0-release.apk"
+                "NowTuneUp-v1.6.1-release.apk"
             } else {
                 "NowTuneUp-debug.apk"
             }
