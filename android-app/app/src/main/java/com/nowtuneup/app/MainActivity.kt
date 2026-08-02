@@ -12,46 +12,30 @@ import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -70,25 +54,27 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
-import com.nowtuneup.app.data.obd.pid.DerivedPids
-import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
 import com.nowtuneup.app.domain.model.ConnectionState
-import com.nowtuneup.app.domain.model.HudColorPreset
-import com.nowtuneup.app.domain.model.RefreshRate
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
 import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
+import com.nowtuneup.app.ui.connection.ConnectionScreen
 import com.nowtuneup.app.ui.dashboard.DashboardScreen
 import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
+import com.nowtuneup.app.ui.screens.DiagnosticsScreen
+import com.nowtuneup.app.ui.screens.LiveDataScreen
+import com.nowtuneup.app.ui.screens.SettingsScreen
+import com.nowtuneup.app.ui.screens.TripsScreen
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.Date
 import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
@@ -107,6 +93,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val destinations = remember {
         listOf(
             Destination("Dashboard", Icons.Default.Speed),
+            Destination("Connection", Icons.Default.Bluetooth),
             Destination("Live Data", Icons.Default.List),
             Destination("Diagnostics", Icons.Default.Warning),
             Destination("Trips", Icons.Default.Route),
@@ -119,6 +106,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val context = LocalContext.current
     val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val configuration = LocalConfiguration.current
     val deviceLayout = AdaptiveLayoutResolver.resolve(
         requested = preferences.adaptiveLayoutProfile,
@@ -130,6 +118,18 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val chromeHidden = selectedDestination == 0 && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
     val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE
     val activity = context as? Activity
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onAppForegrounded()
+                Lifecycle.Event.ON_STOP -> viewModel.onAppBackgrounded()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     DisposableEffect(preferences.keepScreenOn, connectionState) {
         val previous = view.keepScreenOn
@@ -206,12 +206,12 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         },
                         actions = {
                             AssistChip(
-                                onClick = viewModel::toggleConnection,
+                                onClick = { selectedDestination = 1 },
                                 label = { Text(connectionState.shortLabel()) },
                                 leadingIcon = {
                                     Icon(
-                                        imageVector = if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Usb,
-                                        contentDescription = "OBD connection",
+                                        if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
+                                        contentDescription = "เปิดหน้าการเชื่อมต่อ OBD-II",
                                     )
                                 },
                             )
@@ -226,8 +226,8 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                             NavigationBarItem(
                                 selected = selectedDestination == index,
                                 onClick = { selectedDestination = index },
-                                icon = { Icon(destination.icon, contentDescription = null) },
-                                label = { Text(destination.title, fontSize = 10.sp) },
+                                icon = { Icon(destination.icon, contentDescription = destination.title) },
+                                label = { Text(destination.title, fontSize = 9.sp) },
                             )
                         }
                     }
@@ -242,7 +242,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                                 selected = selectedDestination == index,
                                 onClick = { selectedDestination = index },
                                 icon = { Icon(destination.icon, contentDescription = destination.title) },
-                                label = { Text(destination.title, fontSize = 11.sp) },
+                                label = { Text(destination.title, fontSize = 10.sp) },
                             )
                         }
                     }
@@ -250,10 +250,11 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedDestination) {
                         0 -> Dashboard(viewModel)
-                        1 -> LiveData(viewModel)
-                        2 -> Diagnostics(viewModel)
-                        3 -> Trips(viewModel)
-                        else -> Settings(viewModel)
+                        1 -> ConnectionScreen(viewModel)
+                        2 -> LiveDataScreen(viewModel)
+                        3 -> DiagnosticsScreen(viewModel)
+                        4 -> TripsScreen(viewModel)
+                        else -> SettingsScreen(viewModel)
                     }
                 }
             }
@@ -262,8 +263,8 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         errorMessage?.let { message ->
             AlertDialog(
                 onDismissRequest = viewModel::dismissError,
-                confirmButton = { TextButton(onClick = viewModel::dismissError) { Text("OK") } },
-                title = { Text("Communication problem") },
+                confirmButton = { TextButton(onClick = viewModel::dismissError) { Text("ตกลง") } },
+                title = { Text("ปัญหาการเชื่อมต่อ") },
                 text = { Text(message) },
             )
         }
@@ -353,301 +354,10 @@ fun Dashboard(viewModel: MainViewModel) {
     }
 }
 
-@Composable
-fun LiveData(viewModel: MainViewModel) {
-    val readings by viewModel.readings.collectAsState()
-    val connectionState by viewModel.connection.collectAsState()
-    var query by remember { mutableStateOf("") }
-    val filtered = readings.filter { it.name.contains(query, ignoreCase = true) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            label = { Text("Search vehicle data") },
-            singleLine = true,
-        )
-        Row(modifier = Modifier.padding(horizontal = 12.dp)) {
-            Button(onClick = viewModel::pause, enabled = connectionState == ConnectionState.CONNECTED) { Text("Pause") }
-            TextButton(onClick = viewModel::resume, enabled = connectionState == ConnectionState.CONNECTED) { Text("Resume") }
-        }
-
-        if (connectionState != ConnectionState.CONNECTED) {
-            MessageCard("Vehicle is not connected", "Connect the USB OBD-II adapter before reading live parameters.", "Connect", viewModel::toggleConnection)
-        } else if (filtered.isEmpty()) {
-            MessageCard(
-                if (query.isBlank()) "Waiting for ECU data" else "No matching parameter",
-                if (query.isBlank()) "Keep the ignition on while NTU checks supported OBD-II PIDs." else "Try a different search term.",
-            )
-        } else {
-            LazyColumn {
-                items(filtered, key = { it.pid }) { reading ->
-                    ListItem(
-                        headlineContent = { Text(reading.name) },
-                        overlineContent = {
-                            Text(if (reading.pid == DerivedPids.TURBO_PRESSURE) "DERIVED · MAP − BARO" else "PID 01%02X".format(reading.pid))
-                        },
-                        supportingContent = {
-                            Text(
-                                when {
-                                    !reading.supported -> if (reading.pid == DerivedPids.TURBO_PRESSURE) {
-                                        "Vehicle must support MAP PID 0x0B and barometric PID 0x33"
-                                    } else {
-                                        "Not supported by this vehicle"
-                                    }
-                                    reading.value == null -> "Waiting for a valid response"
-                                    else -> "Updated ${System.currentTimeMillis() - reading.updatedAt} ms ago"
-                                },
-                            )
-                        },
-                        trailingContent = { Text(reading.value?.let { "%.1f ${reading.unit}".format(it) } ?: "—") },
-                    )
-                    HorizontalDivider()
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun Diagnostics(viewModel: MainViewModel) {
-    val dtcs by viewModel.dtcs.collectAsState()
-    val connectionState by viewModel.connection.collectAsState()
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        item {
-            Text("Stored diagnostic trouble codes", style = MaterialTheme.typography.headlineSmall)
-            Text("Read-only scan. NTU never clears codes or changes the ECU.")
-            Button(
-                onClick = viewModel::scan,
-                enabled = connectionState == ConnectionState.CONNECTED,
-                modifier = Modifier.padding(vertical = 12.dp),
-            ) { Text("Scan stored DTCs") }
-        }
-        if (connectionState != ConnectionState.CONNECTED) {
-            item { MessageCard("Connect before scanning", "Turn the ignition on and establish an OBD-II connection first.", "Connect", viewModel::toggleConnection) }
-        } else if (dtcs.isEmpty()) {
-            item { MessageCard("No scan results yet", "Run a read-only scan to check stored diagnostic trouble codes.") }
-        } else {
-            items(dtcs, key = { it.code }) { dtc ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(dtc.code, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Text(dtc.description ?: "Manufacturer-specific description unavailable")
-                        Text(dtc.status, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun Trips(viewModel: MainViewModel) {
-    val trips by viewModel.trips.collectAsState(initial = emptyList())
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        item {
-            Text("Trip history", style = MaterialTheme.typography.headlineSmall)
-            Text("Record local vehicle readings for later review. Peak and Min/Max reset when a new trip starts.")
-            Button(onClick = viewModel::toggleTrip, modifier = Modifier.padding(vertical = 12.dp)) { Text("Start / stop recording") }
-        }
-        if (trips.isEmpty()) {
-            item { MessageCard("No recorded trips", "Start recording after connecting to the vehicle.") }
-        } else {
-            items(trips, key = { it.id }) { trip ->
-                ListItem(headlineContent = { Text("Trip #${trip.id}") }, supportingContent = { Text(Date(trip.startTime).toString()) })
-            }
-        }
-    }
-}
-
-@Composable
-fun Settings(viewModel: MainViewModel) {
-    val preferences by viewModel.dashboardPreferences.collectAsState()
-    val dashboards by viewModel.dashboards.collectAsState()
-    val connectionState by viewModel.connection.collectAsState()
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item { Text("Settings", style = MaterialTheme.typography.headlineSmall) }
-
-        item { SettingsHeading("Turbo pressure", "Calculated from MAP PID 0x0B minus barometric pressure PID 0x33.") }
-        item {
-            MessageCard(
-                "True gauge pressure",
-                "Turbo pressure is shown only when the vehicle supports both standard PIDs. Choose kPa, bar or PSI in Dashboard Editor.",
-            )
-        }
-
-        item { SettingsHeading("HUD Mode", "Mirrored high-contrast display for reflection on the windscreen.") }
-        item { ToggleSetting("HUD Mode", "Shows Speed, RPM and Turbo on a black full-screen display.", preferences.hudMode, viewModel::setHudMode) }
-        item { ToggleSetting("Mirror horizontally", "Required when reflecting the display on the windscreen.", preferences.hudMirror, viewModel::setHudMirror) }
-        item { ToggleSetting("Burn-in protection", "Moves HUD content by a few pixels every minute.", preferences.hudBurnInProtection, viewModel::setHudBurnInProtection) }
-        item { ChoiceSetting("HUD color", HudColorPreset.entries, preferences.hudColorPreset, { it.name.lowercase().replaceFirstChar(Char::uppercase) }, viewModel::setHudColorPreset) }
-        item { ChoiceSetting("HUD brightness", listOf(40, 60, 80, 100), preferences.hudBrightnessPercent, { "$it%" }, viewModel::setHudBrightnessPercent) }
-
-        item { SettingsHeading("Tablet and head unit", "Adaptive navigation and dashboard density for larger displays.") }
-        item {
-            ChoiceSetting(
-                "Layout profile",
-                AdaptiveLayoutProfile.entries,
-                preferences.adaptiveLayoutProfile,
-                { it.name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase) },
-                viewModel::setAdaptiveLayoutProfile,
-            )
-        }
-        item { ToggleSetting("Head unit immersive", "Hides dashboard headers and uses the maximum gauge area on wide displays.", preferences.headUnitImmersive, viewModel::setHeadUnitImmersive) }
-
-        item { SettingsHeading("Dashboard pages", "Swipe between saved dashboards while Focus Mode is active.") }
-        item {
-            ScrollableChips {
-                dashboards.forEach { dashboard ->
-                    FilterChip(
-                        selected = preferences.selectedDashboardId == dashboard.id,
-                        onClick = { viewModel.selectDashboard(dashboard.id) },
-                        label = { Text(dashboard.name) },
-                    )
-                }
-            }
-        }
-        item { ToggleSetting("Swipe dashboard pages", "Disable to lock the current page while driving.", preferences.swipePages, viewModel::setSwipePages) }
-
-        item { SettingsHeading("Focus Mode", "Show only gauges and reveal controls with a tap.") }
-        item { ToggleSetting("Gauge Focus Mode", "Hides app bars and expands the configured gauges.", preferences.focusMode, viewModel::setFocusMode) }
-        item { ToggleSetting("Auto focus after connection", "Enter Focus Mode when ECU initialization succeeds.", preferences.autoFocusOnConnect, viewModel::setAutoFocusOnConnect) }
-        item { ToggleSetting("Resume Focus Mode", "Restore the previous driving view after reopening the app.", preferences.resumeFocusMode, viewModel::setResumeFocusMode) }
-        item { ToggleSetting("Keep screen on", "Keeps the display awake only while OBD-II is connected.", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
-        item { ToggleSetting("Touch lock", "Long-press the dashboard to lock or unlock touches.", preferences.touchLock, viewModel::setTouchLock) }
-        item { ChoiceSetting("Controls auto-hide", listOf(3, 4, 5, 8), preferences.controlsAutoHideSeconds, { "$it s" }, viewModel::setControlsAutoHideSeconds) }
-
-        item { SettingsHeading("Peak and Min/Max", "Statistics reset when a trip starts or Reset peak is tapped.") }
-        item { ToggleSetting("Peak hold", "Shows the highest value reached for each PID.", preferences.showPeakHold, viewModel::setShowPeakHold) }
-        item { ToggleSetting("Minimum and maximum", "Shows the observed range for each PID.", preferences.showMinMax, viewModel::setShowMinMax) }
-        item { Button(onClick = viewModel::resetReadingStats, modifier = Modifier.fillMaxWidth()) { Text("Reset peak and Min/Max") } }
-
-        item { SettingsHeading("Warnings", "Threshold alerts use hysteresis and cooldown to avoid repeated triggers.") }
-        item { ToggleSetting("Alert sound", "Plays an audible warning for new alert events.", preferences.alertSound, viewModel::setAlertSound) }
-        item { ToggleSetting("Alert vibration", "Vibrates for warning and critical events.", preferences.alertVibration, viewModel::setAlertVibration) }
-        item { ToggleSetting("Mute alerts", "Keeps visual warnings but suppresses sound and vibration.", preferences.muteAlerts, viewModel::setMuteAlerts) }
-        item { ChoiceSetting("Alert cooldown", listOf(10, 15, 30, 60), preferences.alertCooldownSeconds, { "$it s" }, viewModel::setAlertCooldownSeconds) }
-        item { ChoiceSetting("Hysteresis", listOf(1, 2, 3, 5), preferences.hysteresis.toInt(), { "$it units" }) { viewModel.setHysteresis(it.toDouble()) } }
-
-        item { SettingsHeading("Data freshness", "Stale values are replaced with -- instead of being shown as current.") }
-        item {
-            ChoiceSetting("Mark data stale after", listOf(2, 3, 5, 10), (preferences.staleAfterMillis / 1_000L).toInt(), { "$it s" }) {
-                viewModel.setStaleAfterMillis(it * 1_000L)
-            }
-        }
-
-        item { SettingsHeading("Auto reconnect", "Retries the last USB ELM327 connection after an unexpected disconnect.") }
-        item { ToggleSetting("Auto reconnect", "Manual Disconnect never starts a reconnect loop.", preferences.autoReconnect, viewModel::setAutoReconnect) }
-        item { ChoiceSetting("Retry interval", listOf(2, 3, 5, 10), preferences.reconnectIntervalSeconds, { "$it s" }, viewModel::setReconnectIntervalSeconds) }
-        item { ChoiceSetting("Retry attempts", listOf(3, 5, 10, 15), preferences.reconnectAttempts, { "$it" }, viewModel::setReconnectAttempts) }
-
-        item { SettingsHeading("Appearance", "Theme colors apply immediately without disconnecting OBD-II.") }
-        item {
-            ScrollableChips {
-                DashboardDefaults.themes.forEach { theme ->
-                    FilterChip(
-                        selected = preferences.theme.name == theme.name,
-                        onClick = { viewModel.selectTheme(theme) },
-                        label = { Text(theme.name) },
-                    )
-                }
-            }
-        }
-        item { ToggleSetting("Reduce motion", "Limits gauge animation for comfort and performance.", preferences.reduceMotion, viewModel::setReduceMotion) }
-        item { ToggleSetting("Driving mode", "Larger essentials and locks dashboard editing.", preferences.drivingMode, viewModel::setDrivingMode) }
-
-        item { SettingsHeading("Connection", "${connectionState.shortLabel()} · USB ELM327") }
-        item {
-            Button(onClick = viewModel::toggleConnection, modifier = Modifier.fillMaxWidth()) {
-                Text(if (connectionState == ConnectionState.CONNECTED) "Disconnect OBD-II" else "Connect OBD-II")
-            }
-        }
-        item { ChoiceSetting("Refresh rate", RefreshRate.entries, preferences.refreshRate, { it.name.lowercase().replaceFirstChar(Char::uppercase) }, viewModel::setRefreshRate) }
-        item {
-            Text(
-                "NTU 1.4.0 • Android 8+ • Local-first • Read-only OBD-II",
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(vertical = 16.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToggleSetting(title: String, detail: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(detail) },
-        trailingContent = { Switch(checked = value, onCheckedChange = onChange) },
-    )
-}
-
-@Composable
-private fun <T> ChoiceSetting(
-    title: String,
-    choices: List<T>,
-    selected: T,
-    label: (T) -> String,
-    onSelect: (T) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        ScrollableChips {
-            choices.forEach { choice ->
-                FilterChip(selected = choice == selected, onClick = { onSelect(choice) }, label = { Text(label(choice)) })
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScrollableChips(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun SettingsHeading(title: String, detail: String) {
-    Column {
-        Text(title, style = MaterialTheme.typography.titleLarge)
-        Text(detail, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun MessageCard(
-    title: String,
-    message: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-) {
-    Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(message, style = MaterialTheme.typography.bodyMedium)
-            if (actionLabel != null && onAction != null) {
-                Row {
-                    Button(onClick = onAction) { Text(actionLabel) }
-                    Spacer(Modifier.width(8.dp))
-                }
-            }
-        }
-    }
-}
-
 private fun ConnectionState.shortLabel(): String = when (this) {
     ConnectionState.DISCONNECTED -> "Disconnected"
-    ConnectionState.DEVICE_DETECTED -> "USB detected"
-    ConnectionState.REQUESTING_PERMISSION -> "USB permission"
+    ConnectionState.DEVICE_DETECTED -> "Device found"
+    ConnectionState.REQUESTING_PERMISSION -> "Permission"
     ConnectionState.CONNECTING -> "Connecting"
     ConnectionState.INITIALIZING -> "Initializing"
     ConnectionState.CONNECTED -> "Connected"

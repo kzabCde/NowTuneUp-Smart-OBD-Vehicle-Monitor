@@ -48,11 +48,8 @@ class SettingsRepository @Inject constructor(
 
     val dashboardPreferences = context.dataStore.data.map { values ->
         val json = values[stringPreferencesKey("dashboard_preferences")]
-        if (json.isNullOrBlank()) {
-            DashboardPreferences()
-        } else {
-            runCatching { migrate(json) }.getOrElse { DashboardPreferences() }
-        }
+        if (json.isNullOrBlank()) DashboardPreferences()
+        else runCatching { migrate(json) }.getOrElse { DashboardPreferences() }
     }
 
     suspend fun saveDashboardPreferences(value: DashboardPreferences) = context.dataStore.edit {
@@ -77,23 +74,38 @@ class SettingsRepository @Inject constructor(
             hudBurnInProtection = if (root.has("hudBurnInProtection")) parsed.hudBurnInProtection else defaults.hudBurnInProtection,
             hudBrightnessPercent = if (root.has("hudBrightnessPercent")) parsed.hudBrightnessPercent else defaults.hudBrightnessPercent,
             hudColorPreset = if (root.has("hudColorPreset")) parsed.hudColorPreset else defaults.hudColorPreset,
-            adaptiveLayoutProfile = if (root.has("adaptiveLayoutProfile")) {
-                parsed.adaptiveLayoutProfile
-            } else {
-                defaults.adaptiveLayoutProfile
-            },
+            adaptiveLayoutProfile = if (root.has("adaptiveLayoutProfile")) parsed.adaptiveLayoutProfile else defaults.adaptiveLayoutProfile,
             headUnitImmersive = if (root.has("headUnitImmersive")) parsed.headUnitImmersive else defaults.headUnitImmersive,
+            preferredTransport = if (root.has("preferredTransport")) parsed.preferredTransport else defaults.preferredTransport,
+            lastBluetoothAddress = if (root.has("lastBluetoothAddress")) parsed.lastBluetoothAddress else defaults.lastBluetoothAddress,
+            autoConnectLastAdapter = if (root.has("autoConnectLastAdapter")) parsed.autoConnectLastAdapter else defaults.autoConnectLastAdapter,
+            continuousMonitoring = if (root.has("continuousMonitoring")) parsed.continuousMonitoring else defaults.continuousMonitoring,
+            diagnosticLogging = if (root.has("diagnosticLogging")) parsed.diagnosticLogging else defaults.diagnosticLogging,
+            reconnectMaxDelaySeconds = if (root.has("reconnectMaxDelaySeconds")) {
+                parsed.reconnectMaxDelaySeconds
+            } else {
+                defaults.reconnectMaxDelaySeconds
+            },
         ).normalized()
     }
 
-    private fun DashboardPreferences.normalized(): DashboardPreferences = copy(
-        controlsAutoHideSeconds = controlsAutoHideSeconds.coerceIn(2, 15),
-        alertCooldownSeconds = alertCooldownSeconds.coerceIn(3, 120),
-        hysteresis = hysteresis.coerceIn(0.0, 20.0),
-        delayedAfterMillis = delayedAfterMillis.coerceIn(500L, 10_000L),
-        staleAfterMillis = staleAfterMillis.coerceAtLeast(delayedAfterMillis + 500L).coerceAtMost(30_000L),
-        reconnectIntervalSeconds = reconnectIntervalSeconds.coerceIn(1, 30),
-        reconnectAttempts = reconnectAttempts.coerceIn(1, 20),
-        hudBrightnessPercent = hudBrightnessPercent.coerceIn(20, 100),
-    )
+    private fun DashboardPreferences.normalized(): DashboardPreferences {
+        val interval = reconnectIntervalSeconds.coerceIn(1, 30)
+        return copy(
+            controlsAutoHideSeconds = controlsAutoHideSeconds.coerceIn(2, 15),
+            alertCooldownSeconds = alertCooldownSeconds.coerceIn(3, 120),
+            hysteresis = hysteresis.coerceIn(0.0, 20.0),
+            delayedAfterMillis = delayedAfterMillis.coerceIn(500L, 10_000L),
+            staleAfterMillis = staleAfterMillis.coerceAtLeast(delayedAfterMillis + 500L).coerceAtMost(30_000L),
+            reconnectIntervalSeconds = interval,
+            reconnectAttempts = reconnectAttempts.coerceIn(1, 20),
+            reconnectMaxDelaySeconds = reconnectMaxDelaySeconds.coerceIn(interval, 120),
+            hudBrightnessPercent = hudBrightnessPercent.coerceIn(20, 100),
+            lastBluetoothAddress = lastBluetoothAddress?.takeIf(MAC_ADDRESS::matches),
+        )
+    }
+
+    companion object {
+        private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
+    }
 }
