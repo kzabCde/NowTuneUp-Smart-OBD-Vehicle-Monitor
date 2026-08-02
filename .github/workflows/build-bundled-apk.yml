@@ -1,5 +1,6 @@
 name: Build bundled website APK
 
+# NowTuneUp 1.6.0 Premium Gauge & UI Refresh release pipeline.
 on:
   workflow_dispatch:
   push:
