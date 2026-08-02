@@ -3,7 +3,8 @@ on:
   push:
     branches: [main, work]
   pull_request:
-permissions: { contents: read }
+permissions:
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -41,4 +42,103 @@ jobs:
         with:
           name: NowTuneUp-1.6.1-bluetooth-test
           path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.6.1-bluetooth-test.apk
+          if-no-files-found: error
+
+  signed-release-build-12:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'release/1.6.1-bluetooth-realtime-stability' &&
+      github.actor != 'github-actions[bot]'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
+      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+
+      - name: Validate signing prerequisites
+        shell: bash
+        run: |
+          test -s "$NTU_KEYSTORE_FILE"
+          test -n "$NTU_KEYSTORE_PASSWORD"
+          test -n "$NTU_KEY_ALIAS"
+          test -n "$NTU_KEY_PASSWORD"
+
+      - name: Test lint and assemble signed release
+        working-directory: android-app
+        run: |
+          chmod +x gradlew
+          ./gradlew test lint assembleRelease
+
+      - name: Verify and bundle APK build 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.1-release.apk"
+          TARGET="web/public/downloads/NowTuneUp.apk"
+          test -s "$SOURCE"
+          unzip -t "$SOURCE" >/dev/null
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$SOURCE"
+          cp "$SOURCE" "$TARGET"
+          SHA256="$(sha256sum "$TARGET" | awk '{print $1}')"
+          SIZE="$(stat -c%s "$TARGET")"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          python3 - "$SHA256" "$SIZE" "$PUBLISHED_AT" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          path = Path("web/lib/local-release.ts")
+          text = path.read_text()
+          text = re.sub(r'version: "[^"]+",', 'version: "1.6.1",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.1",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 12,', text)
+          text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
+          text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
+          text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
+          text = re.sub(
+              r'releaseNotes: "[^"]*",',
+              'releaseNotes: "Revised Bluetooth stability build. Uses cancellable non-blocking RFCOMM reads, a longer quiet-window drain for late ELM327 responses, insecure-to-secure SPP fallback, optional adaptive ELM timing, faster priority polling and soft command-stream resynchronization before a full reconnect. Premium gauges, dashboards, USB, Turbo, HUD, DTC and saved settings remain unchanged.",',
+              text,
+          )
+          path.write_text(text)
+          PY
+          {
+            echo "release=1.6.1"
+            echo "version_code=12"
+            echo "apk_size=$SIZE"
+            echo "sha256=$SHA256"
+            echo "apksigner_verified=true"
+          } > ci/release-1.6.1-status.txt
+
+      - name: Commit signed bundle to release branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f web/public/downloads/NowTuneUp.apk web/lib/local-release.ts ci/release-1.6.1-status.txt
+          git commit -m "Bundle revised NowTuneUp APK 1.6.1 build 12"
+          git push origin HEAD:${{ github.head_ref }}
+
+      - name: Upload signed release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NowTuneUp-1.6.1-build-12
+          path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error
