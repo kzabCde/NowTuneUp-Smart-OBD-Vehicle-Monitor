@@ -1,16 +1,18 @@
 package com.nowtuneup.app.data.obd.session
 
-import com.nowtuneup.app.data.obd.command.ObdCommandQueue
-import com.nowtuneup.app.data.obd.command.ObdRequest
-import com.nowtuneup.app.data.obd.parser.DtcParser
+import com.nowtuneup.app.data.logging.DiagnosticLogger
+import com.nowtuneup.app.data.obd.elm.Elm327Client
 import com.nowtuneup.app.data.obd.parser.ObdResponseParser
 import com.nowtuneup.app.data.obd.pid.DerivedPids
 import com.nowtuneup.app.data.obd.pid.StandardPids
 import com.nowtuneup.app.data.obd.pid.SupportedPidParser
+import com.nowtuneup.app.data.obd.polling.PidPollingScheduler
+import com.nowtuneup.app.data.obd.polling.PollingGroup
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.VehicleReading
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,57 +21,53 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class ObdSessionManager @Inject constructor(private val transport: ObdTransport) {
+@Singleton
+class ObdSessionManager @Inject constructor(
+    private val transport: ObdTransport,
+    private val elm327: Elm327Client,
+    private val logger: DiagnosticLogger,
+) {
     val connectionState = transport.connectionState
-    private val queue = ObdCommandQueue(transport)
+    val initialization = elm327.initialization
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _readings = MutableStateFlow(defaultReadings())
-    val readings: StateFlow<List<VehicleReading>> = _readings
-    private var supportedPids: Set<Int> = emptySet()
+    val readings: StateFlow<List<VehicleReading>> = _readings.asStateFlow()
+    private val _supportedPids = MutableStateFlow<Set<Int>>(emptySet())
+    val supportedPids: StateFlow<Set<Int>> = _supportedPids.asStateFlow()
     private var polling: Job? = null
 
     @Volatile
     private var refreshIntervalMillis: Long = 500
 
     suspend fun connect(): Result<Unit> {
+        pause()
+        elm327.resetInitializationState()
         transport.connect().onFailure { return Result.failure(it) }
-        val initialization = listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP0")
-        for (command in initialization) {
-            val raw = queue.execute(ObdRequest(command, timeoutMillis = 3_000, retryLimit = 0))
-                .getOrElse {
-                    disconnect()
-                    return Result.failure(IllegalStateException("Initialization failed at $command", it))
-                }
-            val upper = raw.uppercase()
-            if (listOf("ERROR", "?", "UNABLE TO CONNECT", "CAN ERROR", "BUS INIT ERROR", "STOPPED").any(upper::contains)) {
-                disconnect()
-                return Result.failure(IllegalStateException("Initialization failed at $command"))
-            }
+        return elm327.initialize().mapCatching { result ->
+            check(result.ecuConnected) { "ECU communication was not confirmed" }
+            val discovered = discoverSupportedPids()
+            check(discovered.isNotEmpty()) { "Vehicle reported no supported Mode 01 PIDs" }
+            _supportedPids.value = discovered
+            updateSupportFlags(discovered)
+            logger.info("OBD", "ECU ready with ${discovered.size} supported Mode 01 PIDs")
+            startPolling()
+        }.onFailure { error ->
+            logger.error("OBD", "Connection or initialization failed", error)
+            disconnect()
         }
-        supportedPids = discoverSupportedPids()
-        val turboSupported = DerivedPids.MAP in supportedPids && DerivedPids.BAROMETRIC_PRESSURE in supportedPids
-        _readings.update { values ->
-            values.map { reading ->
-                reading.copy(
-                    supported = if (reading.pid == DerivedPids.TURBO_PRESSURE) turboSupported else reading.pid in supportedPids,
-                    value = null,
-                )
-            }
-        }
-        startPolling()
-        return Result.success(Unit)
     }
 
     private suspend fun discoverSupportedPids(): Set<Int> {
         val discovered = mutableSetOf<Int>()
         for (base in listOf(0x00, 0x20, 0x40, 0x60)) {
             val command = "01%02X".format(base)
-            val response = queue.execute(ObdRequest(command, retryLimit = 0)).getOrNull() ?: break
-            val frame = ObdResponseParser.normalize(response, command).getOrNull()?.frames
+            val response = elm327.executeCommand(command, timeoutMillis = 5_000L, retryLimit = 0).getOrNull() ?: break
+            val frame = ObdResponseParser.normalize(response.raw, command).getOrNull()?.frames
                 ?.firstOrNull { it.size >= 6 && it[0] == 0x41 && it[1] == base } ?: break
             discovered += SupportedPidParser.parse(base, frame.drop(2).take(4))
             if (base + 0x20 !in discovered) break
@@ -77,44 +75,51 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
         return discovered
     }
 
+    private fun updateSupportFlags(discovered: Set<Int>) {
+        val turboSupported = DerivedPids.MAP in discovered && DerivedPids.BAROMETRIC_PRESSURE in discovered
+        _readings.update { values ->
+            values.map { reading ->
+                reading.copy(
+                    supported = if (reading.pid == DerivedPids.TURBO_PRESSURE) turboSupported else reading.pid in discovered,
+                    value = null,
+                )
+            }
+        }
+    }
+
     suspend fun disconnect() {
-        polling?.cancel()
-        polling = null
+        pause()
+        _supportedPids.value = emptySet()
+        elm327.resetInitializationState()
         transport.disconnect()
+        _readings.update { readings -> readings.map { it.copy(value = null) } }
     }
 
     fun startPolling() {
         if (polling?.isActive == true || connectionState.value != ConnectionState.CONNECTED) return
-        val schedule = listOf(
-            0x0C,
-            0x0D,
-            DerivedPids.MAP,
-            0x0C,
-            0x0D,
-            DerivedPids.MAP,
-            0x04,
-            0x11,
-            0x05,
-            0x42,
-            DerivedPids.BAROMETRIC_PRESSURE,
-        )
+        val scheduler = PidPollingScheduler(_supportedPids.value)
+        if (scheduler.isEmpty()) return
         polling = scope.launch {
-            var tick = 0
+            logger.info("Polling", "Sequential polling started with ${scheduler.snapshot().size} weighted slots")
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
-                val supportedSchedule = schedule.filter { it in supportedPids }
-                if (supportedSchedule.isEmpty()) {
-                    delay(1_000)
+                val slot = scheduler.next()
+                if (slot == null) {
+                    delay(1_000L)
                     continue
                 }
-                val pid = supportedSchedule[tick % supportedSchedule.size]
-                val command = "01%02X".format(pid)
-                queue.execute(ObdRequest(command)).onSuccess { raw ->
-                    ObdResponseParser.parseMode1(raw, pid, command).onSuccess { publish(pid, it) }
+                elm327.requestPid(slot.pid).onSuccess { reading ->
+                    publish(reading.pid, reading.value ?: return@onSuccess)
+                }.onFailure { error ->
+                    logger.warning("Polling", "PID 01%02X failed: ${error.message}".format(slot.pid))
                 }
-                tick++
-                val fastPid = pid == 0x0C || pid == 0x0D || pid == DerivedPids.MAP
-                delay(if (fastPid) refreshIntervalMillis else maxOf(refreshIntervalMillis, 700))
+                val delayMillis = when (slot.group) {
+                    PollingGroup.FAST -> refreshIntervalMillis
+                    PollingGroup.NORMAL -> maxOf(refreshIntervalMillis, 650L)
+                    PollingGroup.SLOW -> maxOf(refreshIntervalMillis, 1_200L)
+                }
+                delay(delayMillis)
             }
+            logger.info("Polling", "Sequential polling stopped")
         }
     }
 
@@ -124,12 +129,24 @@ class ObdSessionManager @Inject constructor(private val transport: ObdTransport)
     }
 
     fun setRefreshInterval(intervalMillis: Long) {
-        refreshIntervalMillis = intervalMillis.coerceIn(200, 1_000)
+        refreshIntervalMillis = intervalMillis.coerceIn(200L, 1_500L)
     }
 
-    suspend fun readDtcs() = queue.execute(ObdRequest("03", 4_000)).map(DtcParser::parse)
+    suspend fun readDtcs() = elm327.readStoredDtcs()
 
-    fun close() = scope.cancel()
+    suspend fun clearDtcs(): Result<Unit> {
+        pause()
+        return elm327.clearStoredDtcs().onSuccess {
+            logger.warning("DTC", "Mode 04 clear command acknowledged")
+        }.also {
+            if (connectionState.value == ConnectionState.CONNECTED) startPolling()
+        }
+    }
+
+    fun close() {
+        pause()
+        scope.cancel()
+    }
 
     private fun publish(pid: Int, value: Double) {
         val now = System.currentTimeMillis()
