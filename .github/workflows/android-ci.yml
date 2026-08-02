@@ -36,9 +36,9 @@ jobs:
             android-app/debug-deps.txt
             android-app/build/reports/problems/problems-report.html
           if-no-files-found: ignore
-      - name: Upload debug APK
+      - name: Upload Bluetooth test APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-debug
-          path: android-app/app/build/outputs/apk/debug/NowTuneUp-debug.apk
+          name: NowTuneUp-1.6.1-bluetooth-test
+          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.6.1-bluetooth-test.apk
           if-no-files-found: error
