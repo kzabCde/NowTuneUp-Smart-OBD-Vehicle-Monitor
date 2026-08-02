@@ -1,6 +1,6 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.6.1 Bluetooth realtime stability hotfix pipeline.
+# NowTuneUp 1.6.1 revised Bluetooth realtime stability pipeline.
 on:
   workflow_dispatch:
   push:
@@ -39,7 +39,7 @@ jobs:
         run: |
           sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.6.1/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
 
-      - name: Build and sign APK 1.6.1
+      - name: Build and sign APK 1.6.1 build 12
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
@@ -75,13 +75,13 @@ jobs:
           text = path.read_text()
           text = re.sub(r'version: "[^"]+",', 'version: "1.6.1",', text)
           text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.1",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 11,', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 12,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "Improves Bluetooth ELM327 realtime stability with interleaved priority polling, shorter live PID deadlines, no long live-data retries, stale-response recovery, sustained-failure reconnect thresholds and commands-per-second diagnostics. Premium gauges, dashboards, USB, Turbo, HUD, DTC and saved settings remain unchanged.",',
+              'releaseNotes: "Revised Bluetooth stability build. Uses cancellable non-blocking RFCOMM reads, a longer quiet-window drain for late ELM327 responses, insecure-to-secure SPP fallback, optional adaptive ELM timing, faster priority polling and soft command-stream resynchronization before a full reconnect. Premium gauges, dashboards, USB, Turbo, HUD, DTC and saved settings remain unchanged.",',
               text,
           )
           path.write_text(text)
@@ -100,12 +100,12 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.6.1 with website"
+          git commit -m "Bundle revised NowTuneUp APK 1.6.1 build 12"
           git push
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.6.1
+          name: NowTuneUp-1.6.1-build-12
           path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error
