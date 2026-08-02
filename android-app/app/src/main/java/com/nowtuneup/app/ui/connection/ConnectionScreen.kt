@@ -235,7 +235,10 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                     ConnectionPhase.INITIALIZING_ADAPTER,
                 )
                 Button(
-                    onClick = if (connectedOrBusy) viewModel::disconnectManually else viewModel::connectSelected,
+                    onClick = {
+                        if (connectedOrBusy) viewModel.disconnectManually()
+                        else viewModel.connectSelected()
+                    },
                     modifier = Modifier.weight(1f),
                     enabled = state.phase !in setOf(
                         ConnectionPhase.PERMISSION_REQUIRED,
