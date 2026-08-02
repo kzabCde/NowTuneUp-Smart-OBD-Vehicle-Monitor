@@ -112,7 +112,9 @@ data class DashboardProfile(val id: Long = 0, val name: String, val widgets: Lis
 
 enum class DashboardMode { DIGITAL, ANALOG, HYBRID }
 enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, DTC_CARD }
-enum class GaugeStyle { CLASSIC, SPORT, MINIMAL, NEON, OEM }
+enum class GaugeStyle { CLASSIC_METAL, SPORT_RED, NEO_CYAN, RACING_AMBER, OEM_BLUE, HUD_GREEN, CUSTOM }
+enum class BezelFinish { BRUSHED_STEEL, BLACK_CHROME, TITANIUM_DARK }
+enum class GaugeSmoothing { FAST, BALANCED, SMOOTH }
 enum class DigitalRingColorPreset { AMBER, CYAN, GREEN, RED, PURPLE, WHITE, CUSTOM }
 enum class DisplayUnit { RPM, KMH, MPH, CELSIUS, FAHRENHEIT, VOLT, PERCENT, KPA, BAR, PSI, LITER, GALLON, NONE }
 enum class RefreshRate(val intervalMillis: Long) { LOW(1_000), BALANCED(500), FAST(200) }
@@ -135,7 +137,86 @@ data class ColorConfig(
     val border: Long = 0xFF334155,
     val warning: Long = 0xFFFFB300,
     val critical: Long = 0xFFFF5252,
+    val face: Long? = null,
+    val bezel: Long? = null,
+    val tick: Long? = null,
+    val needle: Long? = null,
+    val needleHighlight: Long? = null,
+    val glow: Long? = null,
 )
+
+data class GaugeStylePreset(
+    val style: GaugeStyle,
+    val bezelFinish: BezelFinish,
+    val face: Long,
+    val bezel: Long,
+    val tick: Long,
+    val label: Long,
+    val value: Long,
+    val needle: Long,
+    val needleHighlight: Long,
+    val warning: Long,
+    val critical: Long,
+    val glow: Long,
+)
+
+val userVisibleGaugeStyles: List<GaugeStyle> = listOf(
+    GaugeStyle.CLASSIC_METAL,
+    GaugeStyle.SPORT_RED,
+    GaugeStyle.NEO_CYAN,
+    GaugeStyle.RACING_AMBER,
+    GaugeStyle.OEM_BLUE,
+    GaugeStyle.HUD_GREEN,
+    GaugeStyle.CUSTOM,
+)
+
+fun premiumGaugePreset(style: GaugeStyle): GaugeStylePreset = when (style) {
+    GaugeStyle.CLASSIC_METAL -> GaugeStylePreset(
+        style, BezelFinish.BRUSHED_STEEL, 0xFF080B0E, 0xFF8A9198, 0xFFF3EBDD,
+        0xFFF3EBDD, 0xFFFFFFFF, 0xFFFF334D, 0xFFFFB3BD, 0xFFFFB300, 0xFFFF3D4D, 0x66FFFFFF,
+    )
+    GaugeStyle.SPORT_RED -> GaugeStylePreset(
+        style, BezelFinish.BLACK_CHROME, 0xFF08080A, 0xFF25262A, 0xFFFFE8E8,
+        0xFFFFF5F5, 0xFFFF4A5E, 0xFFFF1744, 0xFFFFA0AF, 0xFFFF9800, 0xFFFF1744, 0x88FF1744,
+    )
+    GaugeStyle.NEO_CYAN -> GaugeStylePreset(
+        style, BezelFinish.TITANIUM_DARK, 0xFF061017, 0xFF24343D, 0xFF34DFFF,
+        0xFFDDFBFF, 0xFF35E6FF, 0xFFF5FCFF, 0xFF35E6FF, 0xFFFFB300, 0xFFFF4056, 0x8835E6FF,
+    )
+    GaugeStyle.RACING_AMBER -> GaugeStylePreset(
+        style, BezelFinish.BLACK_CHROME, 0xFF100C04, 0xFF29251D, 0xFFFFC247,
+        0xFFFFF0C7, 0xFFFFC247, 0xFFFFF5D8, 0xFFFFD97A, 0xFFFF8F00, 0xFFFF3D3D, 0x88FFC247,
+    )
+    GaugeStyle.OEM_BLUE -> GaugeStylePreset(
+        style, BezelFinish.BRUSHED_STEEL, 0xFF07101C, 0xFF596775, 0xFF6BB7FF,
+        0xFFE9F4FF, 0xFF5AAEFF, 0xFFFF334D, 0xFFFFA5B2, 0xFFFFB300, 0xFFFF3D4D, 0x775AAEFF,
+    )
+    GaugeStyle.HUD_GREEN -> GaugeStylePreset(
+        style, BezelFinish.BLACK_CHROME, 0xFF020906, 0xFF1B2822, 0xFF48FF8A,
+        0xFFD9FFE7, 0xFF48FF8A, 0xFFFFFFFF, 0xFF8AFFB0, 0xFFFFD600, 0xFFFF3D4D, 0x8848FF8A,
+    )
+    GaugeStyle.CUSTOM -> GaugeStylePreset(
+        style, BezelFinish.TITANIUM_DARK, 0xFF080D12, 0xFF37424C, 0xFF00D9FF,
+        0xFFE8F7FA, 0xFF00E5FF, 0xFFFF334D, 0xFFFFA5B2, 0xFFFFB300, 0xFFFF5252, 0x7700E5FF,
+    )
+}
+
+fun DashboardWidgetConfig.resolvedGaugePreset(): GaugeStylePreset {
+    val base = premiumGaugePreset(gaugeStyle)
+    return base.copy(
+        bezelFinish = bezelFinish ?: base.bezelFinish,
+        face = colors.face ?: colors.background,
+        bezel = colors.bezel ?: colors.border.takeIf { gaugeStyle == GaugeStyle.CUSTOM } ?: base.bezel,
+        tick = colors.tick ?: colors.label.takeIf { gaugeStyle == GaugeStyle.CUSTOM } ?: base.tick,
+        label = colors.label.takeIf { gaugeStyle == GaugeStyle.CUSTOM } ?: base.label,
+        value = colors.value.takeIf { gaugeStyle == GaugeStyle.CUSTOM } ?: base.value,
+        needle = colors.needle ?: colors.value.takeIf { gaugeStyle == GaugeStyle.CUSTOM } ?: base.needle,
+        needleHighlight = colors.needleHighlight ?: base.needleHighlight,
+        warning = colors.warning,
+        critical = colors.critical,
+        glow = colors.glow ?: base.glow,
+    )
+}
 
 data class DigitalRingConfig(
     val preset: DigitalRingColorPreset = DigitalRingColorPreset.AMBER,
@@ -192,7 +273,10 @@ data class DashboardWidgetConfig(
     val row: Int = 0,
     val columnSpan: Int = 1,
     val rowSpan: Int = 1,
-    val gaugeStyle: GaugeStyle = GaugeStyle.CLASSIC,
+    val gaugeStyle: GaugeStyle = GaugeStyle.CLASSIC_METAL,
+    val bezelFinish: BezelFinish? = null,
+    val gaugeSmoothing: GaugeSmoothing? = null,
+    val showPeakMarker: Boolean = true,
     val colors: ColorConfig = ColorConfig(),
     val threshold: WarningThreshold = WarningThreshold(),
     val digitalRing: DigitalRingConfig? = null,
@@ -210,19 +294,19 @@ data class DashboardConfig(
 )
 
 data class ThemeConfig(
-    val name: String = "Dark",
+    val name: String = "Dark OEM",
     val primary: Long = 0xFF00E5FF,
     val secondary: Long = 0xFFFFB300,
     val accent: Long = 0xFF00E5FF,
-    val background: Long = 0xFF090D12,
-    val card: Long = 0xFF121923,
+    val background: Long = 0xFF070A0E,
+    val card: Long = 0xFF10161D,
     val text: Long = 0xFFEAF7FA,
     val gaugeNeedle: Long = 0xFF00E5FF,
     val gaugeTick: Long = 0xFF90A4AE,
     val warning: Long = 0xFFFFB300,
     val critical: Long = 0xFFFF5252,
     val success: Long = 0xFF4CAF50,
-    val border: Long = 0xFF334155,
+    val border: Long = 0xFF2A3540,
 )
 
 data class ReadingStats(

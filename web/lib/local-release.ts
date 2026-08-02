@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.5.0",
-  tagName: "v1.5.0",
-  versionCode: 9,
+  version: "1.6.0",
+  tagName: "v1.6.0",
+  versionCode: 10,
   apkName: "NowTuneUp.apk",
-  apkSize: 12789442,
+  apkSize: 12805826,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "84747cc32923287b1d26bd1c8146e2c5221f07dc07c0539a7c9ca0f32656d2ba",
+  sha256: "28cc8d3cb933e17af0694178985ce2a0a59603ab6a38a95eaead15e56baa3f4a",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-02T13:05:07.000Z",
-  releaseNotes: "Adds Bluetooth Classic SPP support for paired ELM327 adapters with Android 12+ permissions, RFCOMM device selection, controlled ELM327 initialization, ECU verification, supported-PID polling, Thai connection guidance, exponential reconnect, diagnostic logs and confirmed Mode 04 DTC clearing. USB, Dashboard, Turbo, HUD, Tablet and Head Unit features remain available. BLE remains an experimental disabled transport placeholder until adapter-specific GATT UUIDs are known.",
+  publishedAt: "2026-08-02T14:09:23.000Z",
+  releaseNotes: "Introduces premium full circular automotive gauges with layered metallic bezels, improved needles, digital values, warning and critical arcs, and six colored gauge presets. Removes visually weak colorless presets with backward-compatible migration. Refreshes the Dashboard Editor, themes, empty and stale states while preserving Bluetooth ELM327, USB, Turbo, HUD, diagnostics, alerts and saved dashboards.",
 };
 
 export function getLocalRelease(version?: string) {

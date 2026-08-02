@@ -1,8 +1,12 @@
 package com.nowtuneup.app.data.dashboard
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
 import com.nowtuneup.app.domain.model.DashboardConfig
+import com.nowtuneup.app.domain.model.DigitalRingColorPreset
+import com.nowtuneup.app.domain.model.GaugeStyle
 
 object DashboardCodec {
     private const val MAX_JSON_BYTES = 1_000_000
@@ -13,7 +17,9 @@ object DashboardCodec {
 
     fun import(json: String): Result<DashboardConfig> = runCatching {
         require(json.toByteArray().size <= MAX_JSON_BYTES) { "Configuration is too large" }
-        val config = gson.fromJson(json, DashboardConfig::class.java)
+        val root = JsonParser.parseString(json).asJsonObject
+        migrateLegacyValues(root)
+        val config = gson.fromJson(root, DashboardConfig::class.java)
             ?: throw JsonParseException("Empty configuration")
 
         require(config.id.isNotBlank() && config.name.isNotBlank()) {
@@ -30,9 +36,7 @@ object DashboardCodec {
         val widgets = config.portrait.widgets + config.landscape.widgets
         require(widgets.map { it.id }.all { it.isNotBlank() }) { "Widget ids are required" }
         require(widgets.all { widget ->
-            val ringIsValid = widget.digitalRing?.let { ring ->
-                ring.segmentCount in 12..72
-            } ?: true
+            val ringIsValid = widget.digitalRing?.let { ring -> ring.segmentCount in 12..72 } ?: true
             widget.title.isNotBlank() &&
                 widget.decimals in 0..3 &&
                 widget.valueSize in 20..80 &&
@@ -42,5 +46,32 @@ object DashboardCodec {
         }) { "Invalid widget configuration" }
 
         config
+    }
+
+    private fun migrateLegacyValues(root: JsonObject) {
+        listOf("portrait", "landscape").forEach { layoutName ->
+            val widgets = root.getAsJsonObject(layoutName)?.getAsJsonArray("widgets") ?: return@forEach
+            widgets.forEach { element ->
+                val widget = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+                val rawStyle = widget.get("gaugeStyle")?.takeIf { it.isJsonPrimitive }?.asString
+                widget.addProperty("gaugeStyle", migrateGaugeStyle(rawStyle).name)
+
+                widget.getAsJsonObject("digitalRing")?.let { ring ->
+                    val rawPreset = ring.get("preset")?.takeIf { it.isJsonPrimitive }?.asString
+                    val preset = runCatching { DigitalRingColorPreset.valueOf(rawPreset.orEmpty()) }
+                        .getOrDefault(DigitalRingColorPreset.CYAN)
+                    ring.addProperty("preset", preset.name)
+                }
+            }
+        }
+    }
+
+    private fun migrateGaugeStyle(raw: String?): GaugeStyle = when (raw) {
+        "CLASSIC" -> GaugeStyle.CLASSIC_METAL
+        "SPORT" -> GaugeStyle.SPORT_RED
+        "MINIMAL" -> GaugeStyle.CLASSIC_METAL
+        "NEON" -> GaugeStyle.NEO_CYAN
+        "OEM" -> GaugeStyle.OEM_BLUE
+        else -> runCatching { GaugeStyle.valueOf(raw.orEmpty()) }.getOrDefault(GaugeStyle.CLASSIC_METAL)
     }
 }

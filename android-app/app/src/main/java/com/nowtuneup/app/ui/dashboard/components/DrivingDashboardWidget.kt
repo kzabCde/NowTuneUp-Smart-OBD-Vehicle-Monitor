@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.nowtuneup.app.domain.model.DataFreshness
@@ -34,26 +35,34 @@ fun DrivingDashboardWidget(
     } else {
         reading
     }
+    val contentAlpha = when (freshness) {
+        DataFreshness.STALE, DataFreshness.UNSUPPORTED -> 0.60f
+        DataFreshness.NO_DATA, DataFreshness.RECONNECTING -> 0.76f
+        else -> 1f
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        DashboardWidgetView(
-            config = config,
-            reading = protectedReading,
-            reduceMotion = reduceMotion,
-            dtcCount = dtcCount,
-        )
+        Box(modifier = Modifier.fillMaxSize().alpha(contentAlpha)) {
+            DashboardWidgetView(
+                config = config,
+                reading = protectedReading,
+                reduceMotion = reduceMotion,
+                dtcCount = dtcCount,
+                stats = stats,
+            )
+        }
 
         if (freshness != DataFreshness.LIVE) {
             Surface(
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-                color = freshnessColor(freshness).copy(alpha = 0.92f),
+                color = freshnessColor(freshness).copy(alpha = 0.94f),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(
                     text = freshnessLabel(freshness),
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Black,
+                    color = if (freshness == DataFreshness.STALE) Color.White else Color.Black,
                 )
             }
         }
@@ -61,11 +70,11 @@ fun DrivingDashboardWidget(
         if (stats != null && (showPeakHold || showMinMax)) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
-                color = Color.Black.copy(alpha = 0.66f),
+                color = Color.Black.copy(alpha = 0.70f),
                 shape = MaterialTheme.shapes.small,
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (showMinMax) {
@@ -83,16 +92,16 @@ fun DrivingDashboardWidget(
 private fun freshnessLabel(value: DataFreshness): String = when (value) {
     DataFreshness.LIVE -> "Live"
     DataFreshness.DELAYED -> "Delayed"
-    DataFreshness.STALE -> "Stale data"
-    DataFreshness.NO_DATA -> "No data"
-    DataFreshness.UNSUPPORTED -> "Unsupported"
+    DataFreshness.STALE -> "Stale"
+    DataFreshness.NO_DATA -> "Waiting for ECU"
+    DataFreshness.UNSUPPORTED -> "Unsupported PID"
     DataFreshness.RECONNECTING -> "Reconnecting"
 }
 
 private fun freshnessColor(value: DataFreshness): Color = when (value) {
     DataFreshness.LIVE -> Color(0xFF4CAF50)
     DataFreshness.DELAYED -> Color(0xFFFFC107)
-    DataFreshness.STALE -> Color(0xFFFF7043)
+    DataFreshness.STALE -> Color(0xFFD84315)
     DataFreshness.NO_DATA -> Color(0xFFB0BEC5)
     DataFreshness.UNSUPPORTED -> Color(0xFF90A4AE)
     DataFreshness.RECONNECTING -> Color(0xFF29B6F6)

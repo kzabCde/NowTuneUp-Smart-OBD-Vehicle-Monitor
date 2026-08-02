@@ -2,14 +2,18 @@ package com.nowtuneup.app.ui.dashboard.editor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -36,15 +40,21 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nowtuneup.app.data.dashboard.DashboardCodec
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
+import com.nowtuneup.app.domain.model.BezelFinish
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardLayout
@@ -54,10 +64,18 @@ import com.nowtuneup.app.domain.model.DashboardWidgetType
 import com.nowtuneup.app.domain.model.DigitalRingColorPreset
 import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
+import com.nowtuneup.app.domain.model.GaugeSmoothing
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.ThemeConfig
+import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.domain.model.WarningThreshold
 import com.nowtuneup.app.domain.model.digitalRingPreset
+import com.nowtuneup.app.domain.model.premiumGaugePreset
+import com.nowtuneup.app.domain.model.resolvedGaugePreset
+import com.nowtuneup.app.domain.model.userVisibleGaugeStyles
+import com.nowtuneup.app.ui.dashboard.components.DashboardWidgetView
+import kotlin.math.cos
+import kotlin.math.sin
 
 private enum class EditorOrientation { PORTRAIT, LANDSCAPE }
 
@@ -159,7 +177,7 @@ fun DashboardEditor(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Responsive dashboard editor") },
+                title = { Text("Premium dashboard editor") },
                 navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
                 actions = { TextButton(onClick = { onSave(draft) }) { Text("Save") } },
             )
@@ -167,9 +185,10 @@ fun DashboardEditor(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
+                SectionTitle("Dashboard", "Name and global presentation settings.")
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it.take(40)) },
@@ -179,7 +198,7 @@ fun DashboardEditor(
                 )
             }
             item {
-                SectionTitle("Edit orientation", "Portrait and landscape keep independent columns, order and sizes.")
+                SectionTitle("Layout", "Portrait and landscape keep independent columns, order and sizes.")
                 ScrollableChips {
                     EditorOrientation.entries.forEach { item ->
                         FilterChip(
@@ -193,6 +212,22 @@ fun DashboardEditor(
                     }
                 }
                 Text("Editing ${orientation.label()}: ${activeLayout.widgets.size} widgets, ${activeLayout.columns} columns")
+                Text("Columns: ${activeLayout.columns}")
+                Slider(
+                    value = activeLayout.columns.toFloat(),
+                    onValueChange = { value ->
+                        val columns = value.toInt().coerceIn(1, 6)
+                        draft = draft.withLayout(
+                            orientation,
+                            activeLayout.copy(
+                                columns = columns,
+                                widgets = activeLayout.widgets.map { it.copy(columnSpan = it.columnSpan.coerceAtMost(columns)) },
+                            ),
+                        )
+                    },
+                    valueRange = 1f..6f,
+                    steps = 4,
+                )
                 OutlinedButton(
                     onClick = {
                         draft = draft.copyOtherLayoutTo(orientation)
@@ -204,7 +239,7 @@ fun DashboardEditor(
                 }
             }
             item {
-                SectionTitle("Display mode", "Apply a shared base style to both orientations.")
+                SectionTitle("Display mode", "Apply a shared widget type base without removing individual colors.")
                 ScrollableChips {
                     DashboardMode.entries.forEach { mode ->
                         FilterChip(
@@ -216,28 +251,7 @@ fun DashboardEditor(
                 }
             }
             item {
-                SectionTitle("${orientation.label()} grid", "Use fewer columns on phones and more columns in landscape or tablets.")
-                Text("Columns: ${activeLayout.columns}")
-                Slider(
-                    value = activeLayout.columns.toFloat(),
-                    onValueChange = { value ->
-                        val columns = value.toInt().coerceIn(1, 6)
-                        draft = draft.withLayout(
-                            orientation,
-                            activeLayout.copy(
-                                columns = columns,
-                                widgets = activeLayout.widgets.map {
-                                    it.copy(columnSpan = it.columnSpan.coerceAtMost(columns))
-                                },
-                            ),
-                        )
-                    },
-                    valueRange = 1f..6f,
-                    steps = 4,
-                )
-            }
-            item {
-                SectionTitle("Dashboard theme", "Theme changes are applied to portrait and landscape widgets.")
+                SectionTitle("Automotive theme", "Colored themes replace the old grayscale-only choices.")
                 ScrollableChips {
                     DashboardDefaults.themes.forEach { theme ->
                         FilterChip(
@@ -252,7 +266,7 @@ fun DashboardEditor(
             item {
                 SectionTitle(
                     "${orientation.label()} widgets",
-                    "Press and hold to reorder. Tap Configure to resize or change the gauge.",
+                    "Press and hold to reorder. Configure opens a live gauge preview and grouped controls.",
                 )
             }
             itemsIndexed(
@@ -328,7 +342,7 @@ fun DashboardEditor(
                 ) { Text("Add available widget") }
             }
             item {
-                SectionTitle("Import and export", "JSON includes both orientations, colors, thresholds and Digital Ring settings.")
+                SectionTitle("Import and export", "JSON keeps both orientations, premium styles, colors and thresholds.")
                 OutlinedButton(
                     onClick = {
                         val safeName = draft.name.ifBlank { "NowTuneUp-dashboard" }
@@ -360,7 +374,7 @@ fun DashboardEditor(
 private fun SectionTitle(title: String, detail: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(detail, style = MaterialTheme.typography.bodySmall)
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -375,28 +389,34 @@ private fun WidgetEditorCard(
     onMove: (Int) -> Unit,
     onRemove: () -> Unit,
 ) {
+    val preset = widget.resolvedGaugePreset()
     Card(
         onClick = onEdit,
         modifier = modifier.fillMaxWidth().alpha(if (dragging) 0.58f else 1f),
         colors = CardDefaults.cardColors(containerColor = Color(widget.colors.background)),
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text(widget.title, color = Color(widget.colors.label), fontWeight = FontWeight.Bold)
-                    Text(
-                        "${widget.type.label()} · ${widget.columnSpan}×${widget.rowSpan} · ${widget.unit.label()}",
-                        color = Color(widget.colors.label),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Text("☰", color = Color(widget.colors.value), style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (widget.type in setOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE)) {
+                MiniGaugePreview(widget.gaugeStyle, Modifier.size(72.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = { onMove(index - 1) }, enabled = index > 0) { Text("↑") }
-                TextButton(onClick = { onMove(index + 1) }, enabled = index < total - 1) { Text("↓") }
-                TextButton(onClick = onEdit) { Text("Configure") }
-                TextButton(onClick = onRemove) { Text("Remove") }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(widget.title, color = Color(preset.label), fontWeight = FontWeight.Bold)
+                Text(
+                    "${widget.type.label()} · ${widget.columnSpan}×${widget.rowSpan} · ${widget.unit.label()}",
+                    color = Color(preset.label).copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { onMove(index - 1) }, enabled = index > 0) { Text("↑") }
+                    TextButton(onClick = { onMove(index + 1) }, enabled = index < total - 1) { Text("↓") }
+                    TextButton(onClick = onEdit) { Text("Configure") }
+                    TextButton(onClick = onRemove) { Text("Remove") }
+                }
             }
         }
     }
@@ -411,17 +431,22 @@ private fun WidgetConfigurationSheet(
     onSave: (DashboardWidgetConfig) -> Unit,
 ) {
     val initialRing = widget.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
+    val initialPreset = widget.resolvedGaugePreset()
     var draft by remember(widget.id) { mutableStateOf(widget) }
     var warningLow by remember(widget.id) { mutableStateOf(widget.threshold.warningLow.text()) }
     var warningHigh by remember(widget.id) { mutableStateOf(widget.threshold.warningHigh.text()) }
     var criticalLow by remember(widget.id) { mutableStateOf(widget.threshold.criticalLow.text()) }
     var criticalHigh by remember(widget.id) { mutableStateOf(widget.threshold.criticalHigh.text()) }
-    var valueColor by remember(widget.id) { mutableStateOf(widget.colors.value.hex()) }
-    var labelColor by remember(widget.id) { mutableStateOf(widget.colors.label.hex()) }
-    var backgroundColor by remember(widget.id) { mutableStateOf(widget.colors.background.hex()) }
-    var borderColor by remember(widget.id) { mutableStateOf(widget.colors.border.hex()) }
-    var warningColor by remember(widget.id) { mutableStateOf(widget.colors.warning.hex()) }
-    var criticalColor by remember(widget.id) { mutableStateOf(widget.colors.critical.hex()) }
+    var valueColor by remember(widget.id) { mutableStateOf(initialPreset.value.hex()) }
+    var labelColor by remember(widget.id) { mutableStateOf(initialPreset.label.hex()) }
+    var backgroundColor by remember(widget.id) { mutableStateOf(initialPreset.face.hex()) }
+    var borderColor by remember(widget.id) { mutableStateOf(initialPreset.bezel.hex()) }
+    var tickColor by remember(widget.id) { mutableStateOf(initialPreset.tick.hex()) }
+    var needleColor by remember(widget.id) { mutableStateOf(initialPreset.needle.hex()) }
+    var needleHighlightColor by remember(widget.id) { mutableStateOf(initialPreset.needleHighlight.hex()) }
+    var glowColor by remember(widget.id) { mutableStateOf(initialPreset.glow.hex()) }
+    var warningColor by remember(widget.id) { mutableStateOf(initialPreset.warning.hex()) }
+    var criticalColor by remember(widget.id) { mutableStateOf(initialPreset.critical.hex()) }
     var ringPreset by remember(widget.id) { mutableStateOf(initialRing.preset) }
     var segmentCount by remember(widget.id) { mutableFloatStateOf(initialRing.segmentCount.toFloat()) }
     var showScaleLabels by remember(widget.id) { mutableStateOf(initialRing.showScaleLabels) }
@@ -432,7 +457,22 @@ private fun WidgetConfigurationSheet(
     var titleColor by remember(widget.id) { mutableStateOf(initialRing.titleColor.hex()) }
     var bezelColor by remember(widget.id) { mutableStateOf(initialRing.bezelColor.hex()) }
 
-    fun applyPreset(preset: DigitalRingColorPreset) {
+    fun applyAnalogPreset(style: GaugeStyle) {
+        val selected = premiumGaugePreset(style)
+        draft = draft.copy(gaugeStyle = style, bezelFinish = selected.bezelFinish)
+        valueColor = selected.value.hex()
+        labelColor = selected.label.hex()
+        backgroundColor = selected.face.hex()
+        borderColor = selected.bezel.hex()
+        tickColor = selected.tick.hex()
+        needleColor = selected.needle.hex()
+        needleHighlightColor = selected.needleHighlight.hex()
+        glowColor = selected.glow.hex()
+        warningColor = selected.warning.hex()
+        criticalColor = selected.critical.hex()
+    }
+
+    fun applyRingPreset(preset: DigitalRingColorPreset) {
         val selected = digitalRingPreset(preset, segmentCount.toInt())
         ringPreset = preset
         digitColor = selected.digitColor.hex()
@@ -447,12 +487,46 @@ private fun WidgetConfigurationSheet(
         borderColor = selected.bezelColor.hex()
     }
 
+    val previewColors = draft.colors.copy(
+        value = valueColor.argbOr(widget.colors.value),
+        label = labelColor.argbOr(widget.colors.label),
+        background = backgroundColor.argbOr(widget.colors.background),
+        border = borderColor.argbOr(widget.colors.border),
+        warning = warningColor.argbOr(widget.colors.warning),
+        critical = criticalColor.argbOr(widget.colors.critical),
+        face = backgroundColor.argbOr(widget.colors.background),
+        bezel = borderColor.argbOr(widget.colors.border),
+        tick = tickColor.argbOr(widget.colors.label),
+        needle = needleColor.argbOr(widget.colors.value),
+        needleHighlight = needleHighlightColor.argbOr(0xFFFFFFFF),
+        glow = glowColor.argbOr(widget.colors.value),
+    )
+    val previewWidget = draft.copy(colors = previewColors, rowSpan = 2, columnSpan = 1)
+    val previewReading = VehicleReading(
+        pid = previewWidget.pid,
+        name = previewWidget.title,
+        value = 62.0,
+        unit = previewWidget.unit.name,
+        supported = true,
+        minimum = 0.0,
+        maximum = 100.0,
+    )
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Widget configuration", style = MaterialTheme.typography.headlineSmall)
+            Text("Widget configuration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(previewColors.background)),
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                DashboardWidgetView(previewWidget, previewReading, reduceMotion = false, dtcCount = 0)
+            }
+
+            SheetHeading("Widget")
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = { draft = draft.copy(title = it.take(32)) },
@@ -460,7 +534,6 @@ private fun WidgetConfigurationSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            SheetHeading("Widget type")
             ScrollableChips {
                 DashboardWidgetType.entries.forEach { type ->
                     FilterChip(
@@ -474,18 +547,40 @@ private fun WidgetConfigurationSheet(
                     )
                 }
             }
+
             if (draft.type == DashboardWidgetType.ANALOG || draft.type == DashboardWidgetType.MINI_GAUGE) {
-                SheetHeading("Analog gauge style")
+                HorizontalDivider()
+                SheetHeading("Gauge style")
+                Text("Choose a colored premium preset. Changes remain temporary until Apply is pressed.")
+                GaugePresetGallery(selected = draft.gaugeStyle, onSelect = ::applyAnalogPreset)
+
+                SheetHeading("Bezel")
                 ScrollableChips {
-                    GaugeStyle.entries.forEach { style ->
+                    BezelFinish.entries.forEach { finish ->
                         FilterChip(
-                            selected = draft.gaugeStyle == style,
-                            onClick = { draft = draft.copy(gaugeStyle = style) },
-                            label = { Text(style.label()) },
+                            selected = (draft.bezelFinish ?: initialPreset.bezelFinish) == finish,
+                            onClick = { draft = draft.copy(bezelFinish = finish) },
+                            label = { Text(finish.label()) },
                         )
                     }
                 }
+                SheetHeading("Needle smoothing")
+                ScrollableChips {
+                    GaugeSmoothing.entries.forEach { smoothing ->
+                        FilterChip(
+                            selected = (draft.gaugeSmoothing ?: GaugeSmoothing.BALANCED) == smoothing,
+                            onClick = { draft = draft.copy(gaugeSmoothing = smoothing) },
+                            label = { Text(smoothing.label()) },
+                        )
+                    }
+                }
+                FilterChip(
+                    selected = draft.showPeakMarker,
+                    onClick = { draft = draft.copy(showPeakMarker = !draft.showPeakMarker) },
+                    label = { Text(if (draft.showPeakMarker) "Peak marker shown" else "Peak marker hidden") },
+                )
             }
+
             if (draft.type == DashboardWidgetType.DIGITAL_RING) {
                 HorizontalDivider()
                 SheetHeading("Digital Ring Gauge")
@@ -494,7 +589,7 @@ private fun WidgetConfigurationSheet(
                         FilterChip(
                             selected = ringPreset == preset,
                             onClick = {
-                                if (preset == DigitalRingColorPreset.CUSTOM) ringPreset = preset else applyPreset(preset)
+                                if (preset == DigitalRingColorPreset.CUSTOM) ringPreset = preset else applyRingPreset(preset)
                             },
                             label = { Text(preset.label()) },
                         )
@@ -519,7 +614,9 @@ private fun WidgetConfigurationSheet(
                 ColorField("Gauge title", titleColor) { titleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
                 ColorField("Bezel", bezelColor) { bezelColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
             }
-            SheetHeading("Unit")
+
+            HorizontalDivider()
+            SheetHeading("Scale")
             ScrollableChips {
                 DisplayUnit.entries.forEach { unit ->
                     FilterChip(
@@ -550,27 +647,41 @@ private fun WidgetConfigurationSheet(
                 valueRange = 0f..3f,
                 steps = 2,
             )
-            Text("Value text size: ${draft.valueSize}")
+            Text("Digital value size: ${draft.valueSize}")
             Slider(
                 value = draft.valueSize.toFloat(),
                 onValueChange = { draft = draft.copy(valueSize = it.toInt().coerceIn(20, 80)) },
                 valueRange = 20f..80f,
                 steps = 11,
             )
+
             HorizontalDivider()
-            SheetHeading("Warning thresholds")
+            SheetHeading("Thresholds")
             ThresholdRow("Warning low", warningLow) { warningLow = it }
             ThresholdRow("Warning high", warningHigh) { warningHigh = it }
             ThresholdRow("Critical low", criticalLow) { criticalLow = it }
             ThresholdRow("Critical high", criticalHigh) { criticalHigh = it }
+
             HorizontalDivider()
-            SheetHeading("Widget colors")
-            ColorField("Value / needle", valueColor) { valueColor = it }
-            ColorField("Label / tick", labelColor) { labelColor = it }
-            ColorField("Background", backgroundColor) { backgroundColor = it }
-            ColorField("Border", borderColor) { borderColor = it }
+            SheetHeading("Colors")
+            Text("Use #RRGGBB or #AARRGGBB. Invalid values are not saved.")
+            ColorField("Digital value", valueColor) { valueColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorField("Label", labelColor) { labelColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorField("Face / background", backgroundColor) { backgroundColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorField("Bezel / border", borderColor) { borderColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            if (draft.type in setOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE)) {
+                ColorField("Ticks", tickColor) { tickColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorField("Needle", needleColor) { needleColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorField("Needle highlight", needleHighlightColor) { needleHighlightColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorField("Glow", glowColor) { glowColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            }
             ColorField("Warning", warningColor) { warningColor = it }
             ColorField("Critical", criticalColor) { criticalColor = it }
+
+            HorizontalDivider()
+            SheetHeading("Advanced")
+            Text("The gauge animation interpolates between real ECU readings and does not increase OBD polling frequency.")
+
             Button(
                 onClick = {
                     val currentRing = draft.digitalRing ?: initialRing
@@ -602,6 +713,12 @@ private fun WidgetConfigurationSheet(
                                 border = borderColor.argbOr(widget.colors.border),
                                 warning = warningColor.argbOr(widget.colors.warning),
                                 critical = criticalColor.argbOr(widget.colors.critical),
+                                face = backgroundColor.argbOr(widget.colors.background),
+                                bezel = borderColor.argbOr(widget.colors.border),
+                                tick = tickColor.argbOr(widget.colors.label),
+                                needle = needleColor.argbOr(widget.colors.value),
+                                needleHighlight = needleHighlightColor.argbOr(0xFFFFFFFF),
+                                glow = glowColor.argbOr(widget.colors.value),
                             ),
                             digitalRing = ring,
                         ),
@@ -612,6 +729,91 @@ private fun WidgetConfigurationSheet(
             OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
         }
     }
+}
+
+@Composable
+private fun GaugePresetGallery(selected: GaugeStyle, onSelect: (GaugeStyle) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        userVisibleGaugeStyles.chunked(2).forEach { rowStyles ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rowStyles.forEach { style ->
+                    val preset = premiumGaugePreset(style)
+                    Card(
+                        onClick = { onSelect(style) },
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected == style) Color(preset.value).copy(alpha = 0.18f)
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                        shape = MaterialTheme.shapes.large,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            MiniGaugePreview(style, Modifier.size(96.dp))
+                            Text(style.label(), fontWeight = if (selected == style) FontWeight.Bold else FontWeight.Medium)
+                            Text(preset.bezelFinish.label(), style = MaterialTheme.typography.labelSmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                ColorDot(Color(preset.value))
+                                ColorDot(Color(preset.warning))
+                                ColorDot(Color(preset.critical))
+                            }
+                        }
+                    }
+                }
+                if (rowStyles.size == 1) Box(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniGaugePreview(style: GaugeStyle, modifier: Modifier = Modifier) {
+    val preset = premiumGaugePreset(style)
+    Canvas(modifier) {
+        val radius = size.minDimension * 0.46f
+        val c = center
+        drawCircle(Color.Black.copy(alpha = 0.55f), radius * 1.04f, c + Offset(0f, 2f))
+        drawCircle(
+            brush = Brush.linearGradient(
+                listOf(Color(0xFF111418), Color(preset.bezel), Color(0xFFB7BDC1), Color(0xFF1B1F23)),
+                start = Offset.Zero,
+                end = Offset(size.width, size.height),
+            ),
+            radius = radius,
+            center = c,
+        )
+        drawCircle(Color(preset.face), radius * 0.82f, c)
+        drawArc(
+            color = Color(preset.tick),
+            startAngle = 120f,
+            sweepAngle = 300f,
+            useCenter = false,
+            style = Stroke(width = (radius * 0.07f).coerceAtLeast(2f), cap = StrokeCap.Round),
+        )
+        repeat(11) { index ->
+            val angle = Math.toRadians((120f + index * 30f).toDouble())
+            val outer = Offset(c.x + cos(angle).toFloat() * radius * 0.70f, c.y + sin(angle).toFloat() * radius * 0.70f)
+            val inner = Offset(c.x + cos(angle).toFloat() * radius * 0.56f, c.y + sin(angle).toFloat() * radius * 0.56f)
+            drawLine(Color(preset.tick), inner, outer, (radius * 0.035f).coerceAtLeast(1.5f), StrokeCap.Round)
+        }
+        val needleAngle = Math.toRadians(300.0)
+        drawLine(
+            Color(preset.needle),
+            c,
+            Offset(c.x + cos(needleAngle).toFloat() * radius * 0.62f, c.y + sin(needleAngle).toFloat() * radius * 0.62f),
+            (radius * 0.07f).coerceAtLeast(2f),
+            StrokeCap.Round,
+        )
+        drawCircle(Color(preset.needle), radius * 0.10f, c)
+    }
+}
+
+@Composable
+private fun ColorDot(color: Color) {
+    Canvas(Modifier.size(11.dp)) { drawCircle(color) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -648,7 +850,7 @@ private fun DashboardThemeSheet(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Dashboard theme editor", style = MaterialTheme.typography.headlineSmall)
+            Text("Automotive theme editor", style = MaterialTheme.typography.headlineSmall)
             Card(colors = CardDefaults.cardColors(containerColor = Color(preview.card)), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Live preview", color = Color(preview.text), fontWeight = FontWeight.Bold)
@@ -708,9 +910,7 @@ private fun ThresholdRow(label: String, value: String, onValueChange: (String) -
 private fun ColorField(label: String, value: String, onValueChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
-        onValueChange = { input ->
-            onValueChange(input.uppercase().filter { it in "#0123456789ABCDEF" }.take(9))
-        },
+        onValueChange = { input -> onValueChange(input.uppercase().filter { it in "#0123456789ABCDEF" }.take(9)) },
         label = { Text("$label · #AARRGGBB") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
@@ -721,10 +921,8 @@ private fun ColorField(label: String, value: String, onValueChange: (String) -> 
 private fun DashboardConfig.layout(orientation: EditorOrientation): DashboardLayout =
     if (orientation == EditorOrientation.PORTRAIT) portrait else landscape
 
-private fun DashboardConfig.withLayout(
-    orientation: EditorOrientation,
-    layout: DashboardLayout,
-): DashboardConfig = if (orientation == EditorOrientation.PORTRAIT) copy(portrait = layout) else copy(landscape = layout)
+private fun DashboardConfig.withLayout(orientation: EditorOrientation, layout: DashboardLayout): DashboardConfig =
+    if (orientation == EditorOrientation.PORTRAIT) copy(portrait = layout) else copy(landscape = layout)
 
 private fun DashboardConfig.updateWidget(
     orientation: EditorOrientation,
@@ -734,11 +932,7 @@ private fun DashboardConfig.updateWidget(
     return withLayout(orientation, layout.copy(widgets = layout.widgets.map { if (it.id == changed.id) changed else it }))
 }
 
-private fun DashboardConfig.moveWidget(
-    orientation: EditorOrientation,
-    from: Int,
-    to: Int,
-): DashboardConfig {
+private fun DashboardConfig.moveWidget(orientation: EditorOrientation, from: Int, to: Int): DashboardConfig {
     val layout = layout(orientation)
     if (from !in layout.widgets.indices || to !in layout.widgets.indices || from == to) return this
     val reordered = layout.widgets.toMutableList().apply { add(to, removeAt(from)) }
@@ -777,11 +971,11 @@ private fun DashboardConfig.dashboardTheme(orientation: EditorOrientation): Them
         background = colors.background,
         card = colors.background,
         text = colors.label,
-        gaugeNeedle = colors.value,
-        gaugeTick = colors.label,
+        gaugeNeedle = colors.needle ?: colors.value,
+        gaugeTick = colors.tick ?: colors.label,
         warning = colors.warning,
         critical = colors.critical,
-        border = colors.border,
+        border = colors.bezel ?: colors.border,
     )
 }
 
@@ -803,6 +997,11 @@ private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardCo
                 border = theme.border,
                 warning = theme.warning,
                 critical = theme.critical,
+                face = theme.card,
+                bezel = theme.border,
+                tick = theme.gaugeTick,
+                needle = theme.gaugeNeedle,
+                glow = theme.accent,
             ),
             digitalRing = ring,
         )
@@ -816,7 +1015,9 @@ private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardCo
 private fun EditorOrientation.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DashboardMode.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DashboardWidgetType.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
-private fun GaugeStyle.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
+private fun GaugeStyle.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
+private fun BezelFinish.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
+private fun GaugeSmoothing.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DigitalRingColorPreset.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 private fun DisplayUnit.label(): String = when (this) {
     DisplayUnit.KMH -> "km/h"
