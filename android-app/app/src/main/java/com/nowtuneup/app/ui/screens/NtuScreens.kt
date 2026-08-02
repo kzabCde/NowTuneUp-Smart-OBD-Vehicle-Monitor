@@ -326,7 +326,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
         item {
             Text(
-                "NTU 1.5.0 • Android 8+ • USB + Bluetooth Classic SPP • Read-only by default",
+                "NTU 1.6.0 • Android 8+ • USB + Bluetooth Classic SPP • Read-only by default",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 16.dp),
             )
