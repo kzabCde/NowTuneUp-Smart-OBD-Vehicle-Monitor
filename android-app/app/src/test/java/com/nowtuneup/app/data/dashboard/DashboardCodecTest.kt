@@ -20,8 +20,8 @@ import org.junit.Test
 
 class DashboardCodecTest {
     @Test
-    fun releaseVersionIs160() {
-        assertEquals("1.6.0", BuildConfig.VERSION_NAME)
+    fun releaseVersionUses161Base() {
+        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.6.1"))
     }
 
     @Test

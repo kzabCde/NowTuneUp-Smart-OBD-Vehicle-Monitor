@@ -1,11 +1,12 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.6.0 Premium Gauge & UI Refresh release pipeline.
+# NowTuneUp 1.6.1 Bluetooth realtime stability hotfix pipeline.
 on:
   workflow_dispatch:
   push:
     branches:
       - 'release/**'
+      - 'hotfix/**'
     paths:
       - android-app/**
       - .github/workflows/build-bundled-apk.yml
@@ -36,15 +37,15 @@ jobs:
 
       - name: Sync in-app version label
         run: |
-          sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.6.0/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
+          sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.6.1/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
 
-      - name: Build and sign APK 1.6.0
+      - name: Build and sign APK 1.6.1
         working-directory: android-app
         env:
           NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
-          NTU_KEYSTORE_PASSWORD: NowTuneUpWeb100
-          NTU_KEY_ALIAS: nowtuneup-web
-          NTU_KEY_PASSWORD: NowTuneUpWeb100
+          NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+          NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+          NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew test lint assembleRelease
@@ -52,7 +53,7 @@ jobs:
       - name: Verify and bundle APK with website
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.1-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -72,15 +73,15 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.6.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 10,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.6.1",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.1",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 11,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "Introduces premium full circular automotive gauges with layered metallic bezels, improved needles, digital values, warning and critical arcs, and six colored gauge presets. Removes visually weak colorless presets with backward-compatible migration. Refreshes the Dashboard Editor, themes, empty and stale states while preserving Bluetooth ELM327, USB, Turbo, HUD, diagnostics, alerts and saved dashboards.",',
+              'releaseNotes: "Improves Bluetooth ELM327 realtime stability with interleaved priority polling, shorter live PID deadlines, no long live-data retries, stale-response recovery, sustained-failure reconnect thresholds and commands-per-second diagnostics. Premium gauges, dashboards, USB, Turbo, HUD, DTC and saved settings remain unchanged.",',
               text,
           )
           path.write_text(text)
@@ -99,12 +100,12 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.6.0 with website"
+          git commit -m "Bundle NowTuneUp APK 1.6.1 with website"
           git push
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.6.0
+          name: NowTuneUp-1.6.1
           path: web/public/downloads/NowTuneUp.apk
           if-no-files-found: error

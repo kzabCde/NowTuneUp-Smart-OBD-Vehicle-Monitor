@@ -23,6 +23,27 @@ class PidPollingSchedulerTest {
     }
 
     @Test
+    fun normalAndSlowPidsAreInterleavedBetweenFastRequests() {
+        val scheduler = PidPollingScheduler(setOf(0x0C, 0x0D, 0x11, 0x05, 0x0B, 0x42))
+        val slots = scheduler.snapshot()
+        val firstNormal = slots.indexOfFirst { it.group == PollingGroup.NORMAL }
+        val firstSlow = slots.indexOfFirst { it.group == PollingGroup.SLOW }
+
+        assertTrue(firstNormal in 1 until slots.lastIndex)
+        assertTrue(firstSlow in 1 until slots.lastIndex)
+        assertTrue(slots.take(firstSlow).any { it.group == PollingGroup.FAST })
+    }
+
+    @Test
+    fun nextWrapsWithoutChangingDeterministicOrder() {
+        val scheduler = PidPollingScheduler(setOf(0x0C, 0x05, 0x42))
+        val expected = scheduler.snapshot()
+        val actual = List(expected.size * 2) { scheduler.next() }
+
+        assertEquals(expected + expected, actual)
+    }
+
+    @Test
     fun emptySupportSetDoesNotProduceRequests() {
         val scheduler = PidPollingScheduler(emptySet())
         assertTrue(scheduler.isEmpty())

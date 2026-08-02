@@ -27,8 +27,12 @@ class ObdCommandQueue(private val transport: ObdTransport) {
             } catch (cancelled: CancellationException) {
                 if (cancelled !is TimeoutCancellationException) throw cancelled
                 failure = cancelled
+                runCatching { transport.recoverAfterTimeout() }
             } catch (error: Throwable) {
                 failure = error
+                if (error is TimeoutCancellationException || error.message?.contains("timeout", ignoreCase = true) == true) {
+                    runCatching { transport.recoverAfterTimeout() }
+                }
             }
             if (attempt == request.retryLimit) return@withLock Result.failure(failure)
         }

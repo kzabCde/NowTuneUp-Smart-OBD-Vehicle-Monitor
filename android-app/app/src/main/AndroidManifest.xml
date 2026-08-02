@@ -18,7 +18,7 @@
     <application
         android:name=".NtuApplication"
         android:theme="@style/Theme.NTU"
-        android:label="NowTuneUp"
+        android:label="${appLabel}"
         android:allowBackup="true"
         android:supportsRtl="true">
         <activity android:name=".MainActivity" android:exported="true">
