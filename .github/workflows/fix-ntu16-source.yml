@@ -1,0 +1,37 @@
+name: Fix NTU 1.6.0 source import
+
+on:
+  push:
+    branches:
+      - release/1.6.0-premium-gauge-ui
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-ntu16-source
+  cancel-in-progress: true
+
+jobs:
+  fix-import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove unsupported explicit Compose weight import
+        run: |
+          FILE="android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/editor/DashboardEditor.kt"
+          sed -i '/^import androidx\.compose\.foundation\.layout\.weight$/d' "$FILE"
+      - name: Commit source correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/editor/DashboardEditor.kt
+          if git diff --cached --quiet; then
+            echo "Source import is already clean."
+            exit 0
+          fi
+          git commit -m "Fix Compose weight import in dashboard editor"
+          git push
