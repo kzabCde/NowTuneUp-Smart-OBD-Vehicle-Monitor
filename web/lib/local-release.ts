@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.6.1",
-  tagName: "v1.6.1",
-  versionCode: 12,
+  version: "1.6.2",
+  tagName: "v1.6.2",
+  versionCode: 13,
   apkName: "NowTuneUp.apk",
   apkSize: 12822210,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "3a243b394cb721197a7b83aa8fdbecb74f9314bd6d3696d1c41e14b4b2a90385",
+  sha256: "92f6e09c4950e3871357d000f5c49c61096cc2e03fcef606229aeb094f9a1e20",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-03T03:24:56.000Z",
-  releaseNotes: "Revised Bluetooth stability build. Uses cancellable non-blocking RFCOMM reads, a longer quiet-window drain for late ELM327 responses, insecure-to-secure SPP fallback, optional adaptive ELM timing, faster priority polling and soft command-stream resynchronization before a full reconnect. Premium gauges, dashboards, USB, Turbo, HUD, DTC and saved settings remain unchanged.",
+  publishedAt: "2026-08-03T10:52:16.000Z",
+  releaseNotes: "NowTuneUp 1.6.2 removes Trip recording and bundled dashboard layouts, starts with user-created saved profiles, and replaces technical widget and color-code setup with everyday Thai labels and visual named color choices. Existing saved profiles are preserved. Bluetooth realtime stability, USB, Turbo, HUD and DTC behavior remain unchanged.",
 };
 
 export function getLocalRelease(version?: string) {
