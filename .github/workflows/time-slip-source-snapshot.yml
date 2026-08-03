@@ -36,13 +36,19 @@ jobs:
             echo "Waiting for all Time Slip patch parts."
             exit 0
           fi
-          shopt -s nullglob
-          parts=(ci/time-slip-patch/part-*)
+          mapfile -t parts < <(find ci/time-slip-patch -maxdepth 1 -type f -name 'part-*' -print | LC_ALL=C sort)
           if (( ${#parts[@]} == 0 )); then
             echo "No patch parts found."
             exit 1
           fi
-          cat "${parts[@]}" | base64 --decode | gzip --decompress > /tmp/time-slip.patch
+          printf 'Patch order:\n'
+          printf '  %s\n' "${parts[@]}"
+          sha256sum "${parts[@]}"
+          cat "${parts[@]}" > /tmp/time-slip.patch.gz.b64
+          echo 'Aggregate payload:'
+          sha256sum /tmp/time-slip.patch.gz.b64
+          test "$(sha256sum /tmp/time-slip.patch.gz.b64 | awk '{print $1}')" = "8bd0470aec9756fb61487f21cb1907f5e538d24a4b887a404520774ea7000641"
+          base64 --decode /tmp/time-slip.patch.gz.b64 | gzip --decompress > /tmp/time-slip.patch
           git apply --check /tmp/time-slip.patch
           git apply /tmp/time-slip.patch
           rm -rf ci/time-slip-patch
