@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.6.2",
-  tagName: "v1.6.2",
-  versionCode: 13,
+  version: "1.7.0",
+  tagName: "v1.7.0",
+  versionCode: 14,
   apkName: "NowTuneUp.apk",
-  apkSize: 12822210,
+  apkSize: 12871362,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "302863da251840028b03b6c7368b915641e569e3d0e94e4b14f4053571c887af",
+  sha256: "991b498690493933903835d232dd24623ddaa8020135772b0b55e92336ea321c",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-03T10:59:23.000Z",
-  releaseNotes: "NowTuneUp 1.6.2 removes Trip recording and bundled dashboard layouts, starts with user-created saved profiles, and replaces technical widget and color-code setup with everyday Thai labels and visual named color choices. Existing saved profiles are preserved. Bluetooth realtime stability, USB, Turbo, HUD and DTC behavior remain unchanged.",
+  publishedAt: "2026-08-03T15:29:55.000Z",
+  releaseNotes: "NowTuneUp 1.7.0 adds Time Slip performance testing with standing and rolling starts, speed milestones, estimated 60 ft through 1 mile distance splits, live timing, local history, sharing and CSV export. Distance measurements remain marked Estimated / Low confidence until GPS and accelerometer sensor fusion is added. Bluetooth, USB, dashboard, diagnostics and saved profiles remain supported.",
 };
 
 export function getLocalRelease(version?: string) {
