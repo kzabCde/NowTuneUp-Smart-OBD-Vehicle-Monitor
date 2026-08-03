@@ -1,5 +1,0 @@
-release=1.6.1
-version_code=12
-apk_size=12822210
-sha256=3a243b394cb721197a7b83aa8fdbecb74f9314bd6d3696d1c41e14b4b2a90385
-apksigner_verified=true
