@@ -51,8 +51,11 @@ jobs:
           base64 --decode /tmp/time-slip.patch.gz.b64 | gzip --decompress > /tmp/time-slip.patch
           git apply --check /tmp/time-slip.patch
           git apply /tmp/time-slip.patch
+          git restore --source=HEAD -- \
+            .github/workflows/android-ci.yml \
+            .github/workflows/build-bundled-apk.yml \
+            .github/workflows/time-slip-source-snapshot.yml
           rm -rf ci/time-slip-patch
-          rm -f .github/workflows/time-slip-source-snapshot.yml
       - name: Commit Time Slip implementation
         shell: bash
         run: |
