@@ -1,14 +1,124 @@
 name: Build bundled website APK
 
-# Release build is temporarily manual while 1.6.2 source files are updated.
+# NowTuneUp 1.6.2 user-created dashboard profile release pipeline.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
+      - 'hotfix/**'
+    paths:
+      - android-app/**
+      - .github/workflows/build-bundled-apk.yml
 
 permissions:
   contents: write
 
+concurrency:
+  group: bundled-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  waiting-for-release-source:
+  build-and-commit:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
+      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
     steps:
-      - run: echo "The 1.6.2 release workflow will be restored after source changes are complete."
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Validate signing prerequisites
+        shell: bash
+        run: |
+          test -s "$NTU_KEYSTORE_FILE"
+          test -n "$NTU_KEYSTORE_PASSWORD"
+          test -n "$NTU_KEY_ALIAS"
+          test -n "$NTU_KEY_PASSWORD"
+
+      - name: Test, lint, and build signed APK 1.6.2 build 13
+        working-directory: android-app
+        run: |
+          chmod +x gradlew
+          ./gradlew test lint assembleRelease
+
+      - name: Verify and bundle APK with website
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.2-release.apk"
+          TARGET="web/public/downloads/NowTuneUp.apk"
+          test -s "$SOURCE"
+          unzip -t "$SOURCE" >/dev/null
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$SOURCE"
+          mkdir -p "$(dirname "$TARGET")"
+          cp "$SOURCE" "$TARGET"
+          SHA256="$(sha256sum "$TARGET" | awk '{print $1}')"
+          SIZE="$(stat -c%s "$TARGET")"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          python3 - "$SHA256" "$SIZE" "$PUBLISHED_AT" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          path = Path("web/lib/local-release.ts")
+          text = path.read_text()
+          text = re.sub(r'version: "[^"]+",', 'version: "1.6.2",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.2",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 13,', text)
+          text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
+          text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
+          text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
+          text = re.sub(
+              r'releaseNotes: "[^"]*",',
+              'releaseNotes: "NowTuneUp 1.6.2 removes Trip recording and bundled dashboard layouts, starts with user-created saved profiles, and replaces technical widget and color-code setup with everyday Thai labels and visual named color choices. Existing saved profiles are preserved. Bluetooth realtime stability, USB, Turbo, HUD and DTC behavior remain unchanged.",',
+              text,
+          )
+          path.write_text(text)
+          PY
+          test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
+          {
+            echo "release=1.6.2"
+            echo "version_code=13"
+            echo "apk_size=$SIZE"
+            echo "sha256=$SHA256"
+            echo "apksigner_verified=true"
+          } > release-1.6.2-status.txt
+
+      - name: Commit signed APK and release metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f web/public/downloads/NowTuneUp.apk web/lib/local-release.ts
+          if git diff --cached --quiet; then
+            echo "Bundled APK is already current."
+            exit 0
+          fi
+          git commit -m "Bundle NowTuneUp APK 1.6.2 build 13"
+          git push
+
+      - name: Upload signed release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NowTuneUp-1.6.2-build-13
+          path: |
+            web/public/downloads/NowTuneUp.apk
+            release-1.6.2-status.txt
+          if-no-files-found: error
