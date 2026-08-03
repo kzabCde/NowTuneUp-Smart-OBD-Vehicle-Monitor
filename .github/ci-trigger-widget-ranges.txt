@@ -1,0 +1,1 @@
+Trigger clean pull-request checks for configurable widget ranges.
