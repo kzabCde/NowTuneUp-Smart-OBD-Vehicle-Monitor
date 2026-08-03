@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.6.2: user-created dashboard profiles and simplified visual widget setup.
+    // Release 1.7.0: Time Slip performance testing for OBD-II vehicle speed.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.6.2"
+        versionCode = 14
+        versionName = "1.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -36,7 +36,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-ui-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp 1.6.2 Test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.7.0 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -62,9 +62,9 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.6.2-release.apk"
+                "NowTuneUp-v1.7.0-release.apk"
             } else {
-                "NowTuneUp-v1.6.2-ui-test.apk"
+                "NowTuneUp-v1.7.0-ui-test.apk"
             }
         }
     }

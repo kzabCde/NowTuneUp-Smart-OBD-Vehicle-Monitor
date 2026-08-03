@@ -1,6 +1,6 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.6.2 user-created dashboard profile release pipeline.
+# NowTuneUp 1.7.0 Time Slip performance testing release pipeline.
 on:
   workflow_dispatch:
   push:
@@ -49,23 +49,23 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
-      - name: Test, lint, and build signed APK 1.6.2 build 13
+      - name: Test, lint, and build signed APK 1.7.0 build 14
         working-directory: android-app
         run: |
           chmod +x gradlew
-          ./gradlew test lint assembleRelease
+          ./gradlew clean test lint assembleRelease
 
       - name: Verify and bundle APK with website
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.2-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.7.0-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
           APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$APKSIGNER"
-          "$APKSIGNER" verify --verbose "$SOURCE"
+          "$APKSIGNER" verify --verbose --print-certs "$SOURCE"
           mkdir -p "$(dirname "$TARGET")"
           cp "$SOURCE" "$TARGET"
           SHA256="$(sha256sum "$TARGET" | awk '{print $1}')"
@@ -79,27 +79,27 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.6.2",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.6.2",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 13,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.7.0",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.7.0",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 14,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "NowTuneUp 1.6.2 removes Trip recording and bundled dashboard layouts, starts with user-created saved profiles, and replaces technical widget and color-code setup with everyday Thai labels and visual named color choices. Existing saved profiles are preserved. Bluetooth realtime stability, USB, Turbo, HUD and DTC behavior remain unchanged.",',
+              'releaseNotes: "NowTuneUp 1.7.0 adds Time Slip performance testing with standing and rolling starts, speed milestones, estimated 60 ft through 1 mile distance splits, live timing, local history, sharing and CSV export. Distance measurements remain marked Estimated / Low confidence until GPS and accelerometer sensor fusion is added. Bluetooth, USB, dashboard, diagnostics and saved profiles remain supported.",',
               text,
           )
           path.write_text(text)
           PY
           test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
           {
-            echo "release=1.6.2"
-            echo "version_code=13"
+            echo "release=1.7.0"
+            echo "version_code=14"
             echo "apk_size=$SIZE"
             echo "sha256=$SHA256"
             echo "apksigner_verified=true"
-          } > release-1.6.2-status.txt
+          } > release-1.7.0-status.txt
 
       - name: Commit signed APK and release metadata
         shell: bash
@@ -111,14 +111,14 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.6.2 build 13"
+          git commit -m "Bundle NowTuneUp APK 1.7.0 build 14"
           git push
 
       - name: Upload signed release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.6.2-build-13
+          name: NowTuneUp-1.7.0-build-14
           path: |
             web/public/downloads/NowTuneUp.apk
-            release-1.6.2-status.txt
+            release-1.7.0-status.txt
           if-no-files-found: error
