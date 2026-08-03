@@ -1,10 +1,11 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.7.0 Time Slip performance testing release pipeline.
+# NowTuneUp 1.7.1 configurable widget ranges release pipeline.
 on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - 'release/**'
       - 'hotfix/**'
     paths:
@@ -49,7 +50,7 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
-      - name: Test, lint, and build signed APK 1.7.0 build 14
+      - name: Test, lint, and build signed APK 1.7.1 build 15
         working-directory: android-app
         run: |
           chmod +x gradlew
@@ -59,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.7.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.7.1-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -79,27 +80,27 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.7.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.7.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 14,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.7.1",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.7.1",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 15,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "NowTuneUp 1.7.0 adds Time Slip performance testing with standing and rolling starts, speed milestones, estimated 60 ft through 1 mile distance splits, live timing, local history, sharing and CSV export. Distance measurements remain marked Estimated / Low confidence until GPS and accelerometer sensor fusion is added. Bluetooth, USB, dashboard, diagnostics and saved profiles remain supported.",',
+              'releaseNotes: "NowTuneUp 1.7.1 adds configurable minimum and maximum value ranges for every dashboard widget, including analog gauges, digital rings and progress bars. Speed defaults to 0–200 km/h and engine RPM to 0–7,000 rpm, while users can set custom ranges per saved profile or return to automatic OBD-derived scaling. Time Slip, Bluetooth, USB, diagnostics, dashboard profiles and sharing remain supported.",',
               text,
           )
           path.write_text(text)
           PY
           test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
           {
-            echo "release=1.7.0"
-            echo "version_code=14"
+            echo "release=1.7.1"
+            echo "version_code=15"
             echo "apk_size=$SIZE"
             echo "sha256=$SHA256"
             echo "apksigner_verified=true"
-          } > release-1.7.0-status.txt
+          } > release-1.7.1-status.txt
 
       - name: Commit signed APK and release metadata
         shell: bash
@@ -111,14 +112,14 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.7.0 build 14"
+          git commit -m "Bundle NowTuneUp APK 1.7.1 build 15"
           git push
 
       - name: Upload signed release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.7.0-build-14
+          name: NowTuneUp-1.7.1-build-15
           path: |
             web/public/downloads/NowTuneUp.apk
-            release-1.7.0-status.txt
+            release-1.7.1-status.txt
           if-no-files-found: error

@@ -109,7 +109,7 @@ fun DashboardWidgetView(
                 minimumHeight = minimumHeight,
             )
 
-            DashboardWidgetType.PROGRESS -> ProgressWidget(config, value, status, statusColor)
+            DashboardWidgetType.PROGRESS -> ProgressWidget(config, reading, status, statusColor)
             DashboardWidgetType.DTC_CARD -> DtcWidget(dtcCount)
             DashboardWidgetType.DIGITAL -> DigitalWidget(config, value, status, statusColor)
         }
@@ -149,10 +149,12 @@ private fun DigitalWidget(
 @Composable
 private fun ProgressWidget(
     config: DashboardWidgetConfig,
-    value: Double?,
+    reading: VehicleReading?,
     status: ReadingStatus,
     color: Color,
 ) {
+    val value = reading?.takeIf { it.supported }?.value
+    val scale = config.resolveScale(reading)
     Column(
         modifier = Modifier.fillMaxSize().padding(18.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -169,7 +171,7 @@ private fun ProgressWidget(
             fontWeight = FontWeight.Bold,
         )
         LinearProgressIndicator(
-            progress = { ((value ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f) },
+            progress = { value?.let { normalize(it, scale.minimum, scale.maximum) } ?: 0f },
             modifier = Modifier.fillMaxWidth(),
             color = color,
             trackColor = Color(config.colors.border).copy(alpha = 0.55f),
@@ -187,8 +189,9 @@ private fun DigitalRingGauge(
     minimumHeight: Dp,
 ) {
     val ring = config.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
-    val minimum = reading?.minimum ?: 0.0
-    val maximum = reading?.maximum?.takeIf { it > minimum } ?: 100.0
+    val scale = config.resolveScale(reading)
+    val minimum = scale.minimum
+    val maximum = scale.maximum
     val value = reading?.takeIf { it.supported }?.value
     val target = value?.let { ((it - minimum) / (maximum - minimum)).toFloat().coerceIn(0f, 1f) } ?: 0f
     val progress by animateFloatAsState(
@@ -320,8 +323,9 @@ private fun PremiumAnalogGauge(
     minimumHeight: Dp,
 ) {
     val preset = config.resolvedGaugePreset()
-    val minimum = reading?.minimum ?: 0.0
-    val maximum = reading?.maximum?.takeIf { it > minimum } ?: 100.0
+    val scale = config.resolveScale(reading)
+    val minimum = scale.minimum
+    val maximum = scale.maximum
     val value = reading?.takeIf { it.supported }?.value
     val target = value?.let { normalize(it, minimum, maximum) } ?: 0f
     val smoothing = config.gaugeSmoothing ?: GaugeSmoothing.BALANCED
@@ -676,6 +680,24 @@ private fun DashboardWidgetConfig.readingStatus(value: Double?): ReadingStatus =
     threshold.criticalLow?.let { value <= it } == true || threshold.criticalHigh?.let { value >= it } == true -> ReadingStatus.CRITICAL
     threshold.warningLow?.let { value <= it } == true || threshold.warningHigh?.let { value >= it } == true -> ReadingStatus.WARNING
     else -> ReadingStatus.NORMAL
+}
+
+private data class WidgetScale(val minimum: Double, val maximum: Double)
+
+private fun DashboardWidgetConfig.resolveScale(reading: VehicleReading?): WidgetScale {
+    val customMinimum = scaleMinimum
+    val customMaximum = scaleMaximum
+    if (
+        customMinimum != null && customMaximum != null &&
+        customMinimum.isFinite() && customMaximum.isFinite() &&
+        customMaximum > customMinimum
+    ) {
+        return WidgetScale(customMinimum, customMaximum)
+    }
+
+    val readingMinimum = reading?.minimum?.takeIf { it.isFinite() } ?: 0.0
+    val readingMaximum = reading?.maximum?.takeIf { it.isFinite() && it > readingMinimum } ?: 100.0
+    return WidgetScale(readingMinimum, readingMaximum)
 }
 
 private fun normalize(value: Double, minimum: Double, maximum: Double): Float =

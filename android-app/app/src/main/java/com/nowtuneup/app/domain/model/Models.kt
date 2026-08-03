@@ -277,6 +277,8 @@ data class DashboardWidgetConfig(
     val bezelFinish: BezelFinish? = null,
     val gaugeSmoothing: GaugeSmoothing? = null,
     val showPeakMarker: Boolean = true,
+    val scaleMinimum: Double? = null,
+    val scaleMaximum: Double? = null,
     val colors: ColorConfig = ColorConfig(),
     val threshold: WarningThreshold = WarningThreshold(),
     val digitalRing: DigitalRingConfig? = null,

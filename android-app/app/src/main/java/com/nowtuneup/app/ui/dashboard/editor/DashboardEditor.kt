@@ -424,6 +424,8 @@ private fun WidgetConfigurationSheet(
     var warningHigh by remember(widget.id) { mutableStateOf(widget.threshold.warningHigh.text()) }
     var criticalLow by remember(widget.id) { mutableStateOf(widget.threshold.criticalLow.text()) }
     var criticalHigh by remember(widget.id) { mutableStateOf(widget.threshold.criticalHigh.text()) }
+    var scaleMinimum by remember(widget.id) { mutableStateOf(widget.scaleMinimum.text()) }
+    var scaleMaximum by remember(widget.id) { mutableStateOf(widget.scaleMaximum.text()) }
     var valueColor by remember(widget.id) { mutableLongStateOf(initialPreset.value) }
     var labelColor by remember(widget.id) { mutableLongStateOf(initialPreset.label) }
     var backgroundColor by remember(widget.id) { mutableLongStateOf(initialPreset.face) }
@@ -474,6 +476,15 @@ private fun WidgetConfigurationSheet(
         borderColor = selected.bezelColor
     }
 
+    val parsedScaleMinimum = scaleMinimum.toDoubleOrNull()
+    val parsedScaleMaximum = scaleMaximum.toDoubleOrNull()
+    val scaleIsValid = when {
+        scaleMinimum.isBlank() && scaleMaximum.isBlank() -> true
+        parsedScaleMinimum == null || parsedScaleMaximum == null -> false
+        !parsedScaleMinimum.isFinite() || !parsedScaleMaximum.isFinite() -> false
+        else -> parsedScaleMaximum > parsedScaleMinimum
+    }
+
     val previewColors = ColorConfig(
         value = valueColor,
         label = labelColor,
@@ -502,19 +513,24 @@ private fun WidgetConfigurationSheet(
         )
     } else draft.digitalRing
     val previewWidget = draft.copy(
+        scaleMinimum = parsedScaleMinimum.takeIf { scaleIsValid },
+        scaleMaximum = parsedScaleMaximum.takeIf { scaleIsValid },
         colors = previewColors,
         digitalRing = previewRing,
         rowSpan = 2,
         columnSpan = 1,
     )
+    val previewMinimum = previewWidget.scaleMinimum ?: 0.0
+    val previewMaximum = previewWidget.scaleMaximum?.takeIf { it > previewMinimum }
+        ?: if (previewWidget.unit == DisplayUnit.RPM) 7_000.0 else 100.0
     val previewReading = VehicleReading(
         pid = previewWidget.pid,
         name = previewWidget.title,
-        value = if (previewWidget.unit == DisplayUnit.RPM) 2_450.0 else 62.0,
+        value = previewMinimum + (previewMaximum - previewMinimum) * 0.45,
         unit = previewWidget.unit.name,
         supported = true,
-        minimum = 0.0,
-        maximum = if (previewWidget.unit == DisplayUnit.RPM) 8_000.0 else 100.0,
+        minimum = previewMinimum,
+        maximum = previewMaximum,
     )
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -664,6 +680,26 @@ private fun WidgetConfigurationSheet(
             )
 
             HorizontalDivider()
+            SheetHeading("ขอบเขตตัวเลขของ Widget")
+            Text("กำหนดค่าน้อยสุดและมากสุดของมาตรวัด วงแหวน และแถบแสดงค่า เว้นว่างทั้งสองช่องเพื่อใช้ช่วงอัตโนมัติ")
+            ThresholdRow("ค่าต่ำสุดของสเกล", scaleMinimum) { scaleMinimum = it }
+            ThresholdRow("ค่าสูงสุดของสเกล", scaleMaximum) { scaleMaximum = it }
+            if (!scaleIsValid) {
+                Text(
+                    "กรอกทั้งสองค่า และค่าสูงสุดต้องมากกว่าค่าต่ำสุด",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    scaleMinimum = ""
+                    scaleMaximum = ""
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("ใช้ช่วงอัตโนมัติจากข้อมูล OBD") }
+
+            HorizontalDivider()
             SheetHeading("ช่วงเตือน")
             Text("เว้นว่างได้เมื่อไม่ต้องการใช้ช่วงนั้น")
             ThresholdRow("เริ่มเตือนเมื่อค่าต่ำกว่า", warningLow) { warningLow = it }
@@ -698,11 +734,14 @@ private fun WidgetConfigurationSheet(
                                 criticalLow = criticalLow.toDoubleOrNull(),
                                 criticalHigh = criticalHigh.toDoubleOrNull(),
                             ),
+                            scaleMinimum = parsedScaleMinimum,
+                            scaleMaximum = parsedScaleMaximum,
                             colors = previewColors,
                             digitalRing = ring,
                         ),
                     )
                 },
+                enabled = scaleIsValid,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("ใช้การตั้งค่านี้") }
             OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("ยกเลิก") }
