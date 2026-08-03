@@ -2,12 +2,9 @@ package com.nowtuneup.app.presentation.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.data.dashboard.DashboardRepository
 import com.nowtuneup.app.data.local.dao.NtuDao
 import com.nowtuneup.app.data.local.entity.DiagnosticScanEntity
-import com.nowtuneup.app.data.local.entity.SampleEntity
-import com.nowtuneup.app.data.local.entity.TripEntity
 import com.nowtuneup.app.data.logging.DiagnosticLogger
 import com.nowtuneup.app.data.obd.session.ObdSessionManager
 import com.nowtuneup.app.data.preferences.SettingsRepository
@@ -42,7 +39,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -57,12 +53,11 @@ class MainViewModel @Inject constructor(
     val connection = session.connectionState
     val initialization = session.initialization
     val readings = session.readings
-    val trips = dao.trips()
     val diagnosticLogs = logger.entries
     val dashboards = dashboardRepository.dashboards.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        DashboardDefaults.presets,
+        emptyList(),
     )
     val dashboardPreferences = settingsRepository.dashboardPreferences.stateIn(
         viewModelScope,
@@ -88,8 +83,6 @@ class MainViewModel @Inject constructor(
 
     private val previousAlertSeverity = mutableMapOf<String, AlertSeverity>()
     private val lastAlertEventAt = mutableMapOf<String, Long>()
-    private var tripId: Long? = null
-    private var recorder: Job? = null
     private var reconnectJob: Job? = null
     private var manualDisconnect = false
     private var wasEcuConnected = false
@@ -329,17 +322,24 @@ class MainViewModel @Inject constructor(
     }
 
     fun saveDashboard(config: DashboardConfig) = viewModelScope.launch {
-        dashboardRepository.save(config)
+        val userProfile = config.copy(isDefault = false)
+        dashboardRepository.save(userProfile)
+        selectDashboard(userProfile.id)
     }
 
     fun duplicateDashboard(config: DashboardConfig) = viewModelScope.launch {
         val copy = config.copy(
-            id = "custom-${System.currentTimeMillis()}",
-            name = "${config.name} Copy",
+            id = "profile-${System.currentTimeMillis()}",
+            name = "${config.name} สำเนา",
             isDefault = false,
         )
         dashboardRepository.save(copy)
         selectDashboard(copy.id)
+    }
+
+    fun deleteDashboard(id: String) = viewModelScope.launch {
+        dashboardRepository.delete(id)
+        if (dashboardPreferences.value.selectedDashboardId == id) selectDashboard("")
     }
 
     fun resetReadingStats() {
@@ -367,40 +367,6 @@ class MainViewModel @Inject constructor(
 
     fun clearDiagnosticLogs() = logger.clear()
     fun exportDiagnosticLogs(): String = logger.exportText()
-
-    fun toggleTrip() = viewModelScope.launch {
-        val active = tripId
-        if (active != null) {
-            recorder?.cancel()
-            recorder = null
-            dao.finishTrip(active, System.currentTimeMillis())
-            tripId = null
-        } else {
-            resetReadingStats()
-            val id = dao.startTrip(TripEntity(startTime = System.currentTimeMillis()))
-            tripId = id
-            recorder = viewModelScope.launch {
-                while (isActive) {
-                    val values = readings.value.associate { it.pid to it.value }
-                    dao.insertSamples(
-                        listOf(
-                            SampleEntity(
-                                tripId = id,
-                                timestamp = System.currentTimeMillis(),
-                                rpm = values[0x0C],
-                                speedKmh = values[0x0D],
-                                coolantTempC = values[0x05],
-                                voltageV = values[0x42],
-                                engineLoadPercent = values[0x04],
-                                throttlePercent = values[0x11],
-                            ),
-                        ),
-                    )
-                    delay(1_000)
-                }
-            }
-        }
-    }
 
     private fun updateStats(current: List<VehicleReading>) {
         val next = _readingStats.value.toMutableMap()
