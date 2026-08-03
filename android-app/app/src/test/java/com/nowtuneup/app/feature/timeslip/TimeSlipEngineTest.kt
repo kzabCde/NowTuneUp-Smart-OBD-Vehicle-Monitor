@@ -44,7 +44,8 @@ class TimeSlipEngineTest {
         val completed = engine.ingestSpeed(100.0, seconds(5.0))
 
         assertEquals(TimeSlipStatus.COMPLETED, completed.status)
-        val record = assertNotNull(completed.record).let { completed.record!! }
+        assertNotNull(completed.record)
+        val record = completed.record!!
         assertTrue(record.speedMilestones.any { it.label == "0–60 km/h" })
         assertTrue(record.speedMilestones.any { it.label == "0–60 mph" })
         assertTrue(record.speedMilestones.any { it.label == "0–100 km/h" })
@@ -84,9 +85,8 @@ class TimeSlipEngineTest {
             wallClockMillis = 9_000L,
         )
         engine.ingestSpeed(0.0, seconds(1.0))
-        engine.ingestSpeed(10.0, seconds(1.1))
+        var snapshot = engine.ingestSpeed(10.0, seconds(1.1))
 
-        var snapshot = engine.snapshot()
         var second = 2
         while (snapshot.status == TimeSlipStatus.RUNNING && second <= 30) {
             snapshot = engine.ingestSpeed(120.0, seconds(second.toDouble()))
