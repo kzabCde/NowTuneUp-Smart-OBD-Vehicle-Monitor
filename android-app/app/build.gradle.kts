@@ -7,6 +7,7 @@ plugins {
 }
 
 android {
+    // Release 1.6.2: user-created dashboard profiles and simplified visual widget setup.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -24,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.6.1"
+        versionCode = 13
+        versionName = "1.6.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -34,8 +35,8 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-bluetooth-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp Bluetooth Test"
+            versionNameSuffix = "-ui-test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.6.2 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -61,9 +62,9 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.6.1-release.apk"
+                "NowTuneUp-v1.6.2-release.apk"
             } else {
-                "NowTuneUp-v1.6.1-bluetooth-test.apk"
+                "NowTuneUp-v1.6.2-ui-test.apk"
             }
         }
     }

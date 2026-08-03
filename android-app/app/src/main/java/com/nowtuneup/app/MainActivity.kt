@@ -12,25 +12,31 @@ import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -48,12 +54,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -63,6 +71,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ConnectionState
+import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
@@ -73,7 +82,6 @@ import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
 import com.nowtuneup.app.ui.screens.DiagnosticsScreen
 import com.nowtuneup.app.ui.screens.LiveDataScreen
 import com.nowtuneup.app.ui.screens.SettingsScreen
-import com.nowtuneup.app.ui.screens.TripsScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 
@@ -92,12 +100,11 @@ data class Destination(val title: String, val icon: ImageVector)
 fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val destinations = remember {
         listOf(
-            Destination("Dashboard", Icons.Default.Speed),
-            Destination("Connection", Icons.Default.Bluetooth),
-            Destination("Live Data", Icons.Default.List),
-            Destination("Diagnostics", Icons.Default.Warning),
-            Destination("Trips", Icons.Default.Route),
-            Destination("Settings", Icons.Default.Settings),
+            Destination("หน้าปัด", Icons.Default.Speed),
+            Destination("เชื่อมต่อ", Icons.Default.Bluetooth),
+            Destination("ข้อมูลสด", Icons.AutoMirrored.Filled.List),
+            Destination("ตรวจปัญหา", Icons.Default.Warning),
+            Destination("ตั้งค่า", Icons.Default.Settings),
         )
     }
     var selectedDestination by remember { mutableIntStateOf(0) }
@@ -196,9 +203,9 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                                 Text("NTU", fontWeight = FontWeight.Black)
                                 Text(
                                     when (deviceLayout) {
-                                        ResolvedDeviceLayout.PHONE -> "Vehicle monitor"
-                                        ResolvedDeviceLayout.TABLET -> "Tablet vehicle monitor"
-                                        ResolvedDeviceLayout.HEAD_UNIT -> "Android head unit"
+                                        ResolvedDeviceLayout.PHONE -> "ตัวช่วยดูข้อมูลรถ"
+                                        ResolvedDeviceLayout.TABLET -> "หน้าปัดสำหรับแท็บเล็ต"
+                                        ResolvedDeviceLayout.HEAD_UNIT -> "หน้าปัดสำหรับจอรถ"
                                     },
                                     fontSize = 11.sp,
                                 )
@@ -253,7 +260,6 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         1 -> ConnectionScreen(viewModel)
                         2 -> LiveDataScreen(viewModel)
                         3 -> DiagnosticsScreen(viewModel)
-                        4 -> TripsScreen(viewModel)
                         else -> SettingsScreen(viewModel)
                     }
                 }
@@ -273,22 +279,55 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
 
 @Composable
 fun Dashboard(viewModel: MainViewModel) {
-    val readings by viewModel.readings.collectAsState()
     val dashboards by viewModel.dashboards.collectAsState()
+    val preferences by viewModel.dashboardPreferences.collectAsState()
+    var editingProfile by remember { mutableStateOf<DashboardConfig?>(null) }
+
+    val profileBeingEdited = editingProfile
+    when {
+        profileBeingEdited != null -> DashboardEditor(
+            config = profileBeingEdited,
+            drivingMode = preferences.drivingMode,
+            onSave = { saved ->
+                viewModel.saveDashboard(saved)
+                editingProfile = null
+            },
+            onCancel = { editingProfile = null },
+        )
+
+        dashboards.isEmpty() -> DashboardProfileEmptyState(
+            onCreate = { editingProfile = DashboardDefaults.newProfile() },
+        )
+
+        else -> DashboardProfilesPager(
+            viewModel = viewModel,
+            pages = dashboards,
+            onEdit = { editingProfile = it },
+            onCreate = { editingProfile = DashboardDefaults.newProfile() },
+        )
+    }
+}
+
+@Composable
+private fun DashboardProfilesPager(
+    viewModel: MainViewModel,
+    pages: List<DashboardConfig>,
+    onEdit: (DashboardConfig) -> Unit,
+    onCreate: () -> Unit,
+) {
+    val readings by viewModel.readings.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
     val dtcs by viewModel.dtcs.collectAsState()
     val stats by viewModel.readingStats.collectAsState()
     val alerts by viewModel.activeAlerts.collectAsState()
-    val pages = dashboards.ifEmpty { DashboardDefaults.presets }
     val initialPage = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pages.size })
-    var editing by remember { mutableStateOf(false) }
     var controlsVisible by remember(preferences.focusMode) { mutableStateOf(!preferences.focusMode) }
 
     LaunchedEffect(preferences.selectedDashboardId, pages.size) {
         val target = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
-        if (target != pagerState.currentPage) pagerState.scrollToPage(target)
+        if (target != pagerState.currentPage && target in pages.indices) pagerState.scrollToPage(target)
     }
     LaunchedEffect(pagerState.currentPage, pages.size) {
         pages.getOrNull(pagerState.currentPage)?.let { page ->
@@ -302,26 +341,16 @@ fun Dashboard(viewModel: MainViewModel) {
         }
     }
 
-    val selected = pages.getOrNull(pagerState.currentPage) ?: pages.first()
-    if (editing) {
-        DashboardEditor(
-            config = selected,
-            drivingMode = preferences.drivingMode,
-            onSave = {
-                viewModel.saveDashboard(it)
-                editing = false
-            },
-            onCancel = { editing = false },
-        )
-    } else {
+    Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = preferences.swipePages && !preferences.touchLock && !preferences.hudMode,
             key = { pages[it].id },
         ) { page ->
+            val profile = pages[page]
             DashboardScreen(
-                config = pages[page],
+                config = profile,
                 readings = readings,
                 readingStats = stats,
                 preferences = preferences,
@@ -332,7 +361,7 @@ fun Dashboard(viewModel: MainViewModel) {
                 pageCount = pages.size,
                 controlsVisible = controlsVisible,
                 onConnectionAction = viewModel::toggleConnection,
-                onEdit = { editing = true },
+                onEdit = { onEdit(profile) },
                 onEnterFocus = {
                     controlsVisible = true
                     viewModel.setFocusMode(true)
@@ -351,17 +380,50 @@ fun Dashboard(viewModel: MainViewModel) {
                 onResetStats = viewModel::resetReadingStats,
             )
         }
+
+        if (!preferences.focusMode && !preferences.hudMode && !preferences.drivingMode) {
+            ExtendedFloatingActionButton(
+                onClick = onCreate,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("โปรไฟล์ใหม่") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardProfileEmptyState(onCreate: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(Icons.Default.Speed, contentDescription = null)
+                Text("ยังไม่มีโปรไฟล์หน้าปัด", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "สร้างหน้าปัดในแบบของคุณเอง แล้วเลือกข้อมูล รูปแบบ สี และตำแหน่งที่ต้องการ แอปจะบันทึกไว้ใช้ครั้งต่อไป",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Text("  สร้างโปรไฟล์แรก")
+                }
+            }
+        }
     }
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {
-    ConnectionState.DISCONNECTED -> "Disconnected"
-    ConnectionState.DEVICE_DETECTED -> "Device found"
-    ConnectionState.REQUESTING_PERMISSION -> "Permission"
-    ConnectionState.CONNECTING -> "Connecting"
-    ConnectionState.INITIALIZING -> "Initializing"
-    ConnectionState.CONNECTED -> "Connected"
-    ConnectionState.ERROR -> "Connection error"
+    ConnectionState.DISCONNECTED -> "ยังไม่เชื่อมต่อ"
+    ConnectionState.DEVICE_DETECTED -> "พบอุปกรณ์"
+    ConnectionState.REQUESTING_PERMISSION -> "รออนุญาต"
+    ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ"
+    ConnectionState.INITIALIZING -> "กำลังเตรียมระบบ"
+    ConnectionState.CONNECTED -> "เชื่อมต่อแล้ว"
+    ConnectionState.ERROR -> "เชื่อมต่อมีปัญหา"
 }
 
 private fun vibrateAlert(context: Context, critical: Boolean) {

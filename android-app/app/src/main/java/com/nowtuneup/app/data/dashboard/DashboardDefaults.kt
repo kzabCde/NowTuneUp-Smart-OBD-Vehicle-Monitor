@@ -15,18 +15,35 @@ import com.nowtuneup.app.domain.model.WarningThreshold
 import com.nowtuneup.app.domain.model.digitalRingPreset
 import com.nowtuneup.app.domain.model.premiumGaugePreset
 
+/**
+ * Catalogs used by the profile editor.
+ *
+ * Version 1.6.2 intentionally does not ship a ready-made dashboard. A new profile starts empty and
+ * the user chooses every reading, layout and colour. The legacy ids are retained only so old built-in
+ * profiles can be converted into normal user profiles without silently discarding saved edits.
+ */
 object DashboardDefaults {
+    val legacyPresetIds: Set<String> = setOf(
+        "daily",
+        "sport",
+        "hud",
+        "health",
+        "diagnostic",
+        "minimal",
+        "night",
+    )
+
     private fun widget(
         id: String,
         pid: Int,
         title: String,
         unit: DisplayUnit,
         type: DashboardWidgetType,
-        row: Int,
+        gaugeStyle: GaugeStyle,
         columnSpan: Int = 1,
+        rowSpan: Int = 1,
         valueSize: Int = 34,
-        gaugeStyle: GaugeStyle = GaugeStyle.CLASSIC_METAL,
-        colors: ColorConfig = ColorConfig(),
+        threshold: WarningThreshold = WarningThreshold(),
     ): DashboardWidgetConfig {
         val premium = premiumGaugePreset(gaugeStyle)
         return DashboardWidgetConfig(
@@ -35,12 +52,13 @@ object DashboardDefaults {
             type = type,
             title = title,
             unit = unit,
-            row = row,
+            row = 0,
             columnSpan = columnSpan,
+            rowSpan = rowSpan,
             valueSize = valueSize,
             gaugeStyle = gaugeStyle,
             bezelFinish = premium.bezelFinish,
-            colors = colors.copy(
+            colors = ColorConfig(
                 value = premium.value,
                 label = premium.label,
                 background = premium.face,
@@ -54,141 +72,132 @@ object DashboardDefaults {
                 needleHighlight = premium.needleHighlight,
                 glow = premium.glow,
             ),
-            threshold = when (pid) {
-                0x05 -> WarningThreshold(warningHigh = 105.0, criticalHigh = 115.0)
-                0x42 -> WarningThreshold(
-                    warningLow = 12.0,
-                    warningHigh = 15.0,
-                    criticalLow = 11.0,
-                    criticalHigh = 16.0,
-                )
-                else -> WarningThreshold()
-            },
+            threshold = threshold,
         )
     }
 
-    private val core = listOf(
-        widget("rpm", 0x0C, "Engine RPM", DisplayUnit.RPM, DashboardWidgetType.ANALOG, 0, gaugeStyle = GaugeStyle.SPORT_RED),
-        widget("speed", 0x0D, "Vehicle speed", DisplayUnit.KMH, DashboardWidgetType.DIGITAL, 0, valueSize = 54, gaugeStyle = GaugeStyle.NEO_CYAN),
-        widget("coolant", 0x05, "Coolant", DisplayUnit.CELSIUS, DashboardWidgetType.MINI_GAUGE, 1, gaugeStyle = GaugeStyle.OEM_BLUE),
-        widget("voltage", 0x42, "Battery", DisplayUnit.VOLT, DashboardWidgetType.MINI_GAUGE, 1, gaugeStyle = GaugeStyle.RACING_AMBER),
-        widget("load", 0x04, "Engine load", DisplayUnit.PERCENT, DashboardWidgetType.PROGRESS, 2, gaugeStyle = GaugeStyle.NEO_CYAN),
-        widget("throttle", 0x11, "Throttle", DisplayUnit.PERCENT, DashboardWidgetType.DIGITAL, 2, gaugeStyle = GaugeStyle.HUD_GREEN),
+    /** Individual readings that users may add to their own profile. This is not a dashboard preset. */
+    val widgetCatalog: List<DashboardWidgetConfig> = listOf(
+        widget(
+            id = "rpm",
+            pid = 0x0C,
+            title = "รอบเครื่อง",
+            unit = DisplayUnit.RPM,
+            type = DashboardWidgetType.ANALOG,
+            gaugeStyle = GaugeStyle.SPORT_RED,
+            rowSpan = 2,
+            valueSize = 42,
+        ),
+        widget(
+            id = "speed",
+            pid = 0x0D,
+            title = "ความเร็ว",
+            unit = DisplayUnit.KMH,
+            type = DashboardWidgetType.DIGITAL,
+            gaugeStyle = GaugeStyle.NEO_CYAN,
+            valueSize = 56,
+        ),
+        widget(
+            id = "coolant",
+            pid = 0x05,
+            title = "อุณหภูมิน้ำหล่อเย็น",
+            unit = DisplayUnit.CELSIUS,
+            type = DashboardWidgetType.MINI_GAUGE,
+            gaugeStyle = GaugeStyle.OEM_BLUE,
+            threshold = WarningThreshold(warningHigh = 105.0, criticalHigh = 115.0),
+        ),
+        widget(
+            id = "voltage",
+            pid = 0x42,
+            title = "แรงดันแบตเตอรี่",
+            unit = DisplayUnit.VOLT,
+            type = DashboardWidgetType.MINI_GAUGE,
+            gaugeStyle = GaugeStyle.RACING_AMBER,
+            threshold = WarningThreshold(
+                warningLow = 12.0,
+                warningHigh = 15.0,
+                criticalLow = 11.0,
+                criticalHigh = 16.0,
+            ),
+        ),
+        widget(
+            id = "engine-load",
+            pid = 0x04,
+            title = "ภาระเครื่องยนต์",
+            unit = DisplayUnit.PERCENT,
+            type = DashboardWidgetType.PROGRESS,
+            gaugeStyle = GaugeStyle.NEO_CYAN,
+        ),
+        widget(
+            id = "throttle",
+            pid = 0x11,
+            title = "ตำแหน่งคันเร่ง",
+            unit = DisplayUnit.PERCENT,
+            type = DashboardWidgetType.DIGITAL,
+            gaugeStyle = GaugeStyle.HUD_GREEN,
+        ),
+        widget(
+            id = "turbo-pressure",
+            pid = DerivedPids.TURBO_PRESSURE,
+            title = "แรงดันเทอร์โบ",
+            unit = DisplayUnit.PSI,
+            type = DashboardWidgetType.DIGITAL_RING,
+            gaugeStyle = GaugeStyle.NEO_CYAN,
+            columnSpan = 2,
+            rowSpan = 2,
+            valueSize = 58,
+        ).copy(digitalRing = digitalRingPreset(DigitalRingColorPreset.CYAN, segmentCount = 48)),
+        widget(
+            id = "intake-temperature",
+            pid = 0x0F,
+            title = "อุณหภูมิอากาศเข้า",
+            unit = DisplayUnit.CELSIUS,
+            type = DashboardWidgetType.DIGITAL,
+            gaugeStyle = GaugeStyle.OEM_BLUE,
+        ),
+        widget(
+            id = "intake-pressure",
+            pid = 0x0B,
+            title = "ความดันท่อร่วมไอดี",
+            unit = DisplayUnit.KPA,
+            type = DashboardWidgetType.DIGITAL,
+            gaugeStyle = GaugeStyle.NEO_CYAN,
+        ),
+        widget(
+            id = "fuel-level",
+            pid = 0x2F,
+            title = "ระดับน้ำมันเชื้อเพลิง",
+            unit = DisplayUnit.PERCENT,
+            type = DashboardWidgetType.PROGRESS,
+            gaugeStyle = GaugeStyle.HUD_GREEN,
+        ),
+        widget(
+            id = "dtc-status",
+            pid = -1,
+            title = "สถานะรหัสปัญหา",
+            unit = DisplayUnit.NONE,
+            type = DashboardWidgetType.DTC_CARD,
+            gaugeStyle = GaugeStyle.SPORT_RED,
+            columnSpan = 2,
+        ),
     )
 
-    private val turbo = widget(
-        id = "turbo-pressure",
-        pid = DerivedPids.TURBO_PRESSURE,
-        title = "Turbo pressure",
-        unit = DisplayUnit.PSI,
-        type = DashboardWidgetType.DIGITAL_RING,
-        row = 0,
-        columnSpan = 2,
-        valueSize = 58,
-        gaugeStyle = GaugeStyle.NEO_CYAN,
-    ).copy(
-        rowSpan = 2,
-        digitalRing = digitalRingPreset(DigitalRingColorPreset.CYAN, segmentCount = 48),
-    )
-
-    val presets = listOf(
-        DashboardConfig(
-            id = "daily",
-            name = "Daily Driving",
-            mode = DashboardMode.HYBRID,
-            portrait = DashboardLayout(columns = 2, widgets = core),
-            landscape = DashboardLayout(columns = 3, widgets = core),
-            isDefault = true,
-        ),
-        DashboardConfig(
-            id = "sport",
-            name = "Sport & Turbo",
-            mode = DashboardMode.ANALOG,
-            portrait = DashboardLayout(
-                columns = 2,
-                widgets = listOf(
-                    core[0].copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.SPORT_RED, rowSpan = 2),
-                    turbo,
-                ),
-            ),
-            landscape = DashboardLayout(
-                columns = 4,
-                widgets = listOf(
-                    core[0].copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.SPORT_RED, columnSpan = 1, rowSpan = 2),
-                    core[1].copy(type = DashboardWidgetType.DIGITAL_RING, columnSpan = 1, rowSpan = 2, digitalRing = digitalRingPreset(DigitalRingColorPreset.AMBER)),
-                    turbo.copy(columnSpan = 2),
-                ),
-            ),
-        ),
-        DashboardConfig(
-            id = "hud",
-            name = "HUD Essentials",
-            mode = DashboardMode.DIGITAL,
-            portrait = DashboardLayout(
-                columns = 1,
-                widgets = listOf(
-                    core[1].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 72, rowSpan = 2),
-                    turbo.copy(columnSpan = 1, rowSpan = 2),
-                ),
-            ),
-            landscape = DashboardLayout(
-                columns = 3,
-                widgets = listOf(
-                    core[1].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 72, rowSpan = 2),
-                    core[0].copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 64, rowSpan = 2),
-                    turbo.copy(columnSpan = 1, rowSpan = 2),
-                ),
-            ),
-        ),
-        DashboardConfig(
-            id = "health",
-            name = "Engine Health",
-            mode = DashboardMode.HYBRID,
-            portrait = DashboardLayout(columns = 2, widgets = core.filter { it.pid in setOf(0x05, 0x42, 0x04, 0x11) }),
-        ),
-        DashboardConfig(
-            id = "diagnostic",
-            name = "Diagnostic",
-            mode = DashboardMode.DIGITAL,
-            portrait = DashboardLayout(
-                columns = 2,
-                widgets = core + widget(
-                    "dtc",
-                    -1,
-                    "DTC status",
-                    DisplayUnit.NONE,
-                    DashboardWidgetType.DTC_CARD,
-                    3,
-                    columnSpan = 2,
-                ),
-            ),
-        ),
-        DashboardConfig(
-            id = "minimal",
-            name = "Essential Readings",
-            mode = DashboardMode.DIGITAL,
-            portrait = DashboardLayout(
-                columns = 1,
-                widgets = core.take(2).map { it.copy(type = DashboardWidgetType.DIGITAL, columnSpan = 1, valueSize = 56) },
-            ),
-        ),
-        DashboardConfig(
-            id = "night",
-            name = "Night Driving",
-            mode = DashboardMode.ANALOG,
-            portrait = DashboardLayout(
-                columns = 2,
-                widgets = core.take(4).map {
-                    it.copy(type = DashboardWidgetType.ANALOG, gaugeStyle = GaugeStyle.NEO_CYAN, rowSpan = 2)
-                },
-            ),
-        ),
+    fun newProfile(
+        id: String = "profile-${System.currentTimeMillis()}",
+        name: String = "โปรไฟล์ใหม่",
+    ): DashboardConfig = DashboardConfig(
+        id = id,
+        name = name,
+        mode = DashboardMode.HYBRID,
+        portrait = DashboardLayout(columns = 2, widgets = emptyList()),
+        landscape = DashboardLayout(columns = 4, widgets = emptyList()),
+        isDefault = false,
     )
 
     val themes = listOf(
-        ThemeConfig(name = "Dark OEM"),
+        ThemeConfig(name = "ดำเรียบง่าย"),
         ThemeConfig(
-            name = "Sport Red",
+            name = "สปอร์ตแดง",
             primary = 0xFFFF1744,
             accent = 0xFFFF1744,
             background = 0xFF08080A,
@@ -197,7 +206,7 @@ object DashboardDefaults {
             gaugeTick = 0xFFFFE8E8,
         ),
         ThemeConfig(
-            name = "Neo Cyan",
+            name = "ฟ้านีออน",
             primary = 0xFF35E6FF,
             accent = 0xFF35E6FF,
             background = 0xFF041017,
@@ -206,7 +215,7 @@ object DashboardDefaults {
             gaugeTick = 0xFFBDEFFF,
         ),
         ThemeConfig(
-            name = "Amber Night",
+            name = "ส้มกลางคืน",
             primary = 0xFFFFC247,
             accent = 0xFFFFC247,
             background = 0xFF0D0903,
@@ -215,7 +224,7 @@ object DashboardDefaults {
             gaugeTick = 0xFFFFE5A5,
         ),
         ThemeConfig(
-            name = "Premium Blue",
+            name = "น้ำเงินพรีเมียม",
             primary = 0xFF5AAEFF,
             accent = 0xFF5AAEFF,
             background = 0xFF06101D,
@@ -224,7 +233,7 @@ object DashboardDefaults {
             gaugeTick = 0xFFD7EBFF,
         ),
         ThemeConfig(
-            name = "HUD Green",
+            name = "เขียว HUD",
             primary = 0xFF48FF8A,
             accent = 0xFF48FF8A,
             background = 0xFF020806,

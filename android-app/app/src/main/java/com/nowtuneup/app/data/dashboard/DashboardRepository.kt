@@ -8,14 +8,22 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 class DashboardRepository @Inject constructor(private val dao: NtuDao) {
+    /**
+     * Version 1.6.2 exposes only profiles that actually exist in local storage. No bundled layout is
+     * injected when storage is empty. A previously saved built-in profile keeps its original id and
+     * name, but is treated as a normal editable user profile from this point onward.
+     */
     val dashboards: Flow<List<DashboardConfig>> = dao.profiles().map { saved ->
-        val custom = saved.mapNotNull { DashboardCodec.import(it.widgetsJson).getOrNull() }
-        DashboardDefaults.presets.map { preset -> custom.firstOrNull { it.id == preset.id } ?: preset } +
-            custom.filter { candidate -> DashboardDefaults.presets.none { it.id == candidate.id } }
+        saved.mapNotNull { DashboardCodec.import(it.widgetsJson).getOrNull() }
+            .map { it.copy(isDefault = false) }
+            .distinctBy { it.id }
     }
 
     suspend fun save(config: DashboardConfig) = dao.saveProfile(
-        DashboardProfileEntity(name = config.id, widgetsJson = DashboardCodec.export(config)),
+        DashboardProfileEntity(
+            name = config.id,
+            widgetsJson = DashboardCodec.export(config.copy(isDefault = false)),
+        ),
     )
 
     suspend fun delete(id: String) = dao.deleteProfile(id)
