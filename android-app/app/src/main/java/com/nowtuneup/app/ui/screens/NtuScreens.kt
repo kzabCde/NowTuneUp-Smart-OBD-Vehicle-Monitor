@@ -305,7 +305,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
         item {
             Text(
-                "NTU 1.6.2 • Android 8+ • USB + Bluetooth Classic SPP • อ่านข้อมูลเป็นค่าเริ่มต้น",
+                "NTU 1.7.0 • Android 8+ • USB + Bluetooth Classic SPP • อ่านข้อมูลเป็นค่าเริ่มต้น",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(vertical = 16.dp),
             )

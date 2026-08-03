@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -73,6 +74,7 @@ import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
+import com.nowtuneup.app.presentation.timeslip.TimeSlipViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
 import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
@@ -82,6 +84,7 @@ import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
 import com.nowtuneup.app.ui.screens.DiagnosticsScreen
 import com.nowtuneup.app.ui.screens.LiveDataScreen
 import com.nowtuneup.app.ui.screens.SettingsScreen
+import com.nowtuneup.app.ui.timeslip.TimeSlipScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 
@@ -97,17 +100,23 @@ data class Destination(val title: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
+fun NtuApp(
+    viewModel: MainViewModel = hiltViewModel(),
+    timeSlipViewModel: TimeSlipViewModel = hiltViewModel(),
+) {
     val destinations = remember {
         listOf(
             Destination("หน้าปัด", Icons.Default.Speed),
             Destination("เชื่อมต่อ", Icons.Default.Bluetooth),
             Destination("ข้อมูลสด", Icons.AutoMirrored.Filled.List),
             Destination("ตรวจปัญหา", Icons.Default.Warning),
+            Destination("Time Slip", Icons.Default.Timer),
             Destination("ตั้งค่า", Icons.Default.Settings),
         )
     }
     var selectedDestination by remember { mutableIntStateOf(0) }
+    var pendingDestination by remember { mutableStateOf<Int?>(null) }
+    val timeSlipState by timeSlipViewModel.uiState.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
@@ -126,11 +135,11 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE
     val activity = context as? Activity
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, timeSlipState.active) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.onAppForegrounded()
-                Lifecycle.Event.ON_STOP -> viewModel.onAppBackgrounded()
+                Lifecycle.Event.ON_STOP -> if (!timeSlipState.active) viewModel.onAppBackgrounded()
                 else -> Unit
             }
         }
@@ -138,9 +147,9 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    DisposableEffect(preferences.keepScreenOn, connectionState) {
+    DisposableEffect(preferences.keepScreenOn, connectionState, timeSlipState.active) {
         val previous = view.keepScreenOn
-        view.keepScreenOn = preferences.keepScreenOn && connectionState == ConnectionState.CONNECTED
+        view.keepScreenOn = timeSlipState.active || (preferences.keepScreenOn && connectionState == ConnectionState.CONNECTED)
         onDispose { view.keepScreenOn = previous }
     }
 
@@ -193,7 +202,28 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         }
     }
 
+    fun navigateTo(index: Int) {
+        if (timeSlipState.active && index != TIME_SLIP_DESTINATION) pendingDestination = index
+        else selectedDestination = index
+    }
+
     NtuTheme(preferences.theme) {
+        if (pendingDestination != null) {
+            AlertDialog(
+                onDismissRequest = { pendingDestination = null },
+                title = { Text("ออกจาก Time Slip หรือไม่") },
+                text = { Text("การออกจากหน้าทดสอบจะยกเลิกการจับเวลาปัจจุบันเพื่อป้องกันผลที่ไม่สมบูรณ์") },
+                confirmButton = {
+                    Button(onClick = {
+                        val target = pendingDestination ?: return@Button
+                        pendingDestination = null
+                        timeSlipViewModel.cancelTest()
+                        selectedDestination = target
+                    }) { Text("ยกเลิกการทดสอบและออก") }
+                },
+                dismissButton = { TextButton(onClick = { pendingDestination = null }) { Text("อยู่หน้าทดสอบต่อ") } },
+            )
+        }
         Scaffold(
             topBar = {
                 if (!chromeHidden) {
@@ -213,7 +243,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         },
                         actions = {
                             AssistChip(
-                                onClick = { selectedDestination = 1 },
+                                onClick = { navigateTo(1) },
                                 label = { Text(connectionState.shortLabel()) },
                                 leadingIcon = {
                                     Icon(
@@ -232,7 +262,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         destinations.forEachIndexed { index, destination ->
                             NavigationBarItem(
                                 selected = selectedDestination == index,
-                                onClick = { selectedDestination = index },
+                                onClick = { navigateTo(index) },
                                 icon = { Icon(destination.icon, contentDescription = destination.title) },
                                 label = { Text(destination.title, fontSize = 9.sp) },
                             )
@@ -247,7 +277,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         destinations.forEachIndexed { index, destination ->
                             NavigationRailItem(
                                 selected = selectedDestination == index,
-                                onClick = { selectedDestination = index },
+                                onClick = { navigateTo(index) },
                                 icon = { Icon(destination.icon, contentDescription = destination.title) },
                                 label = { Text(destination.title, fontSize = 10.sp) },
                             )
@@ -260,6 +290,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         1 -> ConnectionScreen(viewModel)
                         2 -> LiveDataScreen(viewModel)
                         3 -> DiagnosticsScreen(viewModel)
+                        TIME_SLIP_DESTINATION -> TimeSlipScreen(timeSlipViewModel)
                         else -> SettingsScreen(viewModel)
                     }
                 }
@@ -415,6 +446,8 @@ private fun DashboardProfileEmptyState(onCreate: () -> Unit) {
         }
     }
 }
+
+private const val TIME_SLIP_DESTINATION = 4
 
 private fun ConnectionState.shortLabel(): String = when (this) {
     ConnectionState.DISCONNECTED -> "ยังไม่เชื่อมต่อ"

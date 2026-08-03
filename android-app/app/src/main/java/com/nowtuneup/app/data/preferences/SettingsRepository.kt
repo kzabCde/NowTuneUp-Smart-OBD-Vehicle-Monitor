@@ -46,6 +46,14 @@ class SettingsRepository @Inject constructor(
         it[booleanPreferencesKey(key)] = value
     }
 
+    val timeSlipSafetyAccepted = context.dataStore.data.map { values ->
+        values[booleanPreferencesKey("time_slip_safety_accepted")] ?: false
+    }
+
+    suspend fun setTimeSlipSafetyAccepted(value: Boolean) = context.dataStore.edit { values ->
+        values[booleanPreferencesKey("time_slip_safety_accepted")] = value
+    }
+
     val dashboardPreferences = context.dataStore.data.map { values ->
         val json = values[stringPreferencesKey("dashboard_preferences")]
         if (json.isNullOrBlank()) DashboardPreferences()

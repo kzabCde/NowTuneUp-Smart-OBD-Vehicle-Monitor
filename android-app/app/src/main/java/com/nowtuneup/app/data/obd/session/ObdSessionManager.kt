@@ -1,5 +1,6 @@
 package com.nowtuneup.app.data.obd.session
 
+import android.os.SystemClock
 import com.nowtuneup.app.data.logging.DiagnosticLogger
 import com.nowtuneup.app.data.obd.elm.Elm327Client
 import com.nowtuneup.app.data.obd.elm.toObdError
@@ -13,6 +14,7 @@ import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.ObdError
 import com.nowtuneup.app.domain.model.VehicleReading
+import com.nowtuneup.app.feature.timeslip.domain.ObdSpeedTelemetry
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -20,13 +22,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class ObdSessionManager @Inject constructor(
@@ -41,10 +49,16 @@ class ObdSessionManager @Inject constructor(
     val readings: StateFlow<List<VehicleReading>> = _readings.asStateFlow()
     private val _supportedPids = MutableStateFlow<Set<Int>>(emptySet())
     val supportedPids: StateFlow<Set<Int>> = _supportedPids.asStateFlow()
+    private val _speedTelemetry = MutableSharedFlow<ObdSpeedTelemetry>(extraBufferCapacity = 128)
+    val speedTelemetry: SharedFlow<ObdSpeedTelemetry> = _speedTelemetry.asSharedFlow()
+    private val pollingModeMutex = Mutex()
     private var polling: Job? = null
 
     @Volatile
     private var refreshIntervalMillis: Long = 500
+
+    @Volatile
+    private var timeSlipMode: Boolean = false
 
     suspend fun connect(): Result<Unit> {
         pause()
@@ -100,7 +114,11 @@ class ObdSessionManager @Inject constructor(
     fun startPolling() {
         if (polling?.isActive == true || connectionState.value != ConnectionState.CONNECTED) return
         val scheduler = PidPollingScheduler(_supportedPids.value)
-        if (scheduler.isEmpty()) return
+        if (timeSlipMode && 0x0D !in _supportedPids.value) {
+            logger.warning("TimeSlip", "Vehicle speed PID 010D is not supported by this ECU")
+            return
+        }
+        if (!timeSlipMode && scheduler.isEmpty()) return
         polling = scope.launch {
             var consecutiveTransportFailures = 0
             var failedSoftRecoveries = 0
@@ -112,7 +130,11 @@ class ObdSessionManager @Inject constructor(
             )
 
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
-                val slot = scheduler.next()
+                val slot = if (timeSlipMode) {
+                    com.nowtuneup.app.data.obd.polling.PollingSlot(0x0D, PollingGroup.FAST)
+                } else {
+                    scheduler.next()
+                }
                 if (slot == null) {
                     delay(250L)
                     continue
@@ -203,6 +225,20 @@ class ObdSessionManager @Inject constructor(
         polling = null
     }
 
+    suspend fun setTimeSlipMode(enabled: Boolean) = pollingModeMutex.withLock {
+        if (timeSlipMode == enabled) return@withLock
+        timeSlipMode = enabled
+        polling?.cancelAndJoin()
+        polling = null
+        logger.info(
+            "TimeSlip",
+            if (enabled) "Prioritizing vehicle-speed PID 010D" else "Restoring normal dashboard polling",
+        )
+        if (connectionState.value == ConnectionState.CONNECTED) startPolling()
+    }
+
+    fun isTimeSlipMode(): Boolean = timeSlipMode
+
     fun setRefreshInterval(intervalMillis: Long) {
         refreshIntervalMillis = intervalMillis.coerceIn(200L, 1_500L)
     }
@@ -224,13 +260,14 @@ class ObdSessionManager @Inject constructor(
     }
 
     private fun commandPacingMillis(): Long = when {
+        timeSlipMode -> 4L
         refreshIntervalMillis <= 250L -> 8L
         refreshIntervalMillis <= 600L -> 25L
         else -> 80L
     }
 
     private fun timeoutFor(group: PollingGroup): Long = when (group) {
-        PollingGroup.FAST -> if (refreshIntervalMillis <= 250L) 1_100L else 1_300L
+        PollingGroup.FAST -> if (timeSlipMode) 900L else if (refreshIntervalMillis <= 250L) 1_100L else 1_300L
         PollingGroup.NORMAL -> 1_500L
         PollingGroup.SLOW -> 1_800L
     }
@@ -259,6 +296,14 @@ class ObdSessionManager @Inject constructor(
 
     private fun publish(pid: Int, value: Double) {
         val now = System.currentTimeMillis()
+        if (pid == 0x0D) {
+            _speedTelemetry.tryEmit(
+                ObdSpeedTelemetry(
+                    speedKmh = value,
+                    monotonicTimeMs = SystemClock.elapsedRealtime(),
+                ),
+            )
+        }
         _readings.update { readings ->
             val updated = readings.map { reading ->
                 if (reading.pid == pid) reading.copy(value = value, updatedAt = now) else reading
