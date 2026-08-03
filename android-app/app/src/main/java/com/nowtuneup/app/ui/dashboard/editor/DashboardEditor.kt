@@ -3,7 +3,6 @@ package com.nowtuneup.app.ui.dashboard.editor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,18 +35,17 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,7 +55,6 @@ import com.nowtuneup.app.domain.model.BezelFinish
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardLayout
-import com.nowtuneup.app.domain.model.DashboardMode
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
 import com.nowtuneup.app.domain.model.DigitalRingColorPreset
@@ -79,6 +75,27 @@ import kotlin.math.sin
 
 private enum class EditorOrientation { PORTRAIT, LANDSCAPE }
 
+private data class PaletteColor(val label: String, val argb: Long)
+
+private val everydayPalette = listOf(
+    PaletteColor("ดำ", 0xFF050607),
+    PaletteColor("ดำอมเทา", 0xFF111827),
+    PaletteColor("เทาเข้ม", 0xFF334155),
+    PaletteColor("เงิน", 0xFFB0BEC5),
+    PaletteColor("ขาว", 0xFFFFFFFF),
+    PaletteColor("แดง", 0xFFFF1744),
+    PaletteColor("ส้ม", 0xFFFF6D00),
+    PaletteColor("ส้มอำพัน", 0xFFFFB300),
+    PaletteColor("เหลือง", 0xFFFFD600),
+    PaletteColor("เขียว", 0xFF48FF8A),
+    PaletteColor("เขียวเข้ม", 0xFF00C853),
+    PaletteColor("ฟ้าไซแอน", 0xFF35E6FF),
+    PaletteColor("ฟ้า", 0xFF29B6F6),
+    PaletteColor("น้ำเงิน", 0xFF2979FF),
+    PaletteColor("ม่วง", 0xFFAA66FF),
+    PaletteColor("ชมพู", 0xFFFF4FA3),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardEditor(
@@ -88,10 +105,9 @@ fun DashboardEditor(
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
-    var draft by remember(config) { mutableStateOf(config) }
+    var draft by remember(config) { mutableStateOf(config.copy(isDefault = false)) }
     var orientation by remember { mutableStateOf(EditorOrientation.PORTRAIT) }
     var selectedWidgetId by remember { mutableStateOf<String?>(null) }
-    var draggingWidgetId by remember { mutableStateOf<String?>(null) }
     var showThemeEditor by remember { mutableStateOf(false) }
     var transferMessage by remember { mutableStateOf<String?>(null) }
     val activeLayout = draft.layout(orientation)
@@ -102,12 +118,12 @@ fun DashboardEditor(
         if (uri != null) {
             runCatching {
                 context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
-                    it.write(DashboardCodec.export(draft))
-                } ?: error("Unable to open export file")
+                    it.write(DashboardCodec.export(draft.copy(isDefault = false)))
+                } ?: error("เปิดไฟล์ไม่ได้")
             }.onSuccess {
-                transferMessage = "Dashboard exported with portrait and landscape layouts."
+                transferMessage = "ส่งออกโปรไฟล์เรียบร้อยแล้ว"
             }.onFailure {
-                transferMessage = "Export failed: ${it.message ?: "Unknown error"}"
+                transferMessage = "ส่งออกไม่สำเร็จ: ${it.message ?: "ไม่ทราบสาเหตุ"}"
             }
         }
     }
@@ -118,14 +134,14 @@ fun DashboardEditor(
         if (uri != null) {
             runCatching {
                 val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: error("Unable to read import file")
+                    ?: error("อ่านไฟล์ไม่ได้")
                 DashboardCodec.import(json).getOrThrow()
             }.onSuccess {
                 draft = it.copy(id = config.id, isDefault = false)
                 selectedWidgetId = null
-                transferMessage = "Dashboard imported. Review both orientations before saving."
+                transferMessage = "นำเข้าโปรไฟล์แล้ว กรุณาตรวจทั้งแนวตั้งและแนวนอนก่อนบันทึก"
             }.onFailure {
-                transferMessage = "Import failed: ${it.message ?: "Invalid dashboard file"}"
+                transferMessage = "นำเข้าไม่สำเร็จ: ${it.message ?: "ไฟล์ไม่ถูกต้อง"}"
             }
         }
     }
@@ -133,9 +149,9 @@ fun DashboardEditor(
     if (drivingMode) {
         AlertDialog(
             onDismissRequest = onCancel,
-            confirmButton = { TextButton(onClick = onCancel) { Text("OK") } },
-            title = { Text("Park before editing") },
-            text = { Text("Dashboard editing is locked while Driving Mode is active.") },
+            confirmButton = { TextButton(onClick = onCancel) { Text("ตกลง") } },
+            title = { Text("จอดรถก่อนแก้ไข") },
+            text = { Text("ปิดโหมดขับรถก่อนสร้างหรือแก้ไขโปรไฟล์หน้าปัด") },
         )
         return
     }
@@ -168,8 +184,8 @@ fun DashboardEditor(
     transferMessage?.let { message ->
         AlertDialog(
             onDismissRequest = { transferMessage = null },
-            confirmButton = { TextButton(onClick = { transferMessage = null }) { Text("OK") } },
-            title = { Text("Dashboard file") },
+            confirmButton = { TextButton(onClick = { transferMessage = null }) { Text("ตกลง") } },
+            title = { Text("ไฟล์โปรไฟล์") },
             text = { Text(message) },
         )
     }
@@ -177,9 +193,14 @@ fun DashboardEditor(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Premium dashboard editor") },
-                navigationIcon = { TextButton(onClick = onCancel) { Text("Cancel") } },
-                actions = { TextButton(onClick = { onSave(draft) }) { Text("Save") } },
+                title = { Text("จัดหน้าปัดของฉัน") },
+                navigationIcon = { TextButton(onClick = onCancel) { Text("ยกเลิก") } },
+                actions = {
+                    TextButton(
+                        onClick = { onSave(draft.copy(isDefault = false)) },
+                        enabled = draft.name.isNotBlank(),
+                    ) { Text("บันทึก") }
+                },
             )
         },
     ) { padding ->
@@ -188,17 +209,18 @@ fun DashboardEditor(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                SectionTitle("Dashboard", "Name and global presentation settings.")
+                SectionTitle("ชื่อโปรไฟล์", "ตั้งชื่อให้จำง่าย เช่น ขับทุกวัน หรือ ดูเทอร์โบ")
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it.take(40)) },
-                    label = { Text("Dashboard name") },
+                    label = { Text("ชื่อที่จะแสดง") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
             }
+
             item {
-                SectionTitle("Layout", "Portrait and landscape keep independent columns, order and sizes.")
+                SectionTitle("จัดวางหน้าจอ", "แนวตั้งและแนวนอนปรับแยกกันได้")
                 ScrollableChips {
                     EditorOrientation.entries.forEach { item ->
                         FilterChip(
@@ -211,8 +233,7 @@ fun DashboardEditor(
                         )
                     }
                 }
-                Text("Editing ${orientation.label()}: ${activeLayout.widgets.size} widgets, ${activeLayout.columns} columns")
-                Text("Columns: ${activeLayout.columns}")
+                Text("จำนวนช่องต่อแถว: ${activeLayout.columns}")
                 Slider(
                     value = activeLayout.columns.toFloat(),
                     onValueChange = { value ->
@@ -235,23 +256,12 @@ fun DashboardEditor(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (orientation == EditorOrientation.PORTRAIT) "Copy Landscape to Portrait" else "Copy Portrait to Landscape")
+                    Text(if (orientation == EditorOrientation.PORTRAIT) "ใช้แบบแนวนอนกับแนวตั้ง" else "ใช้แบบแนวตั้งกับแนวนอน")
                 }
             }
+
             item {
-                SectionTitle("Display mode", "Apply a shared widget type base without removing individual colors.")
-                ScrollableChips {
-                    DashboardMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = draft.mode == mode,
-                            onClick = { draft = draft.applyMode(mode) },
-                            label = { Text(mode.label()) },
-                        )
-                    }
-                }
-            }
-            item {
-                SectionTitle("Automotive theme", "Colored themes replace the old grayscale-only choices.")
+                SectionTitle("โทนสีทั้งโปรไฟล์", "เลือกโทนสำเร็จรูป หรือเลือกสีเองจากตัวอย่างสี")
                 ScrollableChips {
                     DashboardDefaults.themes.forEach { theme ->
                         FilterChip(
@@ -260,56 +270,25 @@ fun DashboardEditor(
                             label = { Text(theme.name) },
                         )
                     }
-                    OutlinedButton(onClick = { showThemeEditor = true }) { Text("Custom colors") }
+                    OutlinedButton(onClick = { showThemeEditor = true }) { Text("เลือกสีเอง") }
                 }
             }
+
             item {
                 SectionTitle(
-                    "${orientation.label()} widgets",
-                    "Press and hold to reorder. Configure opens a live gauge preview and grouped controls.",
+                    "ข้อมูลใน${orientation.label()}",
+                    if (activeLayout.widgets.isEmpty()) "ยังไม่มีข้อมูล กดเพิ่มจากรายการด้านล่าง" else "แตะรายการเพื่อตั้งค่า ใช้ปุ่มขึ้นลงเพื่อเรียงตำแหน่ง",
                 )
             }
+
             itemsIndexed(
                 items = activeLayout.widgets,
                 key = { _, widget -> "${orientation.name}-${widget.id}" },
             ) { index, widget ->
-                var dragDistance by remember(orientation, widget.id) { mutableFloatStateOf(0f) }
                 WidgetEditorCard(
                     widget = widget,
                     index = index,
                     total = activeLayout.widgets.size,
-                    dragging = draggingWidgetId == widget.id,
-                    modifier = Modifier.pointerInput(orientation, widget.id, index, activeLayout.widgets.size) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                draggingWidgetId = widget.id
-                                dragDistance = 0f
-                            },
-                            onDragCancel = {
-                                draggingWidgetId = null
-                                dragDistance = 0f
-                            },
-                            onDragEnd = {
-                                draggingWidgetId = null
-                                dragDistance = 0f
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragDistance += amount.y
-                                val threshold = 56.dp.toPx()
-                                when {
-                                    dragDistance > threshold && index < activeLayout.widgets.lastIndex -> {
-                                        draft = draft.moveWidget(orientation, index, index + 1)
-                                        dragDistance = 0f
-                                    }
-                                    dragDistance < -threshold && index > 0 -> {
-                                        draft = draft.moveWidget(orientation, index, index - 1)
-                                        dragDistance = 0f
-                                    }
-                                }
-                            },
-                        )
-                    },
                     onEdit = { selectedWidgetId = widget.id },
                     onMove = { draft = draft.moveWidget(orientation, index, it) },
                     onRemove = {
@@ -320,51 +299,61 @@ fun DashboardEditor(
                     },
                 )
             }
+
             item {
-                Button(
-                    onClick = {
-                        val source = DashboardDefaults.presets
-                            .flatMap { it.portrait.widgets }
-                            .firstOrNull { candidate -> activeLayout.widgets.none { it.pid == candidate.pid } }
-                        if (source != null) {
-                            draft = draft.withLayout(
-                                orientation,
-                                activeLayout.copy(
-                                    widgets = activeLayout.widgets + source.copy(
-                                        id = "${source.id}-${orientation.name.lowercase()}-${System.currentTimeMillis()}",
+                val available = DashboardDefaults.widgetCatalog.filterNot { candidate ->
+                    activeLayout.widgets.any { it.pid == candidate.pid }
+                }
+                SectionTitle("เพิ่มข้อมูล", "เลือกเฉพาะข้อมูลที่ต้องการเห็นบนหน้าปัด")
+                if (available.isEmpty()) {
+                    Text("เพิ่มข้อมูลที่รองรับทั้งหมดแล้ว")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        available.forEach { source ->
+                            OutlinedButton(
+                                onClick = {
+                                    val added = source.copy(
+                                        id = "${source.id}-${System.currentTimeMillis()}",
+                                        row = activeLayout.widgets.size,
                                         columnSpan = source.columnSpan.coerceAtMost(activeLayout.columns),
-                                    ),
-                                ),
-                            )
+                                    )
+                                    draft = draft.withLayout(
+                                        orientation,
+                                        activeLayout.copy(widgets = activeLayout.widgets + added),
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("เพิ่ม ${source.title}") }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Add available widget") }
+                    }
+                }
             }
+
             item {
-                SectionTitle("Import and export", "JSON keeps both orientations, premium styles, colors and thresholds.")
                 OutlinedButton(
                     onClick = {
-                        val safeName = draft.name.ifBlank { "NowTuneUp-dashboard" }
+                        draft = draft.withLayout(orientation, activeLayout.copy(widgets = emptyList()))
+                        selectedWidgetId = null
+                    },
+                    enabled = activeLayout.widgets.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("ล้างข้อมูลใน${orientation.label()}") }
+            }
+
+            item {
+                SectionTitle("สำรองโปรไฟล์", "ส่งออกหรือนำเข้าไฟล์เพื่อย้ายโปรไฟล์ระหว่างเครื่อง")
+                OutlinedButton(
+                    onClick = {
+                        val safeName = draft.name.ifBlank { "NowTuneUp-profile" }
                             .replace(Regex("[^A-Za-z0-9._-]"), "-")
                         exportLauncher.launch("$safeName.json")
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Export JSON") }
+                ) { Text("ส่งออกไฟล์") }
                 OutlinedButton(
                     onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Import JSON") }
-            }
-            item {
-                OutlinedButton(
-                    onClick = {
-                        val default = DashboardDefaults.presets.first()
-                        draft = default.copy(id = config.id, name = config.name)
-                        orientation = EditorOrientation.PORTRAIT
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Reset dashboard") }
+                ) { Text("นำเข้าไฟล์") }
             }
         }
     }
@@ -383,8 +372,6 @@ private fun WidgetEditorCard(
     widget: DashboardWidgetConfig,
     index: Int,
     total: Int,
-    dragging: Boolean,
-    modifier: Modifier = Modifier,
     onEdit: () -> Unit,
     onMove: (Int) -> Unit,
     onRemove: () -> Unit,
@@ -392,7 +379,7 @@ private fun WidgetEditorCard(
     val preset = widget.resolvedGaugePreset()
     Card(
         onClick = onEdit,
-        modifier = modifier.fillMaxWidth().alpha(if (dragging) 0.58f else 1f),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(widget.colors.background)),
         shape = MaterialTheme.shapes.extraLarge,
     ) {
@@ -407,15 +394,15 @@ private fun WidgetEditorCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(widget.title, color = Color(preset.label), fontWeight = FontWeight.Bold)
                 Text(
-                    "${widget.type.label()} · ${widget.columnSpan}×${widget.rowSpan} · ${widget.unit.label()}",
+                    "${widget.type.label()} · กว้าง ${widget.columnSpan} ช่อง · สูง ${widget.rowSpan} แถว",
                     color = Color(preset.label).copy(alpha = 0.75f),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { onMove(index - 1) }, enabled = index > 0) { Text("↑") }
-                    TextButton(onClick = { onMove(index + 1) }, enabled = index < total - 1) { Text("↓") }
-                    TextButton(onClick = onEdit) { Text("Configure") }
-                    TextButton(onClick = onRemove) { Text("Remove") }
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TextButton(onClick = { onMove(index - 1) }, enabled = index > 0) { Text("ขึ้น") }
+                    TextButton(onClick = { onMove(index + 1) }, enabled = index < total - 1) { Text("ลง") }
+                    TextButton(onClick = onEdit) { Text("ตั้งค่า") }
+                    TextButton(onClick = onRemove) { Text("ลบ") }
                 }
             }
         }
@@ -437,79 +424,97 @@ private fun WidgetConfigurationSheet(
     var warningHigh by remember(widget.id) { mutableStateOf(widget.threshold.warningHigh.text()) }
     var criticalLow by remember(widget.id) { mutableStateOf(widget.threshold.criticalLow.text()) }
     var criticalHigh by remember(widget.id) { mutableStateOf(widget.threshold.criticalHigh.text()) }
-    var valueColor by remember(widget.id) { mutableStateOf(initialPreset.value.hex()) }
-    var labelColor by remember(widget.id) { mutableStateOf(initialPreset.label.hex()) }
-    var backgroundColor by remember(widget.id) { mutableStateOf(initialPreset.face.hex()) }
-    var borderColor by remember(widget.id) { mutableStateOf(initialPreset.bezel.hex()) }
-    var tickColor by remember(widget.id) { mutableStateOf(initialPreset.tick.hex()) }
-    var needleColor by remember(widget.id) { mutableStateOf(initialPreset.needle.hex()) }
-    var needleHighlightColor by remember(widget.id) { mutableStateOf(initialPreset.needleHighlight.hex()) }
-    var glowColor by remember(widget.id) { mutableStateOf(initialPreset.glow.hex()) }
-    var warningColor by remember(widget.id) { mutableStateOf(initialPreset.warning.hex()) }
-    var criticalColor by remember(widget.id) { mutableStateOf(initialPreset.critical.hex()) }
+    var valueColor by remember(widget.id) { mutableLongStateOf(initialPreset.value) }
+    var labelColor by remember(widget.id) { mutableLongStateOf(initialPreset.label) }
+    var backgroundColor by remember(widget.id) { mutableLongStateOf(initialPreset.face) }
+    var borderColor by remember(widget.id) { mutableLongStateOf(initialPreset.bezel) }
+    var tickColor by remember(widget.id) { mutableLongStateOf(initialPreset.tick) }
+    var needleColor by remember(widget.id) { mutableLongStateOf(initialPreset.needle) }
+    var needleHighlightColor by remember(widget.id) { mutableLongStateOf(initialPreset.needleHighlight) }
+    var glowColor by remember(widget.id) { mutableLongStateOf(initialPreset.glow) }
+    var warningColor by remember(widget.id) { mutableLongStateOf(initialPreset.warning) }
+    var criticalColor by remember(widget.id) { mutableLongStateOf(initialPreset.critical) }
     var ringPreset by remember(widget.id) { mutableStateOf(initialRing.preset) }
     var segmentCount by remember(widget.id) { mutableFloatStateOf(initialRing.segmentCount.toFloat()) }
     var showScaleLabels by remember(widget.id) { mutableStateOf(initialRing.showScaleLabels) }
-    var digitColor by remember(widget.id) { mutableStateOf(initialRing.digitColor.hex()) }
-    var activeSegmentColor by remember(widget.id) { mutableStateOf(initialRing.activeSegmentColor.hex()) }
-    var inactiveSegmentColor by remember(widget.id) { mutableStateOf(initialRing.inactiveSegmentColor.hex()) }
-    var scaleColor by remember(widget.id) { mutableStateOf(initialRing.scaleColor.hex()) }
-    var titleColor by remember(widget.id) { mutableStateOf(initialRing.titleColor.hex()) }
-    var bezelColor by remember(widget.id) { mutableStateOf(initialRing.bezelColor.hex()) }
+    var digitColor by remember(widget.id) { mutableLongStateOf(initialRing.digitColor) }
+    var activeSegmentColor by remember(widget.id) { mutableLongStateOf(initialRing.activeSegmentColor) }
+    var inactiveSegmentColor by remember(widget.id) { mutableLongStateOf(initialRing.inactiveSegmentColor) }
+    var scaleColor by remember(widget.id) { mutableLongStateOf(initialRing.scaleColor) }
+    var titleColor by remember(widget.id) { mutableLongStateOf(initialRing.titleColor) }
+    var ringBezelColor by remember(widget.id) { mutableLongStateOf(initialRing.bezelColor) }
 
     fun applyAnalogPreset(style: GaugeStyle) {
         val selected = premiumGaugePreset(style)
         draft = draft.copy(gaugeStyle = style, bezelFinish = selected.bezelFinish)
-        valueColor = selected.value.hex()
-        labelColor = selected.label.hex()
-        backgroundColor = selected.face.hex()
-        borderColor = selected.bezel.hex()
-        tickColor = selected.tick.hex()
-        needleColor = selected.needle.hex()
-        needleHighlightColor = selected.needleHighlight.hex()
-        glowColor = selected.glow.hex()
-        warningColor = selected.warning.hex()
-        criticalColor = selected.critical.hex()
+        valueColor = selected.value
+        labelColor = selected.label
+        backgroundColor = selected.face
+        borderColor = selected.bezel
+        tickColor = selected.tick
+        needleColor = selected.needle
+        needleHighlightColor = selected.needleHighlight
+        glowColor = selected.glow
+        warningColor = selected.warning
+        criticalColor = selected.critical
     }
 
     fun applyRingPreset(preset: DigitalRingColorPreset) {
         val selected = digitalRingPreset(preset, segmentCount.toInt())
         ringPreset = preset
-        digitColor = selected.digitColor.hex()
-        activeSegmentColor = selected.activeSegmentColor.hex()
-        inactiveSegmentColor = selected.inactiveSegmentColor.hex()
-        scaleColor = selected.scaleColor.hex()
-        titleColor = selected.titleColor.hex()
-        bezelColor = selected.bezelColor.hex()
-        valueColor = selected.digitColor.hex()
-        labelColor = selected.scaleColor.hex()
-        backgroundColor = "#FF000000"
-        borderColor = selected.bezelColor.hex()
+        digitColor = selected.digitColor
+        activeSegmentColor = selected.activeSegmentColor
+        inactiveSegmentColor = selected.inactiveSegmentColor
+        scaleColor = selected.scaleColor
+        titleColor = selected.titleColor
+        ringBezelColor = selected.bezelColor
+        valueColor = selected.digitColor
+        labelColor = selected.scaleColor
+        backgroundColor = 0xFF000000
+        borderColor = selected.bezelColor
     }
 
-    val previewColors = draft.colors.copy(
-        value = valueColor.argbOr(widget.colors.value),
-        label = labelColor.argbOr(widget.colors.label),
-        background = backgroundColor.argbOr(widget.colors.background),
-        border = borderColor.argbOr(widget.colors.border),
-        warning = warningColor.argbOr(widget.colors.warning),
-        critical = criticalColor.argbOr(widget.colors.critical),
-        face = backgroundColor.argbOr(widget.colors.background),
-        bezel = borderColor.argbOr(widget.colors.border),
-        tick = tickColor.argbOr(widget.colors.label),
-        needle = needleColor.argbOr(widget.colors.value),
-        needleHighlight = needleHighlightColor.argbOr(0xFFFFFFFF),
-        glow = glowColor.argbOr(widget.colors.value),
+    val previewColors = ColorConfig(
+        value = valueColor,
+        label = labelColor,
+        background = backgroundColor,
+        border = borderColor,
+        warning = warningColor,
+        critical = criticalColor,
+        face = backgroundColor,
+        bezel = borderColor,
+        tick = tickColor,
+        needle = needleColor,
+        needleHighlight = needleHighlightColor,
+        glow = glowColor,
     )
-    val previewWidget = draft.copy(colors = previewColors, rowSpan = 2, columnSpan = 1)
+    val previewRing = if (draft.type == DashboardWidgetType.DIGITAL_RING) {
+        DigitalRingConfig(
+            preset = ringPreset,
+            segmentCount = segmentCount.toInt().coerceIn(12, 72),
+            digitColor = digitColor,
+            activeSegmentColor = activeSegmentColor,
+            inactiveSegmentColor = inactiveSegmentColor,
+            scaleColor = scaleColor,
+            titleColor = titleColor,
+            bezelColor = ringBezelColor,
+            showScaleLabels = showScaleLabels,
+        )
+    } else draft.digitalRing
+    val previewWidget = draft.copy(
+        colors = previewColors,
+        digitalRing = previewRing,
+        rowSpan = 2,
+        columnSpan = 1,
+    )
     val previewReading = VehicleReading(
         pid = previewWidget.pid,
         name = previewWidget.title,
-        value = 62.0,
+        value = if (previewWidget.unit == DisplayUnit.RPM) 2_450.0 else 62.0,
         unit = previewWidget.unit.name,
         supported = true,
         minimum = 0.0,
-        maximum = 100.0,
+        maximum = if (previewWidget.unit == DisplayUnit.RPM) 8_000.0 else 100.0,
     )
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -517,7 +522,7 @@ private fun WidgetConfigurationSheet(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Widget configuration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("ตั้งค่าข้อมูลที่แสดง", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(previewColors.background)),
                 shape = MaterialTheme.shapes.extraLarge,
@@ -526,11 +531,11 @@ private fun WidgetConfigurationSheet(
                 DashboardWidgetView(previewWidget, previewReading, reduceMotion = false, dtcCount = 0)
             }
 
-            SheetHeading("Widget")
+            SheetHeading("ชื่อและรูปแบบ")
             OutlinedTextField(
                 value = draft.title,
                 onValueChange = { draft = draft.copy(title = it.take(32)) },
-                label = { Text("Title") },
+                label = { Text("ชื่อที่จะแสดง") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -548,13 +553,13 @@ private fun WidgetConfigurationSheet(
                 }
             }
 
-            if (draft.type == DashboardWidgetType.ANALOG || draft.type == DashboardWidgetType.MINI_GAUGE) {
+            if (draft.type in setOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE)) {
                 HorizontalDivider()
-                SheetHeading("Gauge style")
-                Text("Choose a colored premium preset. Changes remain temporary until Apply is pressed.")
+                SheetHeading("หน้าตามาตรวัด")
+                Text("เลือกแบบที่ชอบ แล้วปรับสีเพิ่มเติมด้านล่างได้")
                 GaugePresetGallery(selected = draft.gaugeStyle, onSelect = ::applyAnalogPreset)
 
-                SheetHeading("Bezel")
+                SheetHeading("ขอบมาตรวัด")
                 ScrollableChips {
                     BezelFinish.entries.forEach { finish ->
                         FilterChip(
@@ -564,7 +569,8 @@ private fun WidgetConfigurationSheet(
                         )
                     }
                 }
-                SheetHeading("Needle smoothing")
+
+                SheetHeading("การเคลื่อนที่ของเข็ม")
                 ScrollableChips {
                     GaugeSmoothing.entries.forEach { smoothing ->
                         FilterChip(
@@ -577,13 +583,13 @@ private fun WidgetConfigurationSheet(
                 FilterChip(
                     selected = draft.showPeakMarker,
                     onClick = { draft = draft.copy(showPeakMarker = !draft.showPeakMarker) },
-                    label = { Text(if (draft.showPeakMarker) "Peak marker shown" else "Peak marker hidden") },
+                    label = { Text(if (draft.showPeakMarker) "แสดงจุดค่าสูงสุด" else "ไม่แสดงจุดค่าสูงสุด") },
                 )
             }
 
             if (draft.type == DashboardWidgetType.DIGITAL_RING) {
                 HorizontalDivider()
-                SheetHeading("Digital Ring Gauge")
+                SheetHeading("วงแหวนดิจิทัล")
                 ScrollableChips {
                     DigitalRingColorPreset.entries.forEach { preset ->
                         FilterChip(
@@ -595,7 +601,7 @@ private fun WidgetConfigurationSheet(
                         )
                     }
                 }
-                Text("Segments: ${segmentCount.toInt()}")
+                Text("จำนวนขีดรอบวง: ${segmentCount.toInt()}")
                 Slider(
                     value = segmentCount,
                     onValueChange = { segmentCount = it.coerceIn(12f, 72f) },
@@ -605,49 +611,51 @@ private fun WidgetConfigurationSheet(
                 FilterChip(
                     selected = showScaleLabels,
                     onClick = { showScaleLabels = !showScaleLabels },
-                    label = { Text(if (showScaleLabels) "Scale labels shown" else "Scale labels hidden") },
+                    label = { Text(if (showScaleLabels) "แสดงตัวเลขรอบวง" else "ซ่อนตัวเลขรอบวง") },
                 )
-                ColorField("Center digits", digitColor) { digitColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
-                ColorField("Active segments", activeSegmentColor) { activeSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
-                ColorField("Inactive segments", inactiveSegmentColor) { inactiveSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
-                ColorField("Scale numbers", scaleColor) { scaleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
-                ColorField("Gauge title", titleColor) { titleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
-                ColorField("Bezel", bezelColor) { bezelColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีตัวเลขตรงกลาง", digitColor) { digitColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีขีดที่ติด", activeSegmentColor) { activeSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีขีดที่ยังไม่ติด", inactiveSegmentColor) { inactiveSegmentColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีตัวเลขรอบวง", scaleColor) { scaleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีชื่อข้อมูล", titleColor) { titleColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
+                ColorPicker("สีขอบวงแหวน", ringBezelColor) { ringBezelColor = it; ringPreset = DigitalRingColorPreset.CUSTOM }
             }
 
             HorizontalDivider()
-            SheetHeading("Scale")
+            SheetHeading("หน่วยและขนาด")
             ScrollableChips {
                 DisplayUnit.entries.forEach { unit ->
                     FilterChip(
                         selected = draft.unit == unit,
                         onClick = { draft = draft.copy(unit = unit) },
-                        label = { Text(unit.label().ifBlank { "None" }) },
+                        label = { Text(unit.label().ifBlank { "ไม่มีหน่วย" }) },
                     )
                 }
             }
-            Text("Width: ${draft.columnSpan.coerceIn(1, columns)} of $columns columns")
-            Slider(
-                value = draft.columnSpan.coerceIn(1, columns).toFloat(),
-                onValueChange = { draft = draft.copy(columnSpan = it.toInt().coerceIn(1, columns)) },
-                valueRange = 1f..columns.toFloat(),
-                steps = (columns - 2).coerceAtLeast(0),
-            )
-            Text("Height: ${draft.rowSpan.coerceIn(1, 4)} rows")
+            Text("ความกว้าง: ${draft.columnSpan.coerceIn(1, columns)} จาก $columns ช่อง")
+            if (columns > 1) {
+                Slider(
+                    value = draft.columnSpan.coerceIn(1, columns).toFloat(),
+                    onValueChange = { draft = draft.copy(columnSpan = it.toInt().coerceIn(1, columns)) },
+                    valueRange = 1f..columns.toFloat(),
+                    steps = (columns - 2).coerceAtLeast(0),
+                )
+            }
+            Text("ความสูง: ${draft.rowSpan.coerceIn(1, 4)} แถว")
             Slider(
                 value = draft.rowSpan.coerceIn(1, 4).toFloat(),
                 onValueChange = { draft = draft.copy(rowSpan = it.toInt().coerceIn(1, 4)) },
                 valueRange = 1f..4f,
                 steps = 2,
             )
-            Text("Decimals: ${draft.decimals}")
+            Text("จำนวนทศนิยม: ${draft.decimals}")
             Slider(
                 value = draft.decimals.toFloat(),
                 onValueChange = { draft = draft.copy(decimals = it.toInt().coerceIn(0, 3)) },
                 valueRange = 0f..3f,
                 steps = 2,
             )
-            Text("Digital value size: ${draft.valueSize}")
+            Text("ขนาดตัวเลข: ${draft.valueSize}")
             Slider(
                 value = draft.valueSize.toFloat(),
                 onValueChange = { draft = draft.copy(valueSize = it.toInt().coerceIn(20, 80)) },
@@ -656,48 +664,32 @@ private fun WidgetConfigurationSheet(
             )
 
             HorizontalDivider()
-            SheetHeading("Thresholds")
-            ThresholdRow("Warning low", warningLow) { warningLow = it }
-            ThresholdRow("Warning high", warningHigh) { warningHigh = it }
-            ThresholdRow("Critical low", criticalLow) { criticalLow = it }
-            ThresholdRow("Critical high", criticalHigh) { criticalHigh = it }
+            SheetHeading("ช่วงเตือน")
+            Text("เว้นว่างได้เมื่อไม่ต้องการใช้ช่วงนั้น")
+            ThresholdRow("เริ่มเตือนเมื่อค่าต่ำกว่า", warningLow) { warningLow = it }
+            ThresholdRow("เริ่มเตือนเมื่อค่าสูงกว่า", warningHigh) { warningHigh = it }
+            ThresholdRow("อันตรายเมื่อค่าต่ำกว่า", criticalLow) { criticalLow = it }
+            ThresholdRow("อันตรายเมื่อค่าสูงกว่า", criticalHigh) { criticalHigh = it }
 
             HorizontalDivider()
-            SheetHeading("Colors")
-            Text("Use #RRGGBB or #AARRGGBB. Invalid values are not saved.")
-            ColorField("Digital value", valueColor) { valueColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-            ColorField("Label", labelColor) { labelColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-            ColorField("Face / background", backgroundColor) { backgroundColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-            ColorField("Bezel / border", borderColor) { borderColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            SheetHeading("เลือกสี")
+            Text("แตะชื่อสีที่ต้องการ ไม่ต้องกรอกรหัสสี")
+            ColorPicker("สีค่าตัวเลข", valueColor) { valueColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorPicker("สีชื่อข้อมูล", labelColor) { labelColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorPicker("สีพื้นหลัง", backgroundColor) { backgroundColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+            ColorPicker("สีขอบ", borderColor) { borderColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
             if (draft.type in setOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE)) {
-                ColorField("Ticks", tickColor) { tickColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-                ColorField("Needle", needleColor) { needleColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-                ColorField("Needle highlight", needleHighlightColor) { needleHighlightColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
-                ColorField("Glow", glowColor) { glowColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorPicker("สีขีดสเกล", tickColor) { tickColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorPicker("สีเข็ม", needleColor) { needleColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorPicker("สีเงาบนเข็ม", needleHighlightColor) { needleHighlightColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
+                ColorPicker("สีแสงเรือง", glowColor) { glowColor = it; draft = draft.copy(gaugeStyle = GaugeStyle.CUSTOM) }
             }
-            ColorField("Warning", warningColor) { warningColor = it }
-            ColorField("Critical", criticalColor) { criticalColor = it }
-
-            HorizontalDivider()
-            SheetHeading("Advanced")
-            Text("The gauge animation interpolates between real ECU readings and does not increase OBD polling frequency.")
+            ColorPicker("สีเตือน", warningColor) { warningColor = it }
+            ColorPicker("สีอันตราย", criticalColor) { criticalColor = it }
 
             Button(
                 onClick = {
-                    val currentRing = draft.digitalRing ?: initialRing
-                    val ring = if (draft.type == DashboardWidgetType.DIGITAL_RING) {
-                        DigitalRingConfig(
-                            preset = ringPreset,
-                            segmentCount = segmentCount.toInt().coerceIn(12, 72),
-                            digitColor = digitColor.argbOr(currentRing.digitColor),
-                            activeSegmentColor = activeSegmentColor.argbOr(currentRing.activeSegmentColor),
-                            inactiveSegmentColor = inactiveSegmentColor.argbOr(currentRing.inactiveSegmentColor),
-                            scaleColor = scaleColor.argbOr(currentRing.scaleColor),
-                            titleColor = titleColor.argbOr(currentRing.titleColor),
-                            bezelColor = bezelColor.argbOr(currentRing.bezelColor),
-                            showScaleLabels = showScaleLabels,
-                        )
-                    } else draft.digitalRing
+                    val ring = if (draft.type == DashboardWidgetType.DIGITAL_RING) previewRing else draft.digitalRing
                     onSave(
                         draft.copy(
                             threshold = WarningThreshold(
@@ -706,27 +698,35 @@ private fun WidgetConfigurationSheet(
                                 criticalLow = criticalLow.toDoubleOrNull(),
                                 criticalHigh = criticalHigh.toDoubleOrNull(),
                             ),
-                            colors = ColorConfig(
-                                value = valueColor.argbOr(widget.colors.value),
-                                label = labelColor.argbOr(widget.colors.label),
-                                background = backgroundColor.argbOr(widget.colors.background),
-                                border = borderColor.argbOr(widget.colors.border),
-                                warning = warningColor.argbOr(widget.colors.warning),
-                                critical = criticalColor.argbOr(widget.colors.critical),
-                                face = backgroundColor.argbOr(widget.colors.background),
-                                bezel = borderColor.argbOr(widget.colors.border),
-                                tick = tickColor.argbOr(widget.colors.label),
-                                needle = needleColor.argbOr(widget.colors.value),
-                                needleHighlight = needleHighlightColor.argbOr(0xFFFFFFFF),
-                                glow = glowColor.argbOr(widget.colors.value),
-                            ),
+                            colors = previewColors,
                             digitalRing = ring,
                         ),
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Apply widget changes") }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+            ) { Text("ใช้การตั้งค่านี้") }
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("ยกเลิก") }
+        }
+    }
+}
+
+@Composable
+private fun ColorPicker(title: String, selected: Long, onSelect: (Long) -> Unit) {
+    val choices = remember(selected) {
+        if (everydayPalette.any { it.argb == selected }) everydayPalette
+        else listOf(PaletteColor("สีที่ใช้อยู่", selected)) + everydayPalette
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        ScrollableChips {
+            choices.forEach { option ->
+                FilterChip(
+                    selected = selected == option.argb,
+                    onClick = { onSelect(option.argb) },
+                    leadingIcon = { ColorDot(Color(option.argb), Modifier.size(16.dp)) },
+                    label = { Text(option.label) },
+                )
+            }
         }
     }
 }
@@ -755,11 +755,6 @@ private fun GaugePresetGallery(selected: GaugeStyle, onSelect: (GaugeStyle) -> U
                             MiniGaugePreview(style, Modifier.size(96.dp))
                             Text(style.label(), fontWeight = if (selected == style) FontWeight.Bold else FontWeight.Medium)
                             Text(preset.bezelFinish.label(), style = MaterialTheme.typography.labelSmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                ColorDot(Color(preset.value))
-                                ColorDot(Color(preset.warning))
-                                ColorDot(Color(preset.critical))
-                            }
                         }
                     }
                 }
@@ -812,8 +807,8 @@ private fun MiniGaugePreview(style: GaugeStyle, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ColorDot(color: Color) {
-    Canvas(Modifier.size(11.dp)) { drawCircle(color) }
+private fun ColorDot(color: Color, modifier: Modifier = Modifier.size(11.dp)) {
+    Canvas(modifier) { drawCircle(color) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -824,57 +819,59 @@ private fun DashboardThemeSheet(
     onApply: (ThemeConfig) -> Unit,
 ) {
     var name by remember(initial) { mutableStateOf(initial.name) }
-    var primary by remember(initial) { mutableStateOf(initial.primary.hex()) }
-    var background by remember(initial) { mutableStateOf(initial.background.hex()) }
-    var card by remember(initial) { mutableStateOf(initial.card.hex()) }
-    var text by remember(initial) { mutableStateOf(initial.text.hex()) }
-    var needle by remember(initial) { mutableStateOf(initial.gaugeNeedle.hex()) }
-    var tick by remember(initial) { mutableStateOf(initial.gaugeTick.hex()) }
-    var warning by remember(initial) { mutableStateOf(initial.warning.hex()) }
-    var critical by remember(initial) { mutableStateOf(initial.critical.hex()) }
-    var border by remember(initial) { mutableStateOf(initial.border.hex()) }
+    var primary by remember(initial) { mutableLongStateOf(initial.primary) }
+    var background by remember(initial) { mutableLongStateOf(initial.background) }
+    var card by remember(initial) { mutableLongStateOf(initial.card) }
+    var text by remember(initial) { mutableLongStateOf(initial.text) }
+    var needle by remember(initial) { mutableLongStateOf(initial.gaugeNeedle) }
+    var tick by remember(initial) { mutableLongStateOf(initial.gaugeTick) }
+    var warning by remember(initial) { mutableLongStateOf(initial.warning) }
+    var critical by remember(initial) { mutableLongStateOf(initial.critical) }
+    var border by remember(initial) { mutableLongStateOf(initial.border) }
     val preview = initial.copy(
-        name = name.ifBlank { "Custom" },
-        primary = primary.argbOr(initial.primary),
-        background = background.argbOr(initial.background),
-        card = card.argbOr(initial.card),
-        text = text.argbOr(initial.text),
-        gaugeNeedle = needle.argbOr(initial.gaugeNeedle),
-        gaugeTick = tick.argbOr(initial.gaugeTick),
-        warning = warning.argbOr(initial.warning),
-        critical = critical.argbOr(initial.critical),
-        border = border.argbOr(initial.border),
+        name = name.ifBlank { "สีของฉัน" },
+        primary = primary,
+        accent = primary,
+        background = background,
+        card = card,
+        text = text,
+        gaugeNeedle = needle,
+        gaugeTick = tick,
+        warning = warning,
+        critical = critical,
+        border = border,
     )
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Automotive theme editor", style = MaterialTheme.typography.headlineSmall)
+            Text("เลือกสีของโปรไฟล์", style = MaterialTheme.typography.headlineSmall)
             Card(colors = CardDefaults.cardColors(containerColor = Color(preview.card)), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Live preview", color = Color(preview.text), fontWeight = FontWeight.Bold)
+                    Text("ตัวอย่างหน้าปัด", color = Color(preview.text), fontWeight = FontWeight.Bold)
                     Text("2,450 rpm", color = Color(preview.gaugeNeedle), style = MaterialTheme.typography.headlineMedium)
                 }
             }
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(30) },
-                label = { Text("Theme name") },
+                label = { Text("ชื่อโทนสี") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            ColorField("Primary", primary) { primary = it }
-            ColorField("Dashboard background", background) { background = it }
-            ColorField("Widget background", card) { card = it }
-            ColorField("Labels", text) { text = it }
-            ColorField("Gauge needle / value", needle) { needle = it }
-            ColorField("Gauge ticks", tick) { tick = it }
-            ColorField("Warning", warning) { warning = it }
-            ColorField("Critical", critical) { critical = it }
-            ColorField("Border", border) { border = it }
-            Button(onClick = { onApply(preview) }, modifier = Modifier.fillMaxWidth()) { Text("Apply theme") }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+            ColorPicker("สีหลัก", primary) { primary = it }
+            ColorPicker("สีพื้นหลังหน้าปัด", background) { background = it }
+            ColorPicker("สีพื้นหลังแต่ละข้อมูล", card) { card = it }
+            ColorPicker("สีข้อความ", text) { text = it }
+            ColorPicker("สีเข็มและค่าตัวเลข", needle) { needle = it }
+            ColorPicker("สีขีดสเกล", tick) { tick = it }
+            ColorPicker("สีเตือน", warning) { warning = it }
+            ColorPicker("สีอันตราย", critical) { critical = it }
+            ColorPicker("สีขอบ", border) { border = it }
+            Button(onClick = { onApply(preview) }, modifier = Modifier.fillMaxWidth()) { Text("ใช้โทนสีนี้") }
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("ยกเลิก") }
         }
     }
 }
@@ -903,18 +900,6 @@ private fun ThresholdRow(label: String, value: String, onValueChange: (String) -
         label = { Text(label) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-    )
-}
-
-@Composable
-private fun ColorField(label: String, value: String, onValueChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { input -> onValueChange(input.uppercase().filter { it in "#0123456789ABCDEF" }.take(9)) },
-        label = { Text("$label · #AARRGGBB") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        isError = value.argbOrNull() == null,
     )
 }
 
@@ -951,22 +936,10 @@ private fun DashboardConfig.copyOtherLayoutTo(target: EditorOrientation): Dashbo
     )
 }
 
-private fun DashboardConfig.applyMode(mode: DashboardMode): DashboardConfig {
-    val type = when (mode) {
-        DashboardMode.DIGITAL -> DashboardWidgetType.DIGITAL
-        DashboardMode.ANALOG -> DashboardWidgetType.ANALOG
-        DashboardMode.HYBRID -> null
-    }
-    fun apply(layout: DashboardLayout) = layout.copy(
-        widgets = layout.widgets.map { widget -> type?.let { widget.copy(type = it) } ?: widget },
-    )
-    return copy(mode = mode, portrait = apply(portrait), landscape = apply(landscape))
-}
-
 private fun DashboardConfig.dashboardTheme(orientation: EditorOrientation): ThemeConfig {
     val colors = layout(orientation).widgets.firstOrNull()?.colors ?: ColorConfig()
     return ThemeConfig(
-        name = "Custom dashboard",
+        name = "สีของฉัน",
         primary = colors.value,
         background = colors.background,
         card = colors.background,
@@ -990,6 +963,7 @@ private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardCo
             bezelColor = theme.border,
         )
         return widget.copy(
+            gaugeStyle = if (widget.type in setOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE)) GaugeStyle.CUSTOM else widget.gaugeStyle,
             colors = widget.colors.copy(
                 value = theme.gaugeNeedle,
                 label = theme.text,
@@ -1012,38 +986,66 @@ private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardCo
     )
 }
 
-private fun EditorOrientation.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
-private fun DashboardMode.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
-private fun DashboardWidgetType.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
-private fun GaugeStyle.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
-private fun BezelFinish.label(): String = name.lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
-private fun GaugeSmoothing.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
-private fun DigitalRingColorPreset.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
+private fun EditorOrientation.label(): String = when (this) {
+    EditorOrientation.PORTRAIT -> "แนวตั้ง"
+    EditorOrientation.LANDSCAPE -> "แนวนอน"
+}
+
+private fun DashboardWidgetType.label(): String = when (this) {
+    DashboardWidgetType.DIGITAL -> "ตัวเลข"
+    DashboardWidgetType.DIGITAL_RING -> "วงแหวนดิจิทัล"
+    DashboardWidgetType.ANALOG -> "มาตรวัดเข็ม"
+    DashboardWidgetType.MINI_GAUGE -> "มาตรวัดขนาดเล็ก"
+    DashboardWidgetType.PROGRESS -> "แถบแสดงค่า"
+    DashboardWidgetType.DTC_CARD -> "การ์ดรหัสปัญหา"
+}
+
+private fun GaugeStyle.label(): String = when (this) {
+    GaugeStyle.CLASSIC_METAL -> "คลาสสิกขอบเงิน"
+    GaugeStyle.SPORT_RED -> "สปอร์ตแดง"
+    GaugeStyle.NEO_CYAN -> "ฟ้านีออน"
+    GaugeStyle.RACING_AMBER -> "ส้มเรซซิ่ง"
+    GaugeStyle.OEM_BLUE -> "น้ำเงินแบบโรงงาน"
+    GaugeStyle.HUD_GREEN -> "เขียว HUD"
+    GaugeStyle.CUSTOM -> "สีที่เลือกเอง"
+}
+
+private fun BezelFinish.label(): String = when (this) {
+    BezelFinish.BRUSHED_STEEL -> "เงินปัดด้าน"
+    BezelFinish.BLACK_CHROME -> "โครเมียมดำ"
+    BezelFinish.TITANIUM_DARK -> "ไทเทเนียมเข้ม"
+}
+
+private fun GaugeSmoothing.label(): String = when (this) {
+    GaugeSmoothing.FAST -> "ตอบสนองไว"
+    GaugeSmoothing.BALANCED -> "สมดุล"
+    GaugeSmoothing.SMOOTH -> "นุ่มนวล"
+}
+
+private fun DigitalRingColorPreset.label(): String = when (this) {
+    DigitalRingColorPreset.AMBER -> "ส้มอำพัน"
+    DigitalRingColorPreset.CYAN -> "ฟ้า"
+    DigitalRingColorPreset.GREEN -> "เขียว"
+    DigitalRingColorPreset.RED -> "แดง"
+    DigitalRingColorPreset.PURPLE -> "ม่วง"
+    DigitalRingColorPreset.WHITE -> "ขาว"
+    DigitalRingColorPreset.CUSTOM -> "เลือกเอง"
+}
+
 private fun DisplayUnit.label(): String = when (this) {
-    DisplayUnit.KMH -> "km/h"
-    DisplayUnit.MPH -> "mph"
+    DisplayUnit.KMH -> "กม./ชม."
+    DisplayUnit.MPH -> "ไมล์/ชม."
     DisplayUnit.CELSIUS -> "°C"
     DisplayUnit.FAHRENHEIT -> "°F"
-    DisplayUnit.VOLT -> "V"
+    DisplayUnit.VOLT -> "โวลต์"
     DisplayUnit.PERCENT -> "%"
     DisplayUnit.KPA -> "kPa"
     DisplayUnit.BAR -> "bar"
     DisplayUnit.PSI -> "psi"
-    DisplayUnit.LITER -> "L"
-    DisplayUnit.GALLON -> "gal"
-    DisplayUnit.RPM -> "rpm"
+    DisplayUnit.LITER -> "ลิตร"
+    DisplayUnit.GALLON -> "แกลลอน"
+    DisplayUnit.RPM -> "รอบ/นาที"
     DisplayUnit.NONE -> ""
 }
 
 private fun Double?.text(): String = this?.toString().orEmpty()
-private fun Long.hex(): String = "#%08X".format(this and 0xFFFFFFFFL)
-private fun String.argbOr(fallback: Long): Long = argbOrNull() ?: fallback
-private fun String.argbOrNull(): Long? = runCatching {
-    val clean = trim().removePrefix("#")
-    val normalized = when (clean.length) {
-        6 -> "FF$clean"
-        8 -> clean
-        else -> error("Expected RRGGBB or AARRGGBB")
-    }
-    normalized.toULong(16).toLong()
-}.getOrNull()
