@@ -9,13 +9,13 @@ import javax.inject.Inject
 
 class DashboardRepository @Inject constructor(private val dao: NtuDao) {
     /**
-     * Only profiles that exist in local storage are exposed in 1.6.2. Legacy built-in profiles that
-     * users actually saved are converted to normal editable profiles while keeping the same id, so
-     * selection, replacement and deletion continue to address the original Room row correctly.
+     * Version 1.6.2 exposes only profiles that actually exist in local storage. No bundled layout is
+     * injected when storage is empty. A previously saved built-in profile keeps its original id and
+     * name, but is treated as a normal editable user profile from this point onward.
      */
     val dashboards: Flow<List<DashboardConfig>> = dao.profiles().map { saved ->
         saved.mapNotNull { DashboardCodec.import(it.widgetsJson).getOrNull() }
-            .map(::asUserProfile)
+            .map { it.copy(isDefault = false) }
             .distinctBy { it.id }
     }
 
@@ -27,14 +27,4 @@ class DashboardRepository @Inject constructor(private val dao: NtuDao) {
     )
 
     suspend fun delete(id: String) = dao.deleteProfile(id)
-
-    private fun asUserProfile(config: DashboardConfig): DashboardConfig {
-        if (!config.isDefault && config.id !in DashboardDefaults.legacyPresetIds) {
-            return config
-        }
-        return config.copy(
-            name = "${config.name} ที่บันทึกไว้",
-            isDefault = false,
-        )
-    }
 }
