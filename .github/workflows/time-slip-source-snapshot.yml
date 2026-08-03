@@ -1,0 +1,35 @@
+name: Time Slip source snapshot
+
+on:
+  pull_request:
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/time-slip-source-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package Android source tree
+        run: |
+          tar -czf time-slip-source.tgz \
+            android-app/app/src \
+            android-app/app/build.gradle.kts \
+            android-app/build.gradle.kts \
+            android-app/settings.gradle.kts \
+            android-app/gradle.properties \
+            android-app/gradle \
+            android-app/gradlew \
+            android-app/gradlew.bat \
+            .github/workflows/android-ci.yml \
+            .github/workflows/build-bundled-apk.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: time-slip-source-tree
+          path: time-slip-source.tgz
+          if-no-files-found: error
+          retention-days: 1
