@@ -1,34 +1,54 @@
-name: Time Slip source snapshot
+name: Apply Time Slip implementation
 
 on:
-  pull_request:
+  push:
+    branches:
+      - feature/1.7.0-time-slip
     paths:
-      - 'android-app/**'
+      - 'ci/time-slip-patch/**'
       - '.github/workflows/time-slip-source-snapshot.yml'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: apply-time-slip-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  snapshot:
+  apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Package Android source tree
-        run: |
-          tar -czf time-slip-source.tgz \
-            android-app/app/src \
-            android-app/app/build.gradle.kts \
-            android-app/build.gradle.kts \
-            android-app/settings.gradle.kts \
-            android-app/gradle.properties \
-            android-app/gradle \
-            android-app/gradlew \
-            .github/workflows/android-ci.yml \
-            .github/workflows/build-bundled-apk.yml
-      - uses: actions/upload-artifact@v4
         with:
-          name: time-slip-source-tree
-          path: time-slip-source.tgz
-          if-no-files-found: error
-          retention-days: 1
+          ref: feature/1.7.0-time-slip
+          fetch-depth: 0
+      - name: Apply implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          parts=(ci/time-slip-patch/part-*)
+          if (( ${#parts[@]} == 0 )); then
+            echo "No patch parts yet."
+            exit 0
+          fi
+          cat "${parts[@]}" > /tmp/time-slip.patch
+          git apply --check /tmp/time-slip.patch
+          git apply /tmp/time-slip.patch
+          rm -rf ci/time-slip-patch
+          rm -f .github/workflows/time-slip-source-snapshot.yml
+      - name: Commit Time Slip implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git commit -m "Implement NTU Time Slip performance testing"
+          git push
