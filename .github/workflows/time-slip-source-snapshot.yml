@@ -1,6 +1,10 @@
 name: Apply Time Slip implementation
 
 on:
+  pull_request:
+    paths:
+      - 'ci/time-slip-patch/**'
+      - '.github/workflows/time-slip-source-snapshot.yml'
   push:
     branches:
       - feature/1.7.0-time-slip
@@ -12,8 +16,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-time-slip-${{ github.ref }}
-  cancel-in-progress: false
+  group: apply-time-slip-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   apply:
@@ -55,4 +59,4 @@ jobs:
             exit 0
           fi
           git commit -m "Implement NTU Time Slip performance testing"
-          git push
+          git push origin HEAD:feature/1.7.0-time-slip
