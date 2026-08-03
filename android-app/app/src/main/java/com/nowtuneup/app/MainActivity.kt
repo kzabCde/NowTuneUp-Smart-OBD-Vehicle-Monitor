@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -72,6 +73,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.DashboardConfig
+import com.nowtuneup.app.feature.timeslip.TimeSlipScreen
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import com.nowtuneup.app.presentation.theme.NtuTheme
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
@@ -104,6 +106,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             Destination("เชื่อมต่อ", Icons.Default.Bluetooth),
             Destination("ข้อมูลสด", Icons.AutoMirrored.Filled.List),
             Destination("ตรวจปัญหา", Icons.Default.Warning),
+            Destination("Time Slip", Icons.Default.Timer),
             Destination("ตั้งค่า", Icons.Default.Settings),
         )
     }
@@ -260,6 +263,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                         1 -> ConnectionScreen(viewModel)
                         2 -> LiveDataScreen(viewModel)
                         3 -> DiagnosticsScreen(viewModel)
+                        4 -> TimeSlipScreen(viewModel)
                         else -> SettingsScreen(viewModel)
                     }
                 }
