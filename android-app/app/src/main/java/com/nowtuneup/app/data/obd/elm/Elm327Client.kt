@@ -52,6 +52,7 @@ class Elm327Client @Inject constructor(
                     val response = executeCommand(command, timeout, retryLimit = if (command == "0100") 1 else 0).getOrThrow()
                     logger.info("ELM327", "$command completed in ${System.currentTimeMillis() - startedAt} ms")
                     if (command == "ATZ") delay(resetDelayMillis.coerceIn(500L, 3_000L))
+                    if (command == "ATSP0") configureRealtimeTiming()
                     if (command == "ATI") {
                         identity = response.normalizedLines
                             .firstOrNull { it.uppercase() != "OK" && !it.uppercase().startsWith("SEARCHING") }
@@ -123,6 +124,22 @@ class Elm327Client @Inject constructor(
         }
     }
 
+    /**
+     * Repairs the command stream without resetting the Bluetooth socket or forcing protocol search.
+     * This is intentionally lighter than ATZ so transient ELM327 clone stalls do not become a full
+     * disconnect/reconnect cycle while the vehicle is moving.
+     */
+    suspend fun recoverLiveSession(): Result<Unit> = runCatching {
+        executeCommand("AT", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
+        executeCommand("ATE0", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
+        executeCommand("ATL0", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
+        executeCommand("ATS0", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
+        configureRealtimeTiming()
+        logger.info("ELM327", "Live command stream resynchronized without socket reconnect")
+    }.onFailure { error ->
+        logger.warning("ELM327", "Live command stream resync failed: ${error.message}")
+    }
+
     suspend fun readStoredDtcs(): Result<List<Dtc>> =
         executeCommand("03", timeoutMillis = 5_000L, retryLimit = 0).map { DtcParser.parse(it.raw) }
 
@@ -138,9 +155,19 @@ class Elm327Client @Inject constructor(
         _initialization.value = AdapterInitializationStatus()
     }
 
+    private suspend fun configureRealtimeTiming() {
+        listOf("ATAT1", "ATST96").forEach { command ->
+            executeCommand(command, timeoutMillis = OPTIONAL_TUNING_TIMEOUT_MILLIS, retryLimit = 0)
+                .onSuccess { logger.info("ELM327", "$command realtime tuning accepted") }
+                .onFailure { logger.warning("ELM327", "$command is not supported by this adapter; continuing safely") }
+        }
+    }
+
     companion object {
         private const val DEFAULT_RESET_DELAY_MILLIS = 1_000L
         private const val LIVE_PID_TIMEOUT_MILLIS = 1_500L
+        private const val RECOVERY_COMMAND_TIMEOUT_MILLIS = 2_500L
+        private const val OPTIONAL_TUNING_TIMEOUT_MILLIS = 2_000L
     }
 }
 

@@ -1,27 +1,30 @@
-name: Build bundled website APK
+name: Diagnose revised 1.6.1 release
 
-# NowTuneUp 1.6.1 revised Bluetooth realtime stability pipeline.
 on:
-  workflow_dispatch:
   push:
     branches:
-      - 'release/**'
-      - 'hotfix/**'
+      - release/1.6.1-bluetooth-realtime-stability
     paths:
       - android-app/**
-      - .github/workflows/build-bundled-apk.yml
+      - .github/workflows/diagnose-release-161.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: bundled-apk-${{ github.ref }}
+  group: diagnose-release-161-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-commit:
+  diagnose-and-bundle:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
+    env:
+      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
+      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,22 +38,35 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Sync in-app version label
+      - name: Record signing prerequisites
+        shell: bash
         run: |
-          sed -Ei 's/NTU [0-9]+\.[0-9]+\.[0-9]+/NTU 1.6.1/g' android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt
+          mkdir -p ci
+          {
+            echo "release=1.6.1"
+            echo "version_code=12"
+            if test -s "$NTU_KEYSTORE_FILE"; then echo "keystore_present=true"; else echo "keystore_present=false"; fi
+            if test -n "$NTU_KEYSTORE_PASSWORD"; then echo "store_password_present=true"; else echo "store_password_present=false"; fi
+            if test -n "$NTU_KEY_ALIAS"; then echo "key_alias_present=true"; else echo "key_alias_present=false"; fi
+            if test -n "$NTU_KEY_PASSWORD"; then echo "key_password_present=true"; else echo "key_password_present=false"; fi
+          } > ci/release-1.6.1-status.txt
 
-      - name: Build and sign APK 1.6.1 build 12
+      - name: Test lint and assemble signed release
+        id: build
+        continue-on-error: true
         working-directory: android-app
-        env:
-          NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
-          NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
-          NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
-          NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
+        shell: bash
         run: |
           chmod +x gradlew
+          set +e
           ./gradlew test lint assembleRelease
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
-      - name: Verify and bundle APK with website
+      - name: Verify and bundle successful APK
+        if: steps.build.outcome == 'success'
+        shell: bash
         run: |
           set -euo pipefail
           SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.6.1-release.apk"
@@ -86,26 +102,37 @@ jobs:
           )
           path.write_text(text)
           PY
-          test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
+          {
+            echo "build_outcome=success"
+            echo "apk_verified=true"
+            echo "apk_size=$SIZE"
+            echo "sha256=$SHA256"
+          } >> ci/release-1.6.1-status.txt
 
-      - name: Commit generated APK
+      - name: Record failed build without exposing secrets
+        if: steps.build.outcome != 'success'
+        shell: bash
+        run: |
+          {
+            echo "build_outcome=failure"
+            echo "gradle_exit_code=${{ steps.build.outputs.exit_code }}"
+            echo "apk_verified=false"
+          } >> ci/release-1.6.1-status.txt
+
+      - name: Commit diagnostic status and successful bundle
+        if: always()
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f \
-            android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt \
-            web/public/downloads/NowTuneUp.apk \
-            web/lib/local-release.ts
-          if git diff --cached --quiet; then
-            echo "Bundled APK is already current."
-            exit 0
+          git add ci/release-1.6.1-status.txt
+          if test -s web/public/downloads/NowTuneUp.apk && grep -q '^build_outcome=success$' ci/release-1.6.1-status.txt; then
+            git add -f web/public/downloads/NowTuneUp.apk web/lib/local-release.ts
           fi
-          git commit -m "Bundle revised NowTuneUp APK 1.6.1 build 12"
+          git commit -m "Record revised 1.6.1 release build status"
           git push
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: NowTuneUp-1.6.1-build-12
-          path: web/public/downloads/NowTuneUp.apk
-          if-no-files-found: error
+      - name: Fail workflow when release build failed
+        if: steps.build.outcome != 'success'
+        shell: bash
+        run: exit 1

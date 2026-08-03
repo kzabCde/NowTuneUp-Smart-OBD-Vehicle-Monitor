@@ -8,6 +8,7 @@ import com.nowtuneup.app.data.obd.pid.DerivedPids
 import com.nowtuneup.app.data.obd.pid.StandardPids
 import com.nowtuneup.app.data.obd.pid.SupportedPidParser
 import com.nowtuneup.app.data.obd.polling.PidPollingScheduler
+import com.nowtuneup.app.data.obd.polling.PollingGroup
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.ObdError
@@ -102,11 +103,12 @@ class ObdSessionManager @Inject constructor(
         if (scheduler.isEmpty()) return
         polling = scope.launch {
             var consecutiveTransportFailures = 0
+            var failedSoftRecoveries = 0
             var successfulCommands = 0L
             val startedAt = System.currentTimeMillis()
             logger.info(
                 "Polling",
-                "Realtime polling started with ${scheduler.snapshot().size} interleaved slots",
+                "Realtime polling started with ${scheduler.snapshot().size} priority slots",
             )
 
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
@@ -117,37 +119,67 @@ class ObdSessionManager @Inject constructor(
                 }
 
                 val commandStartedAt = System.currentTimeMillis()
-                elm327.requestPid(slot.pid).onSuccess { reading ->
+                var hardTransportFailure = false
+                elm327.requestPid(
+                    pid = slot.pid,
+                    timeoutMillis = timeoutFor(slot.group),
+                    retryLimit = 0,
+                ).onSuccess { reading ->
                     consecutiveTransportFailures = 0
+                    failedSoftRecoveries = 0
                     successfulCommands += 1
                     publish(reading.pid, reading.value ?: return@onSuccess)
                 }.onFailure { error ->
                     if (isTransportHealthFailure(error)) {
                         consecutiveTransportFailures += 1
+                        hardTransportFailure = isHardTransportFailure(error)
                     } else {
                         // NO DATA or an individual malformed PID still proves that the adapter link is alive.
                         consecutiveTransportFailures = 0
+                        failedSoftRecoveries = 0
                     }
                     logger.warning(
                         "Polling",
-                        "PID 01%02X failed (%d/%d transport failures): %s".format(
+                        "PID 01%02X failed (%d/%d before soft recovery): %s".format(
                             slot.pid,
                             consecutiveTransportFailures,
-                            MAX_CONSECUTIVE_TRANSPORT_FAILURES,
+                            SOFT_RECOVERY_THRESHOLD,
                             error.message.orEmpty(),
                         ),
                     )
+                }
 
-                    if (consecutiveTransportFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
-                        logger.error(
+                if (hardTransportFailure) {
+                    logger.error("Polling", "RFCOMM transport closed; handing off to automatic reconnect", null)
+                    transport.disconnect()
+                    break
+                }
+
+                if (consecutiveTransportFailures >= SOFT_RECOVERY_THRESHOLD) {
+                    logger.warning(
+                        "Polling",
+                        "ELM327 response stream stalled; attempting soft resync without disconnect",
+                    )
+                    val recovered = elm327.recoverLiveSession().isSuccess
+                    consecutiveTransportFailures = 0
+                    if (recovered) {
+                        failedSoftRecoveries = 0
+                        delay(POST_RECOVERY_SETTLE_MILLIS)
+                    } else {
+                        failedSoftRecoveries += 1
+                        logger.warning(
                             "Polling",
-                            "ELM327 transport is unhealthy after $consecutiveTransportFailures consecutive failures; reconnecting",
-                            error,
+                            "Soft resync failed ($failedSoftRecoveries/$MAX_FAILED_SOFT_RECOVERIES)",
                         )
                     }
                 }
 
-                if (consecutiveTransportFailures >= MAX_CONSECUTIVE_TRANSPORT_FAILURES) {
+                if (failedSoftRecoveries >= MAX_FAILED_SOFT_RECOVERIES) {
+                    logger.error(
+                        "Polling",
+                        "ELM327 stream could not be recovered; reconnecting the Bluetooth transport",
+                        null,
+                    )
                     transport.disconnect()
                     break
                 }
@@ -192,9 +224,15 @@ class ObdSessionManager @Inject constructor(
     }
 
     private fun commandPacingMillis(): Long = when {
-        refreshIntervalMillis <= 250L -> 15L
-        refreshIntervalMillis <= 600L -> 50L
-        else -> 150L
+        refreshIntervalMillis <= 250L -> 8L
+        refreshIntervalMillis <= 600L -> 25L
+        else -> 80L
+    }
+
+    private fun timeoutFor(group: PollingGroup): Long = when (group) {
+        PollingGroup.FAST -> if (refreshIntervalMillis <= 250L) 1_100L else 1_300L
+        PollingGroup.NORMAL -> 1_500L
+        PollingGroup.SLOW -> 1_800L
     }
 
     private fun isTransportHealthFailure(error: Throwable): Boolean = when (error.toObdError()) {
@@ -209,6 +247,14 @@ class ObdSessionManager @Inject constructor(
                 message.contains("closed", ignoreCase = true) ||
                 message.contains("broken pipe", ignoreCase = true)
         }
+    }
+
+    private fun isHardTransportFailure(error: Throwable): Boolean {
+        val message = error.message.orEmpty()
+        return error.toObdError() in setOf(ObdError.DeviceDisconnected, ObdError.BufferFull) ||
+            message.contains("socket", ignoreCase = true) ||
+            message.contains("closed", ignoreCase = true) ||
+            message.contains("broken pipe", ignoreCase = true)
     }
 
     private fun publish(pid: Int, value: Double) {
@@ -237,8 +283,10 @@ class ObdSessionManager @Inject constructor(
     }
 
     companion object {
-        private const val MAX_CONSECUTIVE_TRANSPORT_FAILURES = 4
-        private const val HEALTH_LOG_EVERY_COMMANDS = 50L
+        private const val SOFT_RECOVERY_THRESHOLD = 3
+        private const val MAX_FAILED_SOFT_RECOVERIES = 2
+        private const val POST_RECOVERY_SETTLE_MILLIS = 120L
+        private const val HEALTH_LOG_EVERY_COMMANDS = 40L
 
         fun defaultReadings(): List<VehicleReading> = StandardPids.all.map { definition ->
             VehicleReading(
