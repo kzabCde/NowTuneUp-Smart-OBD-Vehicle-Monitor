@@ -7,6 +7,7 @@ plugins {
 }
 
 android {
+    // Release 1.6.2: user-created dashboard profiles and simplified visual widget setup.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
