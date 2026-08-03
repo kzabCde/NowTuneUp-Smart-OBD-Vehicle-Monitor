@@ -34,7 +34,7 @@ jobs:
             echo "No patch parts yet."
             exit 0
           fi
-          cat "${parts[@]}" > /tmp/time-slip.patch
+          cat "${parts[@]}" | base64 --decode | gzip --decompress > /tmp/time-slip.patch
           git apply --check /tmp/time-slip.patch
           git apply /tmp/time-slip.patch
           rm -rf ci/time-slip-patch
