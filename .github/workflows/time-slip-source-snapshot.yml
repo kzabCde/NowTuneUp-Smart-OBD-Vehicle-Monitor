@@ -28,11 +28,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ ! -f ci/time-slip-patch/ready ]]; then
+            echo "Waiting for all Time Slip patch parts."
+            exit 0
+          fi
           shopt -s nullglob
           parts=(ci/time-slip-patch/part-*)
           if (( ${#parts[@]} == 0 )); then
-            echo "No patch parts yet."
-            exit 0
+            echo "No patch parts found."
+            exit 1
           fi
           cat "${parts[@]}" | base64 --decode | gzip --decompress > /tmp/time-slip.patch
           git apply --check /tmp/time-slip.patch
