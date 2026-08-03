@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - .github/scripts/apply_custom_widget_scales.py
       - .github/workflows/custom-widget-scales.yml
       - .github/workflows/run-custom-widget-scales-pr.yml
 
@@ -29,19 +30,8 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Extract and run patch
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('.github/workflows/custom-widget-scales.yml').read_text()
-          start = text.index("          python3 <<'PY'\n") + len("          python3 <<'PY'\n")
-          end = text.index("\n          PY\n", start)
-          lines = text[start:end].splitlines()
-          code = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
-          Path('/tmp/custom-widget-scales.py').write_text(code)
-          PY
-          python3 /tmp/custom-widget-scales.py
+      - name: Apply custom scale support
+        run: python3 .github/scripts/apply_custom_widget_scales.py
 
       - name: Test, lint, and build debug APK
         working-directory: android-app
@@ -52,6 +42,7 @@ jobs:
       - name: Commit implementation
         shell: bash
         run: |
+          rm .github/scripts/apply_custom_widget_scales.py
           rm .github/workflows/custom-widget-scales.yml
           rm .github/workflows/run-custom-widget-scales-pr.yml
           git config user.name "github-actions[bot]"
