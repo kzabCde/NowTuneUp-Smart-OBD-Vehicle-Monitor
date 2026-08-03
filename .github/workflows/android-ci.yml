@@ -119,6 +119,7 @@ jobs:
           )
           path.write_text(text)
           PY
+          mkdir -p ci
           {
             echo "release=1.6.1"
             echo "version_code=12"
