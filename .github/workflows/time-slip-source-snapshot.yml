@@ -24,7 +24,6 @@ jobs:
             android-app/gradle.properties \
             android-app/gradle \
             android-app/gradlew \
-            android-app/gradlew.bat \
             .github/workflows/android-ci.yml \
             .github/workflows/build-bundled-apk.yml
       - uses: actions/upload-artifact@v4
