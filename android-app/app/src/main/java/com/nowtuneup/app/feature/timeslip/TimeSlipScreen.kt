@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -86,8 +85,9 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(speedReading?.updatedAt) {
-        val value = speedReading?.value ?: return@LaunchedEffect
-        if ((speedReading.updatedAt) <= 0L) return@LaunchedEffect
+        val reading = speedReading ?: return@LaunchedEffect
+        val value = reading.value ?: return@LaunchedEffect
+        if (reading.updatedAt <= 0L) return@LaunchedEffect
         val next = engine.ingestSpeed(value, System.nanoTime())
         snapshot = next
         next.record?.let { completed ->
@@ -200,9 +200,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                 )
             }
 
-            item {
-                LivePerformanceCard(snapshot, currentSpeedKmh)
-            }
+            item { LivePerformanceCard(snapshot, currentSpeedKmh) }
 
             snapshot.record?.let { record ->
                 item {
@@ -292,7 +290,9 @@ private fun SetupCard(
                     selected = config.mode == PerformanceMode.ROLLING_START,
                     enabled = enabled,
                     label = "Rolling Start",
-                    onClick = { onConfigChange(config.copy(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null)) },
+                    onClick = {
+                        onConfigChange(config.copy(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null))
+                    },
                 )
             }
 
@@ -303,13 +303,17 @@ private fun SetupCard(
                         selected = config.rollingStartKmh == 60.0 && config.rollingTargetKmh == 100.0,
                         enabled = enabled,
                         label = "60–100 km/h",
-                        onClick = { onConfigChange(config.copy(rollingStartKmh = 60.0, rollingTargetKmh = 100.0)) },
+                        onClick = {
+                            onConfigChange(config.copy(rollingStartKmh = 60.0, rollingTargetKmh = 100.0))
+                        },
                     )
                     ChoiceButton(
                         selected = config.rollingStartKmh == 80.0 && config.rollingTargetKmh == 120.0,
                         enabled = enabled,
                         label = "80–120 km/h",
-                        onClick = { onConfigChange(config.copy(rollingStartKmh = 80.0, rollingTargetKmh = 120.0)) },
+                        onClick = {
+                            onConfigChange(config.copy(rollingStartKmh = 80.0, rollingTargetKmh = 120.0))
+                        },
                     )
                 }
             } else {
@@ -382,7 +386,10 @@ private fun LivePerformanceCard(snapshot: TimeSlipSnapshot, currentSpeedKmh: Dou
             if (snapshot.distanceSplits.isNotEmpty()) {
                 HorizontalDivider()
                 snapshot.distanceSplits.forEach { split ->
-                    Text("${split.target.label}: ${formatSeconds(split.elapsedMillis)} s • ${"%.1f".format(split.trapSpeedKmh)} km/h")
+                    Text(
+                        "${split.target.label}: ${formatSeconds(split.elapsedMillis)} s • " +
+                            "${"%.1f".format(split.trapSpeedKmh)} km/h",
+                    )
                 }
             }
         }
@@ -395,11 +402,12 @@ private fun ResultCard(record: TimeSlipRecord, onShare: () -> Unit, onCsv: () ->
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("NTU PERFORMANCE TIME SLIP", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
             Text(formatDate(record.startedAtEpochMillis), style = MaterialTheme.typography.bodySmall)
-            record.speedMilestones.forEach {
-                ResultRow(it.label, "${formatSeconds(it.elapsedMillis)} s")
-            }
+            record.speedMilestones.forEach { ResultRow(it.label, "${formatSeconds(it.elapsedMillis)} s") }
             record.distanceSplits.forEach {
-                ResultRow(it.target.label, "${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h")
+                ResultRow(
+                    it.target.label,
+                    "${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h",
+                )
             }
             HorizontalDivider()
             ResultRow("Maximum speed", "${"%.1f".format(record.maximumSpeedKmh)} km/h")
@@ -432,12 +440,19 @@ private fun ResultRow(label: String, value: String) {
 @Composable
 private fun HistorySummary(history: List<TimeSlipRecord>) {
     val bestZeroToHundred = history
-        .filter { it.measurementQuality == MeasurementQuality.HIGH || it.measurementQuality == MeasurementQuality.MEDIUM }
-        .mapNotNull { record -> record.speedMilestones.firstOrNull { it.label == "0–100 km/h" }?.elapsedMillis }
+        .filter {
+            it.measurementQuality == MeasurementQuality.HIGH ||
+                it.measurementQuality == MeasurementQuality.MEDIUM
+        }
+        .mapNotNull { record ->
+            record.speedMilestones.firstOrNull { it.label == "0–100 km/h" }?.elapsedMillis
+        }
         .minOrNull()
     val bestQuarter = history
         .filter { it.measurementQuality != MeasurementQuality.INVALID }
-        .mapNotNull { record -> record.distanceSplits.firstOrNull { it.target == DistanceTarget.QUARTER_MILE }?.elapsedMillis }
+        .mapNotNull { record ->
+            record.distanceSplits.firstOrNull { it.target == DistanceTarget.QUARTER_MILE }?.elapsedMillis
+        }
         .minOrNull()
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -456,14 +471,30 @@ private fun HistoryRecordCard(record: TimeSlipRecord, onShare: () -> Unit, onDel
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(formatDate(record.startedAtEpochMillis), fontWeight = FontWeight.Bold)
             Text(
-                record.speedMilestones.joinToString(" • ") { "${it.label} ${formatSeconds(it.elapsedMillis)}s" }
-                    .ifBlank { record.distanceSplits.lastOrNull()?.let { "${it.target.label} ${formatSeconds(it.elapsedMillis)}s" }.orEmpty() },
+                record.speedMilestones.joinToString(" • ") {
+                    "${it.label} ${formatSeconds(it.elapsedMillis)}s"
+                }.ifBlank {
+                    record.distanceSplits.lastOrNull()?.let {
+                        "${it.target.label} ${formatSeconds(it.elapsedMillis)}s"
+                    }.orEmpty()
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text("${record.measurementQuality.displayName()} • ${"%.1f".format(record.obdSampleRateHz)} Hz", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "${record.measurementQuality.displayName()} • ${"%.1f".format(record.obdSampleRateHz)} Hz",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = onShare, label = { Text("แชร์") }, leadingIcon = { Icon(Icons.Default.Share, null) })
-                AssistChip(onClick = onDelete, label = { Text("ลบ") }, leadingIcon = { Icon(Icons.Default.Delete, null) })
+                AssistChip(
+                    onClick = onShare,
+                    label = { Text("แชร์") },
+                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                )
+                AssistChip(
+                    onClick = onDelete,
+                    label = { Text("ลบ") },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                )
             }
         }
     }
