@@ -15,13 +15,24 @@ import com.nowtuneup.app.domain.model.GaugeSmoothing
 import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.WarningThreshold
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashboardCodecTest {
     @Test
-    fun releaseVersionUses161Base() {
-        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.6.1"))
+    fun releaseVersionUses162Base() {
+        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.6.2"))
+    }
+
+    @Test
+    fun newProfileStartsEmptyWithoutBundledDashboard() {
+        val profile = DashboardDefaults.newProfile(id = "test-profile")
+
+        assertFalse(profile.isDefault)
+        assertTrue(profile.portrait.widgets.isEmpty())
+        assertTrue(profile.landscape.widgets.isEmpty())
+        assertTrue(DashboardDefaults.widgetCatalog.isNotEmpty())
     }
 
     @Test
@@ -61,7 +72,7 @@ class DashboardCodecTest {
     }
 
     @Test
-    fun roundTripPreservesPremiumEditorConfiguration() {
+    fun roundTripPreservesPremiumEditorConfigurationAndChosenColors() {
         val widget = DashboardWidgetConfig(
             id = "rpm",
             pid = 0x0C,
@@ -72,23 +83,23 @@ class DashboardCodecTest {
             valueSize = 46,
             columnSpan = 2,
             rowSpan = 3,
-            gaugeStyle = GaugeStyle.SPORT_RED,
+            gaugeStyle = GaugeStyle.CUSTOM,
             bezelFinish = BezelFinish.BLACK_CHROME,
             gaugeSmoothing = GaugeSmoothing.FAST,
             showPeakMarker = true,
             colors = ColorConfig(
-                value = 0xFFFF1744,
+                value = 0xFF35E6FF,
                 label = 0xFFFFFFFF,
-                background = 0xFF090D12,
-                border = 0xFF334155,
+                background = 0xFF111827,
+                border = 0xFFB0BEC5,
                 warning = 0xFFFFB300,
-                critical = 0xFFFF5252,
-                face = 0xFF08080A,
-                bezel = 0xFF25262A,
-                tick = 0xFFFFE8E8,
+                critical = 0xFFFF1744,
+                face = 0xFF111827,
+                bezel = 0xFFB0BEC5,
+                tick = 0xFF35E6FF,
                 needle = 0xFFFF1744,
-                needleHighlight = 0xFFFFA0AF,
-                glow = 0x88FF1744,
+                needleHighlight = 0xFFFFFFFF,
+                glow = 0x8835E6FF,
             ),
             threshold = WarningThreshold(warningHigh = 5_500.0, criticalHigh = 6_500.0),
         )
@@ -102,9 +113,10 @@ class DashboardCodecTest {
         val imported = DashboardCodec.import(DashboardCodec.export(config)).getOrThrow()
 
         assertEquals(config, imported)
-        assertEquals(GaugeStyle.SPORT_RED, imported.portrait.widgets.single().gaugeStyle)
+        assertEquals(GaugeStyle.CUSTOM, imported.portrait.widgets.single().gaugeStyle)
         assertEquals(BezelFinish.BLACK_CHROME, imported.portrait.widgets.single().bezelFinish)
         assertEquals(0xFFFF1744, imported.portrait.widgets.single().colors.needle)
+        assertEquals(0xFF35E6FF, imported.portrait.widgets.single().colors.value)
         assertEquals(6_500.0, imported.portrait.widgets.single().threshold.criticalHigh)
     }
 
@@ -153,27 +165,24 @@ class DashboardCodecTest {
 
     @Test
     fun importRejectsInvalidWidgetHeight() {
-        val invalid = DashboardDefaults.presets.first().let { preset ->
-            preset.copy(
-                portrait = preset.portrait.copy(
-                    widgets = preset.portrait.widgets.mapIndexed { index, widget ->
-                        if (index == 0) widget.copy(rowSpan = 9) else widget
-                    },
-                ),
-            )
-        }
+        val invalidWidget = DashboardDefaults.widgetCatalog.first().copy(rowSpan = 9)
+        val invalid = DashboardDefaults.newProfile(id = "invalid-height").copy(
+            portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
+        )
+
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }
 
     @Test
     fun importRejectsInvalidDigitalRingSegmentCount() {
-        val invalidWidget = DashboardDefaults.presets.first().portrait.widgets.first().copy(
+        val invalidWidget = DashboardDefaults.widgetCatalog.first().copy(
             type = DashboardWidgetType.DIGITAL_RING,
             digitalRing = DigitalRingConfig(segmentCount = 100),
         )
-        val invalid = DashboardDefaults.presets.first().copy(
+        val invalid = DashboardDefaults.newProfile(id = "invalid-ring").copy(
             portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
         )
+
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }
 
