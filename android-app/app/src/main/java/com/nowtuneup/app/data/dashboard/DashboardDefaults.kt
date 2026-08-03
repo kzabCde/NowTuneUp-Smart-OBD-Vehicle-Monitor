@@ -46,6 +46,22 @@ object DashboardDefaults {
         threshold: WarningThreshold = WarningThreshold(),
     ): DashboardWidgetConfig {
         val premium = premiumGaugePreset(gaugeStyle)
+        val defaultScale = when {
+            pid == DerivedPids.TURBO_PRESSURE && unit == DisplayUnit.PSI -> -15.0 to 30.0
+            unit == DisplayUnit.RPM -> 0.0 to 7_000.0
+            unit == DisplayUnit.KMH -> 0.0 to 200.0
+            unit == DisplayUnit.MPH -> 0.0 to 120.0
+            unit == DisplayUnit.CELSIUS -> -40.0 to 130.0
+            unit == DisplayUnit.FAHRENHEIT -> -40.0 to 266.0
+            unit == DisplayUnit.VOLT -> 8.0 to 18.0
+            unit == DisplayUnit.PERCENT -> 0.0 to 100.0
+            unit == DisplayUnit.KPA -> 0.0 to 255.0
+            unit == DisplayUnit.BAR -> 0.0 to 3.0
+            unit == DisplayUnit.PSI -> 0.0 to 100.0
+            unit == DisplayUnit.LITER -> 0.0 to 100.0
+            unit == DisplayUnit.GALLON -> 0.0 to 30.0
+            else -> null
+        }
         return DashboardWidgetConfig(
             id = id,
             pid = pid,
@@ -58,6 +74,8 @@ object DashboardDefaults {
             valueSize = valueSize,
             gaugeStyle = gaugeStyle,
             bezelFinish = premium.bezelFinish,
+            scaleMinimum = defaultScale?.first,
+            scaleMaximum = defaultScale?.second,
             colors = ColorConfig(
                 value = premium.value,
                 label = premium.label,

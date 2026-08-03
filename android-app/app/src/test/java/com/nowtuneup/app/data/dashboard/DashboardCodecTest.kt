@@ -36,6 +36,17 @@ class DashboardCodecTest {
     }
 
     @Test
+    fun catalogProvidesEditableVehicleScaleDefaults() {
+        val speed = DashboardDefaults.widgetCatalog.first { it.pid == 0x0D }
+        val rpm = DashboardDefaults.widgetCatalog.first { it.pid == 0x0C }
+
+        assertEquals(0.0, speed.scaleMinimum)
+        assertEquals(200.0, speed.scaleMaximum)
+        assertEquals(0.0, rpm.scaleMinimum)
+        assertEquals(7_000.0, rpm.scaleMaximum)
+    }
+
+    @Test
     fun roundTripPreservesIndependentResponsiveLayouts() {
         val portraitWidget = DashboardWidgetConfig(
             id = "speed",
@@ -44,6 +55,8 @@ class DashboardCodecTest {
             title = "Speed",
             unit = DisplayUnit.KMH,
             columnSpan = 2,
+            scaleMinimum = 20.0,
+            scaleMaximum = 240.0,
         )
         val landscapeWidget = portraitWidget.copy(
             type = DashboardWidgetType.DIGITAL_RING,
@@ -67,6 +80,8 @@ class DashboardCodecTest {
         assertEquals(2, imported.portrait.columns)
         assertEquals(4, imported.landscape.columns)
         assertEquals(DashboardWidgetType.DIGITAL, imported.portrait.widgets.single().type)
+        assertEquals(20.0, imported.portrait.widgets.single().scaleMinimum)
+        assertEquals(240.0, imported.portrait.widgets.single().scaleMaximum)
         assertEquals(DashboardWidgetType.DIGITAL_RING, imported.landscape.widgets.single().type)
         assertEquals(48, imported.landscape.widgets.single().digitalRing?.segmentCount)
     }
@@ -171,6 +186,26 @@ class DashboardCodecTest {
         )
 
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
+    }
+
+    @Test
+    fun importRejectsIncompleteOrReversedWidgetScale() {
+        val base = DashboardDefaults.widgetCatalog.first()
+        val incomplete = DashboardDefaults.newProfile(id = "invalid-scale-incomplete").copy(
+            portrait = DashboardLayout(
+                columns = 2,
+                widgets = listOf(base.copy(scaleMinimum = 0.0, scaleMaximum = null)),
+            ),
+        )
+        val reversed = DashboardDefaults.newProfile(id = "invalid-scale-reversed").copy(
+            portrait = DashboardLayout(
+                columns = 2,
+                widgets = listOf(base.copy(scaleMinimum = 200.0, scaleMaximum = 0.0)),
+            ),
+        )
+
+        assertTrue(DashboardCodec.import(DashboardCodec.export(incomplete)).isFailure)
+        assertTrue(DashboardCodec.import(DashboardCodec.export(reversed)).isFailure)
     }
 
     @Test
