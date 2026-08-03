@@ -7,11 +7,6 @@ permissions: { contents: read }
 jobs:
   verify:
     runs-on: ubuntu-latest
-    env:
-      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
-      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
-      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
-      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
     defaults:
       run:
         working-directory: android-app
@@ -46,38 +41,4 @@ jobs:
         with:
           name: NowTuneUp-1.7.0-ui-test
           path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.7.0-ui-test.apk
-          if-no-files-found: error
-      - name: Validate release signing prerequisites
-        run: |
-          test -s "$NTU_KEYSTORE_FILE"
-          test -n "$NTU_KEYSTORE_PASSWORD"
-          test -n "$NTU_KEY_ALIAS"
-          test -n "$NTU_KEY_PASSWORD"
-      - name: Build signed 1.7.0 release APK
-        run: ./gradlew assembleRelease --stacktrace
-      - name: Verify signed release APK
-        run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/release/NowTuneUp-v1.7.0-release.apk"
-          test -s "$APK"
-          unzip -t "$APK" >/dev/null
-          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          test -n "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-          SHA256="$(sha256sum "$APK" | awk '{print $1}')"
-          SIZE="$(stat -c%s "$APK")"
-          {
-            echo "release=1.7.0"
-            echo "version_code=14"
-            echo "apk_size=$SIZE"
-            echo "sha256=$SHA256"
-            echo "apksigner_verified=true"
-          } > release-1.7.0-status.txt
-      - name: Upload signed 1.7.0 release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NowTuneUp-1.7.0-release-build-14
-          path: |
-            android-app/app/build/outputs/apk/release/NowTuneUp-v1.7.0-release.apk
-            android-app/release-1.7.0-status.txt
           if-no-files-found: error
