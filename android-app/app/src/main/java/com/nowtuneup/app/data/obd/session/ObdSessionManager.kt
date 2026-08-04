@@ -41,6 +41,7 @@ class ObdSessionManager @Inject constructor(
     val readings: StateFlow<List<VehicleReading>> = _readings.asStateFlow()
     private val _supportedPids = MutableStateFlow<Set<Int>>(emptySet())
     val supportedPids: StateFlow<Set<Int>> = _supportedPids.asStateFlow()
+    private val turboEstimator = TurboPressureEstimator()
     private var polling: Job? = null
 
     @Volatile
@@ -48,6 +49,7 @@ class ObdSessionManager @Inject constructor(
 
     suspend fun connect(): Result<Unit> {
         pause()
+        turboEstimator.reset()
         elm327.resetInitializationState()
         transport.connect().onFailure { return Result.failure(it) }
         return elm327.initialize().mapCatching { result ->
@@ -78,12 +80,14 @@ class ObdSessionManager @Inject constructor(
     }
 
     private fun updateSupportFlags(discovered: Set<Int>) {
+        turboEstimator.reset()
         val turboSupported = DerivedPids.MAP in discovered && DerivedPids.BAROMETRIC_PRESSURE in discovered
         _readings.update { values ->
             values.map { reading ->
                 reading.copy(
                     supported = if (reading.pid == DerivedPids.TURBO_PRESSURE) turboSupported else reading.pid in discovered,
                     value = null,
+                    updatedAt = 0L,
                 )
             }
         }
@@ -91,10 +95,11 @@ class ObdSessionManager @Inject constructor(
 
     suspend fun disconnect() {
         pause()
+        turboEstimator.reset()
         _supportedPids.value = emptySet()
         elm327.resetInitializationState()
         transport.disconnect()
-        _readings.update { readings -> readings.map { it.copy(value = null) } }
+        _readings.update { readings -> readings.map { it.copy(value = null, updatedAt = 0L) } }
     }
 
     fun startPolling() {
@@ -259,24 +264,32 @@ class ObdSessionManager @Inject constructor(
 
     private fun publish(pid: Int, value: Double) {
         val now = System.currentTimeMillis()
+        val turboEstimate = if (pid == DerivedPids.MAP || pid == DerivedPids.BAROMETRIC_PRESSURE) {
+            turboEstimator.update(pid, value, now)
+        } else {
+            null
+        }
+
         _readings.update { readings ->
             val updated = readings.map { reading ->
                 if (reading.pid == pid) reading.copy(value = value, updatedAt = now) else reading
             }
-            val map = updated.firstOrNull { it.pid == DerivedPids.MAP }
-            val barometric = updated.firstOrNull { it.pid == DerivedPids.BAROMETRIC_PRESSURE }
-            val supported = map?.supported == true && barometric?.supported == true
-            val turboValue = if (supported && map?.value != null && barometric?.value != null) {
-                DerivedPids.turboPressureKpa(map.value, barometric.value)
-            } else {
-                null
-            }
-            val derivedTimestamp = if (turboValue != null) minOf(map!!.updatedAt, barometric!!.updatedAt) else now
+            val mapSupported = updated.firstOrNull { it.pid == DerivedPids.MAP }?.supported == true
+            val barometricSupported = updated
+                .firstOrNull { it.pid == DerivedPids.BAROMETRIC_PRESSURE }
+                ?.supported == true
+            val turboSupported = mapSupported && barometricSupported
+
             updated.map { reading ->
-                if (reading.pid == DerivedPids.TURBO_PRESSURE) {
-                    reading.copy(value = turboValue, supported = supported, updatedAt = derivedTimestamp)
-                } else {
-                    reading
+                if (reading.pid != DerivedPids.TURBO_PRESSURE) return@map reading
+                when {
+                    !turboSupported -> reading.copy(value = null, supported = false, updatedAt = 0L)
+                    turboEstimate != null -> reading.copy(
+                        value = turboEstimate.valueKpa,
+                        supported = true,
+                        updatedAt = turboEstimate.timestampMillis,
+                    )
+                    else -> reading.copy(supported = true)
                 }
             }
         }
