@@ -1,6 +1,7 @@
 package com.nowtuneup.app.feature.timeslip
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.Sensor
@@ -54,6 +55,7 @@ class TimeSlipSensorFusion(context: Context) : LocationListener, SensorEventList
         Manifest.permission.ACCESS_FINE_LOCATION,
     ) == PackageManager.PERMISSION_GRANTED
 
+    @SuppressLint("MissingPermission")
     fun start(): Boolean {
         if (started) return true
         sensorManager?.registerListener(
