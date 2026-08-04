@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.8.0: Accurate Time Slip sensor fusion and OBD performance sampling.
+    // Release 1.8.1: stability-first OBD polling and simplified UX.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.8.0"
+        versionCode = 18
+        versionName = "1.8.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -36,7 +36,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-ui-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp 1.8.0 Test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.8.1 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -62,9 +62,9 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.8.0-release.apk"
+                "NowTuneUp-v1.8.1-release.apk"
             } else {
-                "NowTuneUp-v1.8.0-ui-test.apk"
+                "NowTuneUp-v1.8.1-ui-test.apk"
             }
         }
     }
