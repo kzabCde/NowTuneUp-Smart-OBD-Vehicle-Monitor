@@ -24,6 +24,19 @@ enum class MeasurementQuality {
     INVALID,
 }
 
+enum class MeasurementSource {
+    OBD_ONLY,
+    OBD_GPS_IMU,
+    REPLAY,
+}
+
+enum class ConfidenceLevel {
+    HIGH,
+    MEDIUM,
+    LOW,
+    INVALID,
+}
+
 enum class DistanceTarget(val meters: Double, val label: String) {
     SIXTY_FEET(18.288, "60 ft"),
     THREE_THIRTY_FEET(100.584, "330 ft"),
@@ -43,6 +56,23 @@ data class TimeSlipConfig(
     val stationaryThresholdKmh: Double = 1.0,
     val launchThresholdKmh: Double = 2.0,
     val stationaryHoldMillis: Long = 1_000L,
+    val oneFootRollout: Boolean = false,
+    val useSensorFusion: Boolean = true,
+    val vehicleProfileId: String = "default",
+)
+
+data class TimeSlipTelemetrySample(
+    val timeNanos: Long,
+    val wallClockMillis: Long,
+    val obdSpeedKmh: Double,
+    val gpsSpeedKmh: Double? = null,
+    val fusedSpeedKmh: Double = obdSpeedKmh,
+    val accelerationMps2: Double = 0.0,
+    val gpsAccuracyMeters: Double? = null,
+    val satellitesUsed: Int = 0,
+    val slopePercent: Double? = null,
+    val transportLatencyMillis: Long = 0L,
+    val source: MeasurementSource = MeasurementSource.OBD_ONLY,
 )
 
 data class SpeedMilestoneResult(
@@ -79,6 +109,17 @@ data class TimeSlipRecord(
     val estimatedTimingErrorMillis: Long = 0L,
     val dataSource: String = "OBD-II PID 010D",
     val distanceEstimated: Boolean = true,
+    val reactionTimeMillis: Long = 0L,
+    val rolloutMillis: Long = 0L,
+    val oneFootRolloutEnabled: Boolean = false,
+    val speedConfidence: ConfidenceLevel? = null,
+    val distanceConfidence: ConfidenceLevel? = null,
+    val gpsSampleCount: Int = 0,
+    val averageGpsAccuracyMeters: Double? = null,
+    val averageSlopePercent: Double? = null,
+    val maximumAccelerationMps2: Double = 0.0,
+    val vehicleProfileId: String? = null,
+    val rawSamples: List<TimeSlipTelemetrySample>? = emptyList(),
 )
 
 data class TimeSlipSnapshot(
@@ -92,9 +133,18 @@ data class TimeSlipSnapshot(
     val distanceSplits: List<DistanceSplitResult> = emptyList(),
     val sampleCount: Int = 0,
     val droppedSampleCount: Int = 0,
+    val reactionTimeMillis: Long = 0L,
     val message: String? = null,
     val record: TimeSlipRecord? = null,
 ) {
     val active: Boolean
         get() = status == TimeSlipStatus.ARMED || status == TimeSlipStatus.RUNNING
 }
+
+data class TimeSlipComparison(
+    val left: TimeSlipRecord,
+    val right: TimeSlipRecord,
+    val elapsedDeltaMillis: Long,
+    val maximumSpeedDeltaKmh: Double,
+    val sampleRateDeltaHz: Double,
+)

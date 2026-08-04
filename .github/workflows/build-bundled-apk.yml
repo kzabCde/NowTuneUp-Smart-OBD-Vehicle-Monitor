@@ -1,6 +1,6 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.7.2 Turbo Stability & Time Slip UI Refresh release pipeline.
+# NowTuneUp 1.8.0 Accurate Time Slip release pipeline.
 on:
   workflow_dispatch:
   push:
@@ -50,7 +50,7 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
-      - name: Test, lint, and build signed APK 1.7.2 build 16
+      - name: Test, lint, and build signed APK 1.8.0 build 17
         working-directory: android-app
         run: |
           chmod +x gradlew
@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.7.2-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.8.0-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -80,27 +80,27 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.7.2",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.7.2",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 16,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.8.0",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.8.0",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 17,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "NowTuneUp 1.7.2 stabilizes Turbo Pressure with timestamp-aware MAP/BARO pairing, median outlier rejection, adaptive smoothing, zero deadband, stale-data handling and reconnect reset. Time Slip now has quick presets, separate setup/ready/running/result states, a distraction-reduced live screen, fixed-width timer, delayed-data status, landscape track mode and clearer OBD-only distance confidence labels.",',
+              'releaseNotes: "NowTuneUp 1.8.0 introduces Accurate Time Slip with dedicated speed-priority OBD sampling, transport-boundary monotonic timestamps, speed PID readiness checks, OBD + GNSS + accelerometer sensor fusion, GNSS accuracy and satellite status, slope analysis, reaction time, optional one-foot rollout, raw telemetry replay, speed graphs, run comparison, vehicle-specific best runs, CSV and image export, foreground OBD session ownership and hardware diagnostic reports.",',
               text,
           )
           path.write_text(text)
           PY
           test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
           {
-            echo "release=1.7.2"
-            echo "version_code=16"
+            echo "release=1.8.0"
+            echo "version_code=17"
             echo "apk_size=$SIZE"
             echo "sha256=$SHA256"
             echo "apksigner_verified=true"
-          } > release-1.7.2-status.txt
+          } > release-1.8.0-status.txt
 
       - name: Commit signed APK and release metadata
         shell: bash
@@ -112,14 +112,14 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.7.2 build 16"
+          git commit -m "Bundle NowTuneUp APK 1.8.0 build 17"
           git push
 
       - name: Upload signed release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.7.2-build-16
+          name: NowTuneUp-1.8.0-build-17
           path: |
             web/public/downloads/NowTuneUp.apk
-            release-1.7.2-status.txt
+            release-1.8.0-status.txt
           if-no-files-found: error
