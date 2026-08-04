@@ -1,7 +1,7 @@
 name: Android CI
 on:
   push:
-    branches: [main, work]
+    branches: [main, work, 'release/**', 'hotfix/**']
   pull_request:
 permissions: { contents: read }
 jobs:
@@ -12,20 +12,38 @@ jobs:
         working-directory: android-app
     steps:
       - uses: actions/checkout@v4
-      - name: Verify canonical signed 1.7.2 APK bundle
+      - name: Read canonical website release metadata
+        id: release
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY' >> "$GITHUB_OUTPUT"
+          from pathlib import Path
+          import re
+          text = Path("web/lib/local-release.ts").read_text()
+          def value(pattern):
+              match = re.search(pattern, text)
+              if not match:
+                  raise SystemExit(f"Missing release metadata: {pattern}")
+              return match.group(1)
+          print(f"version={value(r'version: \"([^\"]+)\"')}")
+          print(f"sha256={value(r'sha256: \"([a-f0-9]{64})\"')}")
+          PY
+      - name: Verify canonical signed APK bundle
         working-directory: .
         shell: bash
         run: |
           set -euo pipefail
           test -s web/public/downloads/NowTuneUp.apk
           unzip -t web/public/downloads/NowTuneUp.apk >/dev/null
-          echo "69dcd5df8f8c711c1f094a6ad2e6d38f73a6e052ff4d3934db666e855c8494e0  web/public/downloads/NowTuneUp.apk" | sha256sum -c -
-          cp web/public/downloads/NowTuneUp.apk NowTuneUp-v1.7.2-release.apk
-      - name: Upload canonical signed 1.7.2 release APK
+          echo "${{ steps.release.outputs.sha256 }}  web/public/downloads/NowTuneUp.apk" | sha256sum -c -
+          cp web/public/downloads/NowTuneUp.apk "NowTuneUp-v${{ steps.release.outputs.version }}-release.apk"
+      - name: Upload canonical signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.7.2-main-release
-          path: NowTuneUp-v1.7.2-release.apk
+          name: NowTuneUp-${{ steps.release.outputs.version }}-main-release
+          path: NowTuneUp-v${{ steps.release.outputs.version }}-release.apk
           if-no-files-found: error
       - uses: actions/setup-java@v4
         with:
@@ -51,9 +69,9 @@ jobs:
             android-app/debug-deps.txt
             android-app/build/reports/problems/problems-report.html
           if-no-files-found: ignore
-      - name: Upload 1.7.2 UI test APK
+      - name: Upload 1.8.0 UI test APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.7.2-ui-test
-          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.7.2-ui-test.apk
+          name: NowTuneUp-1.8.0-ui-test
+          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.8.0-ui-test.apk
           if-no-files-found: error
