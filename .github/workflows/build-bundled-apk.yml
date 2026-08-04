@@ -50,6 +50,14 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
+      - name: Repair invalid Compose import from first 1.7.2 draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipScreen.kt"
+          sed -i '/^import androidx\.compose\.foundation\.layout\.weight$/d' "$FILE"
+          ! grep -q '^import androidx\.compose\.foundation\.layout\.weight$' "$FILE"
+
       - name: Test, lint, and build signed APK 1.7.2 build 16
         working-directory: android-app
         run: |
@@ -102,14 +110,15 @@ jobs:
             echo "apksigner_verified=true"
           } > release-1.7.2-status.txt
 
-      - name: Commit signed APK and release metadata
+      - name: Commit verified source fix, signed APK and release metadata
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipScreen.kt
           git add -f web/public/downloads/NowTuneUp.apk web/lib/local-release.ts
           if git diff --cached --quiet; then
-            echo "Bundled APK is already current."
+            echo "Bundled APK and source are already current."
             exit 0
           fi
           git commit -m "Bundle NowTuneUp APK 1.7.2 build 16"
