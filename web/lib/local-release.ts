@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.7.1",
-  tagName: "v1.7.1",
-  versionCode: 15,
+  version: "1.7.2",
+  tagName: "v1.7.2",
+  versionCode: 16,
   apkName: "NowTuneUp.apk",
-  apkSize: 12887746,
+  apkSize: 12904130,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "1c20e84de7938c52a582a6db883913ad5852c3958d2bb70cc85fdaef279112fa",
+  sha256: "1473cf9d79c73ea70655f3a8d5de6114c6986781b4200f91748210e9f50bc4e0",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-04T04:40:10.000Z",
-  releaseNotes: "NowTuneUp 1.7.1 adds configurable minimum and maximum value ranges for every dashboard widget, including analog gauges, digital rings and progress bars. Speed defaults to 0–200 km/h and engine RPM to 0–7,000 rpm, while users can set custom ranges per saved profile or return to automatic OBD-derived scaling. Time Slip, Bluetooth, USB, diagnostics, dashboard profiles and sharing remain supported.",
+  publishedAt: "2026-08-04T05:24:37.000Z",
+  releaseNotes: "NowTuneUp 1.7.2 stabilizes Turbo Pressure with synchronized MAP/BARO freshness, median spike rejection, adaptive time-based smoothing, a zero-boost deadband and clean reconnect resets. Time Slip now separates Setup, Armed, Running, Result and History states, adds quick presets, a smooth monotonic display timer, live sample quality, landscape Track Mode, clearer result comparison and persistent OBD-only distance confidence labels. Bluetooth, USB, dashboard profiles, diagnostics and sharing remain supported.",
 };
 
 export function getLocalRelease(version?: string) {
