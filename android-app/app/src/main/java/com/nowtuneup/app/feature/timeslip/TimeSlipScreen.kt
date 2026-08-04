@@ -125,9 +125,9 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     var uiClockMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) fusion.start()
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) fusion.start()
     }
 
     fun stopRunServices() {
@@ -139,7 +139,12 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         val latest = speedSample
         if (!readiness.ready || latest == null) return
         if (config.useSensorFusion && !fusion.hasLocationPermission()) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ),
+            )
             return
         }
         repository.setVehicleProfileId(vehicleProfile)
