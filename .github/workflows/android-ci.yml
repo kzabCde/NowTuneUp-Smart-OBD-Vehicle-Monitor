@@ -12,6 +12,18 @@ jobs:
         working-directory: android-app
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export canonical signed 1.7.2 APK from main
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:web/public/downloads/NowTuneUp.apk > NowTuneUp-v1.7.2-release.apk
+          test -s NowTuneUp-v1.7.2-release.apk
+          unzip -t NowTuneUp-v1.7.2-release.apk >/dev/null
+          echo "69dcd5df8f8c711c1f094a6ad2e6d38f73a6e052ff4d3934db666e855c8494e0  NowTuneUp-v1.7.2-release.apk" | sha256sum -c -
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -41,4 +53,10 @@ jobs:
         with:
           name: NowTuneUp-1.7.2-ui-test
           path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.7.2-ui-test.apk
+          if-no-files-found: error
+      - name: Upload canonical signed 1.7.2 release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NowTuneUp-1.7.2-main-release
+          path: NowTuneUp-v1.7.2-release.apk
           if-no-files-found: error
