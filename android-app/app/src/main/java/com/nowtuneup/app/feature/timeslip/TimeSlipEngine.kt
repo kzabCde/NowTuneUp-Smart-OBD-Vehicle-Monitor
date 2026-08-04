@@ -5,32 +5,40 @@ import kotlin.math.max
 import kotlin.math.roundToLong
 
 /**
- * Standalone monotonic-clock performance engine.
+ * Deterministic monotonic-clock Time Slip engine.
  *
- * The engine consumes only timestamped vehicle-speed samples, so it can be unit tested or replayed
- * without Compose, Bluetooth, an ELM327 adapter, or a physical vehicle. Distance values are
- * trapezoidal OBD-speed estimates and are deliberately marked low-confidence until GPS fusion is
- * added.
+ * Version 1.8.0 accepts fused OBD/GNSS/IMU samples, keeps raw samples for replay and charts,
+ * separates reaction time from elapsed time, and supports optional one-foot rollout.
  */
 class TimeSlipEngine {
-    private data class SpeedSample(val timeNanos: Long, val speedKmh: Double)
+    private data class SpeedSample(
+        val timeNanos: Long,
+        val speedKmh: Double,
+        val telemetry: TimeSlipTelemetrySample,
+    )
 
     private var status = TimeSlipStatus.IDLE
     private var config = TimeSlipConfig()
     private var armedAtNanos = 0L
     private var armedAtEpochMillis = 0L
-    private var startNanos: Long? = null
+    private var launchNanos: Long? = null
+    private var timingStartNanos: Long? = null
+    private var stationaryReadyAtNanos: Long? = null
     private var previousSample: SpeedSample? = null
     private var previousRunSample: SpeedSample? = null
     private var stationarySinceNanos: Long? = null
     private var stationaryReady = false
     private var currentSpeedKmh = 0.0
     private var maximumSpeedKmh = 0.0
+    private var maximumAccelerationMps2 = 0.0
     private var distanceMeters = 0.0
     private var sampleCount = 0
     private var droppedSampleCount = 0
+    private var reactionTimeMillis = 0L
+    private var rolloutMillis = 0L
     private var speedMilestones = mutableListOf<SpeedMilestoneResult>()
     private var distanceSplits = mutableListOf<DistanceSplitResult>()
+    private var rawSamples = mutableListOf<TimeSlipTelemetrySample>()
     private var record: TimeSlipRecord? = null
     private var message: String? = null
 
@@ -71,8 +79,14 @@ class TimeSlipEngine {
         status = TimeSlipStatus.ARMED
         armedAtNanos = nowNanos
         armedAtEpochMillis = wallClockMillis
-        this.currentSpeedKmh = currentSpeedKmh
-        previousSample = SpeedSample(nowNanos, currentSpeedKmh)
+        currentSpeedKmh = currentSpeedKmh.coerceAtLeast(0.0)
+        val initialTelemetry = TimeSlipTelemetrySample(
+            timeNanos = nowNanos,
+            wallClockMillis = wallClockMillis,
+            obdSpeedKmh = currentSpeedKmh,
+            fusedSpeedKmh = currentSpeedKmh,
+        )
+        previousSample = SpeedSample(nowNanos, currentSpeedKmh, initialTelemetry)
         stationarySinceNanos = if (currentSpeedKmh <= requestedConfig.stationaryThresholdKmh) nowNanos else null
         message = if (requestedConfig.mode == PerformanceMode.STANDING_START) {
             "รักษารถให้นิ่งอย่างน้อย 1 วินาที แล้วออกตัวเมื่อพร้อม"
@@ -82,34 +96,43 @@ class TimeSlipEngine {
         return snapshot()
     }
 
-    fun ingestSpeed(speedKmh: Double, timeNanos: Long = System.nanoTime()): TimeSlipSnapshot {
+    fun ingestSpeed(speedKmh: Double, timeNanos: Long = System.nanoTime()): TimeSlipSnapshot = ingestTelemetry(
+        TimeSlipTelemetrySample(
+            timeNanos = timeNanos,
+            wallClockMillis = System.currentTimeMillis(),
+            obdSpeedKmh = speedKmh,
+            fusedSpeedKmh = speedKmh,
+            source = MeasurementSource.OBD_ONLY,
+        ),
+    )
+
+    fun ingestTelemetry(telemetry: TimeSlipTelemetrySample): TimeSlipSnapshot {
+        val speedKmh = telemetry.fusedSpeedKmh
         currentSpeedKmh = speedKmh
         if (status != TimeSlipStatus.ARMED && status != TimeSlipStatus.RUNNING) return snapshot()
-        if (!speedKmh.isFinite() || speedKmh !in 0.0..400.0) {
+        if (!speedKmh.isFinite() || speedKmh !in 0.0..400.0 || telemetry.timeNanos <= 0L) {
             droppedSampleCount += 1
             return invalidate("ได้รับข้อมูลความเร็วที่เป็นไปไม่ได้")
         }
 
         val previous = previousSample
-        if (previous != null && timeNanos <= previous.timeNanos) {
+        if (previous != null && telemetry.timeNanos <= previous.timeNanos) {
             droppedSampleCount += 1
             message = "ข้ามตัวอย่างที่ timestamp ไม่ต่อเนื่อง"
             return snapshot()
         }
-        if (previous != null && timeNanos - previous.timeNanos > MAX_SAMPLE_GAP_NANOS) {
+        if (previous != null && telemetry.timeNanos - previous.timeNanos > MAX_SAMPLE_GAP_NANOS) {
             droppedSampleCount += 1
         }
 
-        val current = SpeedSample(timeNanos, speedKmh)
+        val current = SpeedSample(telemetry.timeNanos, speedKmh, telemetry)
         sampleCount += 1
         maximumSpeedKmh = max(maximumSpeedKmh, speedKmh)
+        maximumAccelerationMps2 = max(maximumAccelerationMps2, telemetry.accelerationMps2)
+        if (rawSamples.size < MAX_RAW_SAMPLES) rawSamples += telemetry
 
-        if (status == TimeSlipStatus.ARMED && previous != null) {
-            detectStart(previous, current)
-        }
-        if (status == TimeSlipStatus.RUNNING) {
-            processRunningSample(current)
-        }
+        if (status == TimeSlipStatus.ARMED && previous != null) detectStart(previous, current)
+        if (status == TimeSlipStatus.RUNNING) processRunningSample(current)
 
         previousSample = current
         return snapshot()
@@ -147,6 +170,7 @@ class TimeSlipEngine {
         distanceSplits = distanceSplits.toList(),
         sampleCount = sampleCount,
         droppedSampleCount = droppedSampleCount,
+        reactionTimeMillis = reactionTimeMillis,
         message = message,
         record = record,
     )
@@ -155,11 +179,10 @@ class TimeSlipEngine {
         when (config.mode) {
             PerformanceMode.STANDING_START -> {
                 if (current.speedKmh <= config.stationaryThresholdKmh) {
-                    val stationarySince = stationarySinceNanos ?: current.timeNanos.also {
-                        stationarySinceNanos = it
-                    }
+                    val stationarySince = stationarySinceNanos ?: current.timeNanos.also { stationarySinceNanos = it }
                     if (current.timeNanos - stationarySince >= config.stationaryHoldMillis * NANOS_PER_MILLI) {
                         stationaryReady = true
+                        if (stationaryReadyAtNanos == null) stationaryReadyAtNanos = current.timeNanos
                         message = "พร้อมออกตัว"
                     }
                     return
@@ -170,10 +193,16 @@ class TimeSlipEngine {
                     return
                 }
 
-                if (stationaryReady && previous.speedKmh < config.launchThresholdKmh && current.speedKmh >= config.launchThresholdKmh) {
-                    // The previous stationary sample is a better estimate of true movement start than
-                    // the first Bluetooth sample that already exceeded the launch threshold.
-                    startRun(previous.timeNanos, 0.0, current)
+                if (
+                    stationaryReady &&
+                    previous.speedKmh < config.launchThresholdKmh &&
+                    current.speedKmh >= config.launchThresholdKmh
+                ) {
+                    val launch = previous.timeNanos
+                    reactionTimeMillis = stationaryReadyAtNanos?.let {
+                        ((launch - it) / NANOS_PER_MILLI).coerceAtLeast(0L)
+                    } ?: 0L
+                    startRun(launch, 0.0, current)
                 }
             }
 
@@ -193,15 +222,20 @@ class TimeSlipEngine {
     }
 
     private fun startRun(crossingNanos: Long, crossingSpeedKmh: Double, current: SpeedSample) {
-        startNanos = crossingNanos
-        previousRunSample = SpeedSample(crossingNanos, crossingSpeedKmh)
+        launchNanos = crossingNanos
+        timingStartNanos = if (config.oneFootRollout && config.mode == PerformanceMode.STANDING_START) null else crossingNanos
+        previousRunSample = SpeedSample(
+            crossingNanos,
+            crossingSpeedKmh,
+            current.telemetry.copy(timeNanos = crossingNanos, fusedSpeedKmh = crossingSpeedKmh),
+        )
         status = TimeSlipStatus.RUNNING
-        message = "กำลังจับเวลา"
+        message = if (timingStartNanos == null) "กำลังวัด One-foot rollout" else "กำลังจับเวลา"
         if (current.timeNanos > crossingNanos) processRunningSample(current)
     }
 
     private fun processRunningSample(current: SpeedSample) {
-        val runStart = startNanos ?: return
+        val launch = launchNanos ?: return
         val previous = previousRunSample ?: return
         if (current.timeNanos <= previous.timeNanos) return
 
@@ -213,12 +247,25 @@ class TimeSlipEngine {
             deltaSeconds,
         )
 
+        if (timingStartNanos == null && distanceMeters >= ONE_FOOT_METERS) {
+            val crossing = interpolateDistanceCrossingTimeNanos(
+                previousDistance,
+                distanceMeters,
+                ONE_FOOT_METERS,
+                previous.timeNanos,
+                current.timeNanos,
+            )
+            timingStartNanos = crossing
+            rolloutMillis = ((crossing - launch) / NANOS_PER_MILLI).coerceAtLeast(0L)
+            message = "One-foot rollout ผ่านแล้ว • กำลังจับเวลา"
+        }
+
         val speedCompletion = detectSpeedMilestones(previous, current, previousDistance, distanceMeters)
         val distanceCompletion = detectDistanceSplits(previous, current, previousDistance, distanceMeters)
         previousRunSample = current
 
         val completionNanos = if (config.selectedDistanceTarget != null) distanceCompletion else speedCompletion
-        if (completionNanos != null) complete(completionNanos, runStart)
+        if (completionNanos != null && timingStartNanos != null) complete(completionNanos)
     }
 
     private fun detectSpeedMilestones(
@@ -252,13 +299,10 @@ class TimeSlipEngine {
                     label = speedLabel(startSpeed, target),
                     startSpeedKmh = startSpeed,
                     targetSpeedKmh = target,
-                    elapsedMillis = ((crossing - (startNanos ?: crossing)) / NANOS_PER_MILLI).coerceAtLeast(0L),
+                    elapsedMillis = elapsedFromTimingStart(crossing),
                     distanceAtTargetMeters = crossingDistance,
                 )
-                if (
-                    config.selectedDistanceTarget == null &&
-                    abs(target - completionSpeedTarget()) < 0.001
-                ) {
+                if (config.selectedDistanceTarget == null && abs(target - completionSpeedTarget()) < 0.001) {
                     completion = crossing
                 }
             }
@@ -289,7 +333,7 @@ class TimeSlipEngine {
                     val ratio = ((crossing - previous.timeNanos).toDouble() /
                         (current.timeNanos - previous.timeNanos).toDouble()).coerceIn(0.0, 1.0)
                     val trapSpeed = previous.speedKmh + (current.speedKmh - previous.speedKmh) * ratio
-                    val elapsed = ((crossing - (startNanos ?: crossing)) / NANOS_PER_MILLI).coerceAtLeast(0L)
+                    val elapsed = elapsedFromTimingStart(crossing)
                     val priorElapsed = distanceSplits.lastOrNull()?.elapsedMillis ?: 0L
                     distanceSplits += DistanceSplitResult(
                         target = target,
@@ -303,15 +347,23 @@ class TimeSlipEngine {
         return completion
     }
 
-    private fun complete(completionNanos: Long, runStartNanos: Long) {
+    private fun complete(completionNanos: Long) {
         if (status != TimeSlipStatus.RUNNING) return
+        val start = timingStartNanos ?: return
         status = TimeSlipStatus.COMPLETED
         message = "บันทึกผล Performance สำเร็จ"
-        val elapsed = ((completionNanos - runStartNanos) / NANOS_PER_MILLI).coerceAtLeast(0L)
-        val rate = calculateSampleRate(elapsed)
-        val quality = calculateQuality(rate)
-        val startedAt = armedAtEpochMillis + (runStartNanos - armedAtNanos) / NANOS_PER_MILLI
+        val elapsed = ((completionNanos - start) / NANOS_PER_MILLI).coerceAtLeast(0L)
+        val rate = calculateSampleRate(elapsed + rolloutMillis)
+        val gpsSamples = rawSamples.count { it.gpsSpeedKmh != null }
+        val averageGpsAccuracy = rawSamples.mapNotNull { it.gpsAccuracyMeters }.takeIf { it.isNotEmpty() }?.average()
+        val averageSlope = rawSamples.mapNotNull { it.slopePercent }.takeIf { it.isNotEmpty() }?.average()
+        val quality = calculateQuality(rate, gpsSamples, averageGpsAccuracy)
+        val speedConfidence = calculateSpeedConfidence(rate, gpsSamples, averageGpsAccuracy)
+        val distanceConfidence = calculateDistanceConfidence(gpsSamples, averageGpsAccuracy, averageSlope)
+        val startedAt = armedAtEpochMillis + (start - armedAtNanos) / NANOS_PER_MILLI
         val completedAt = armedAtEpochMillis + (completionNanos - armedAtNanos) / NANOS_PER_MILLI
+        val fused = gpsSamples >= MIN_GPS_SAMPLES
+
         record = TimeSlipRecord(
             mode = config.mode,
             selectedDistanceTarget = config.selectedDistanceTarget,
@@ -326,8 +378,20 @@ class TimeSlipEngine {
             droppedSampleCount = droppedSampleCount,
             obdSampleRateHz = rate,
             measurementQuality = quality,
-            estimatedTimingErrorMillis = estimateTimingErrorMillis(rate),
-            distanceEstimated = config.selectedDistanceTarget != null,
+            estimatedTimingErrorMillis = estimateTimingErrorMillis(rate, fused),
+            dataSource = if (fused) "OBD-II + GNSS + IMU" else "OBD-II PID 010D",
+            distanceEstimated = !fused,
+            reactionTimeMillis = reactionTimeMillis,
+            rolloutMillis = rolloutMillis,
+            oneFootRolloutEnabled = config.oneFootRollout,
+            speedConfidence = speedConfidence,
+            distanceConfidence = distanceConfidence,
+            gpsSampleCount = gpsSamples,
+            averageGpsAccuracyMeters = averageGpsAccuracy,
+            averageSlopePercent = averageSlope,
+            maximumAccelerationMps2 = maximumAccelerationMps2,
+            vehicleProfileId = config.vehicleProfileId,
+            rawSamples = rawSamples.toList(),
         )
     }
 
@@ -342,24 +406,61 @@ class TimeSlipEngine {
         return (sampleCount - 1) * 1_000.0 / elapsedMillis
     }
 
-    private fun calculateQuality(rateHz: Double): MeasurementQuality {
+    private fun calculateQuality(
+        rateHz: Double,
+        gpsSamples: Int,
+        averageGpsAccuracyMeters: Double?,
+    ): MeasurementQuality {
         if (sampleCount < 3 || rateHz <= 0.0) return MeasurementQuality.INVALID
-        if (config.selectedDistanceTarget != null) return MeasurementQuality.LOW
+        val accurateGps = gpsSamples >= MIN_GPS_SAMPLES && (averageGpsAccuracyMeters ?: 99.0) <= 8.0
         return when {
-            rateHz >= 8.0 && droppedSampleCount == 0 -> MeasurementQuality.HIGH
+            accurateGps && rateHz >= 6.0 && droppedSampleCount == 0 -> MeasurementQuality.HIGH
             rateHz >= 4.0 && droppedSampleCount <= 1 -> MeasurementQuality.MEDIUM
             else -> MeasurementQuality.LOW
         }
     }
 
-    private fun estimateTimingErrorMillis(rateHz: Double): Long {
+    private fun calculateSpeedConfidence(
+        rateHz: Double,
+        gpsSamples: Int,
+        averageGpsAccuracyMeters: Double?,
+    ): ConfidenceLevel = when {
+        rateHz <= 0.0 -> ConfidenceLevel.INVALID
+        gpsSamples >= MIN_GPS_SAMPLES && (averageGpsAccuracyMeters ?: 99.0) <= 6.0 && rateHz >= 6.0 -> ConfidenceLevel.HIGH
+        rateHz >= 4.0 -> ConfidenceLevel.MEDIUM
+        else -> ConfidenceLevel.LOW
+    }
+
+    private fun calculateDistanceConfidence(
+        gpsSamples: Int,
+        averageGpsAccuracyMeters: Double?,
+        averageSlopePercent: Double?,
+    ): ConfidenceLevel = when {
+        config.selectedDistanceTarget == null -> calculateSpeedConfidence(
+            calculateSampleRate(elapsedMillis().coerceAtLeast(1L)),
+            gpsSamples,
+            averageGpsAccuracyMeters,
+        )
+        gpsSamples >= MIN_GPS_SAMPLES && (averageGpsAccuracyMeters ?: 99.0) <= 5.0 &&
+            abs(averageSlopePercent ?: 0.0) <= 2.0 -> ConfidenceLevel.HIGH
+        gpsSamples >= 3 && (averageGpsAccuracyMeters ?: 99.0) <= 12.0 -> ConfidenceLevel.MEDIUM
+        else -> ConfidenceLevel.LOW
+    }
+
+    private fun estimateTimingErrorMillis(rateHz: Double, fused: Boolean): Long {
         if (rateHz <= 0.0) return 1_000L
         val halfSamplePeriod = (500.0 / rateHz).roundToLong()
-        return max(20L, halfSamplePeriod + droppedSampleCount * 100L)
+        val fusionAdjustment = if (fused) -15L else 0L
+        return max(20L, halfSamplePeriod + droppedSampleCount * 100L + fusionAdjustment)
+    }
+
+    private fun elapsedFromTimingStart(timeNanos: Long): Long {
+        val start = timingStartNanos ?: return 0L
+        return ((timeNanos - start) / NANOS_PER_MILLI).coerceAtLeast(0L)
     }
 
     private fun elapsedMillis(): Long {
-        val start = startNanos ?: return 0L
+        val start = timingStartNanos ?: return 0L
         val end = record?.let { start + it.elapsedMillis * NANOS_PER_MILLI }
             ?: previousSample?.timeNanos
             ?: start
@@ -378,26 +479,35 @@ class TimeSlipEngine {
         config = requestedConfig
         armedAtNanos = 0L
         armedAtEpochMillis = 0L
-        startNanos = null
+        launchNanos = null
+        timingStartNanos = null
+        stationaryReadyAtNanos = null
         previousSample = null
         previousRunSample = null
         stationarySinceNanos = null
         stationaryReady = false
         currentSpeedKmh = 0.0
         maximumSpeedKmh = 0.0
+        maximumAccelerationMps2 = 0.0
         distanceMeters = 0.0
         sampleCount = 0
         droppedSampleCount = 0
+        reactionTimeMillis = 0L
+        rolloutMillis = 0L
         speedMilestones = mutableListOf()
         distanceSplits = mutableListOf()
+        rawSamples = mutableListOf()
         record = null
         message = null
     }
 
     companion object {
-        private const val NANOS_PER_MILLI = 1_000_000L
         private const val NANOS_PER_SECOND = 1_000_000_000L
+        private const val NANOS_PER_MILLI = 1_000_000L
         private const val MAX_SAMPLE_GAP_NANOS = 1_500_000_000L
+        private const val ONE_FOOT_METERS = 0.3048
+        private const val MAX_RAW_SAMPLES = 4_000
+        private const val MIN_GPS_SAMPLES = 5
 
         fun interpolateSpeedCrossingTimeNanos(
             previousSpeedKmh: Double,
@@ -406,9 +516,9 @@ class TimeSlipEngine {
             previousTimeNanos: Long,
             currentTimeNanos: Long,
         ): Long {
-            val speedDelta = currentSpeedKmh - previousSpeedKmh
-            if (speedDelta <= 0.0) return currentTimeNanos
-            val ratio = ((targetSpeedKmh - previousSpeedKmh) / speedDelta).coerceIn(0.0, 1.0)
+            if (currentSpeedKmh <= previousSpeedKmh) return currentTimeNanos
+            val ratio = ((targetSpeedKmh - previousSpeedKmh) /
+                (currentSpeedKmh - previousSpeedKmh)).coerceIn(0.0, 1.0)
             return previousTimeNanos + ((currentTimeNanos - previousTimeNanos) * ratio).roundToLong()
         }
 
@@ -419,9 +529,9 @@ class TimeSlipEngine {
             previousTimeNanos: Long,
             currentTimeNanos: Long,
         ): Long {
-            val distanceDelta = currentDistanceMeters - previousDistanceMeters
-            if (distanceDelta <= 0.0) return currentTimeNanos
-            val ratio = ((targetDistanceMeters - previousDistanceMeters) / distanceDelta).coerceIn(0.0, 1.0)
+            if (currentDistanceMeters <= previousDistanceMeters) return currentTimeNanos
+            val ratio = ((targetDistanceMeters - previousDistanceMeters) /
+                (currentDistanceMeters - previousDistanceMeters)).coerceIn(0.0, 1.0)
             return previousTimeNanos + ((currentTimeNanos - previousTimeNanos) * ratio).roundToLong()
         }
 
@@ -429,11 +539,32 @@ class TimeSlipEngine {
             previousSpeedMps: Double,
             currentSpeedMps: Double,
             deltaTimeSeconds: Double,
-        ): Double = ((previousSpeedMps + currentSpeedMps) / 2.0) * deltaTimeSeconds
+        ): Double = ((previousSpeedMps + currentSpeedMps) / 2.0) * deltaTimeSeconds.coerceAtLeast(0.0)
 
-        fun speedLabel(startSpeedKmh: Double, targetSpeedKmh: Double): String {
-            if (startSpeedKmh == 0.0 && abs(targetSpeedKmh - 96.56064) < 0.01) return "0–60 mph"
-            return "${startSpeedKmh.roundToLong()}–${targetSpeedKmh.roundToLong()} km/h"
+        fun replay(record: TimeSlipRecord): TimeSlipRecord? {
+            val samples = record.rawSamples.orEmpty()
+            if (samples.size < 2) return null
+            val first = samples.first()
+            val engine = TimeSlipEngine()
+            engine.arm(
+                requestedConfig = TimeSlipConfig(
+                    mode = record.mode,
+                    selectedDistanceTarget = record.selectedDistanceTarget,
+                    speedOnlyTargetKmh = record.speedMilestones.maxOfOrNull { it.targetSpeedKmh } ?: 100.0,
+                    vehicleProfileId = record.vehicleProfileId ?: "default",
+                ),
+                currentSpeedKmh = first.fusedSpeedKmh,
+                nowNanos = first.timeNanos,
+                wallClockMillis = first.wallClockMillis,
+            )
+            samples.drop(1).forEach { engine.ingestTelemetry(it.copy(source = MeasurementSource.REPLAY)) }
+            return engine.snapshot().record
+        }
+
+        private fun speedLabel(start: Double, target: Double): String {
+            val startLabel = if (abs(start - 96.56064) < 0.01) "60 mph" else "${start.toInt()}"
+            val targetLabel = if (abs(target - 96.56064) < 0.01) "60 mph" else "${target.toInt()} km/h"
+            return "$startLabel–$targetLabel"
         }
     }
 }
