@@ -79,7 +79,7 @@ class TimeSlipEngine {
         status = TimeSlipStatus.ARMED
         armedAtNanos = nowNanos
         armedAtEpochMillis = wallClockMillis
-        currentSpeedKmh = currentSpeedKmh.coerceAtLeast(0.0)
+        this.currentSpeedKmh = currentSpeedKmh.coerceAtLeast(0.0)
         val initialTelemetry = TimeSlipTelemetrySample(
             timeNanos = nowNanos,
             wallClockMillis = wallClockMillis,
@@ -413,6 +413,7 @@ class TimeSlipEngine {
     ): MeasurementQuality {
         if (sampleCount < 3 || rateHz <= 0.0) return MeasurementQuality.INVALID
         val accurateGps = gpsSamples >= MIN_GPS_SAMPLES && (averageGpsAccuracyMeters ?: 99.0) <= 8.0
+        if (config.selectedDistanceTarget != null && !accurateGps) return MeasurementQuality.LOW
         return when {
             accurateGps && rateHz >= 6.0 && droppedSampleCount == 0 -> MeasurementQuality.HIGH
             rateHz >= 4.0 && droppedSampleCount <= 1 -> MeasurementQuality.MEDIUM
