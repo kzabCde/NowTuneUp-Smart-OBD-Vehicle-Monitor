@@ -20,6 +20,7 @@ import com.nowtuneup.app.domain.model.ReadingStats
 import com.nowtuneup.app.domain.model.VehicleReading
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun DrivingDashboardWidget(
     config: DashboardWidgetConfig,
     reading: VehicleReading?,
@@ -48,7 +49,9 @@ fun DrivingDashboardWidget(
                 reading = protectedReading,
                 reduceMotion = reduceMotion,
                 dtcCount = dtcCount,
-                stats = stats,
+                // Peak and session maximum previously used the same calculation.
+                // Keep only the useful session Min/Max data and suppress the duplicate marker.
+                stats = stats?.copy(peak = null),
             )
         }
 
@@ -67,7 +70,7 @@ fun DrivingDashboardWidget(
             }
         }
 
-        if (stats != null && (showPeakHold || showMinMax)) {
+        if (stats != null && showMinMax) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
                 color = Color.Black.copy(alpha = 0.70f),
@@ -77,12 +80,10 @@ fun DrivingDashboardWidget(
                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (showMinMax) {
-                        Text("Min ${stats.minimum.short()}  Max ${stats.maximum.short()}", style = MaterialTheme.typography.labelSmall)
-                    }
-                    if (showPeakHold) {
-                        Text("Peak ${stats.peak.short()}", style = MaterialTheme.typography.labelSmall)
-                    }
+                    Text(
+                        "ต่ำสุด ${stats.minimum.short()}  สูงสุด ${stats.maximum.short()}",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
         }
@@ -90,12 +91,12 @@ fun DrivingDashboardWidget(
 }
 
 private fun freshnessLabel(value: DataFreshness): String = when (value) {
-    DataFreshness.LIVE -> "Live"
-    DataFreshness.DELAYED -> "Delayed"
-    DataFreshness.STALE -> "Stale"
-    DataFreshness.NO_DATA -> "Waiting for ECU"
-    DataFreshness.UNSUPPORTED -> "Unsupported PID"
-    DataFreshness.RECONNECTING -> "Reconnecting"
+    DataFreshness.LIVE -> "สด"
+    DataFreshness.DELAYED -> "ล่าช้า"
+    DataFreshness.STALE -> "ข้อมูลเก่า"
+    DataFreshness.NO_DATA -> "รอข้อมูล ECU"
+    DataFreshness.UNSUPPORTED -> "รถไม่รองรับ"
+    DataFreshness.RECONNECTING -> "กำลังเชื่อมต่อใหม่"
 }
 
 private fun freshnessColor(value: DataFreshness): Color = when (value) {

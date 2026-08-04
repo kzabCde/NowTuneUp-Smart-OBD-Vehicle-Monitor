@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.8.0",
-  tagName: "v1.8.0",
-  versionCode: 17,
+  version: "1.8.1",
+  tagName: "v1.8.1",
+  versionCode: 18,
   apkName: "NowTuneUp.apk",
-  apkSize: 12904734,
+  apkSize: 12871966,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "f3107d96f6cf19a1d221814312d296acddc38cb62ef19322a6e725bd690be9e3",
+  sha256: "336111e08b9cda92a4c31426900b1bd5db2ca0d94fb6c19a66ee516ee77f675a",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-04T08:12:14.000Z",
-  releaseNotes: "NowTuneUp 1.8.0 introduces Accurate Time Slip with dedicated speed-priority OBD sampling, transport-boundary monotonic timestamps, speed PID readiness checks, OBD + GNSS + accelerometer sensor fusion, GNSS accuracy and satellite status, slope analysis, reaction time, optional one-foot rollout, raw telemetry replay, speed graphs, run comparison, vehicle-specific best runs, CSV and image export, foreground OBD session ownership and hardware diagnostic reports.",
+  publishedAt: "2026-08-04T13:01:24.000Z",
+  releaseNotes: "NowTuneUp 1.8.1 is a stability-first update with safer ELM327 command pacing, resilient realtime recovery, stabilized Turbo Pressure filtering, a repaired OBD-only Time Slip flow, removal of duplicate Peak versus Max information, supported-only Live Data, and a much simpler four-section Settings experience.",
 };
 
 export function getLocalRelease(version?: string) {

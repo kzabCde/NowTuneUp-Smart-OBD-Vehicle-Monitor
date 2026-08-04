@@ -1,6 +1,6 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.8.0 Accurate Time Slip release pipeline.
+# NowTuneUp 1.8.1 stability-first UX release pipeline.
 on:
   workflow_dispatch:
   push:
@@ -50,7 +50,7 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
-      - name: Test, lint, and build signed APK 1.8.0 build 17
+      - name: Test, lint, and build signed APK 1.8.1 build 18
         working-directory: android-app
         run: |
           chmod +x gradlew
@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.8.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.8.1-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -80,27 +80,27 @@ jobs:
           sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.8.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.8.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 17,', text)
+          text = re.sub(r'version: "[^"]+",', 'version: "1.8.1",', text)
+          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.8.1",', text)
+          text = re.sub(r'versionCode: \d+,', 'versionCode: 18,', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
           text = re.sub(
               r'releaseNotes: "[^"]*",',
-              'releaseNotes: "NowTuneUp 1.8.0 introduces Accurate Time Slip with dedicated speed-priority OBD sampling, transport-boundary monotonic timestamps, speed PID readiness checks, OBD + GNSS + accelerometer sensor fusion, GNSS accuracy and satellite status, slope analysis, reaction time, optional one-foot rollout, raw telemetry replay, speed graphs, run comparison, vehicle-specific best runs, CSV and image export, foreground OBD session ownership and hardware diagnostic reports.",',
+              'releaseNotes: "NowTuneUp 1.8.1 is a stability-first update with safer ELM327 command pacing, resilient realtime recovery, stabilized Turbo Pressure filtering, a repaired OBD-only Time Slip flow, removal of duplicate Peak versus Max information, supported-only Live Data, and a much simpler four-section Settings experience.",',
               text,
           )
           path.write_text(text)
           PY
           test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
           {
-            echo "release=1.8.0"
-            echo "version_code=17"
+            echo "release=1.8.1"
+            echo "version_code=18"
             echo "apk_size=$SIZE"
             echo "sha256=$SHA256"
             echo "apksigner_verified=true"
-          } > release-1.8.0-status.txt
+          } > release-1.8.1-status.txt
 
       - name: Commit signed APK and release metadata
         shell: bash
@@ -112,14 +112,14 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.8.0 build 17"
+          git commit -m "Bundle NowTuneUp APK 1.8.1 build 18"
           git push
 
       - name: Upload signed release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.8.0-build-17
+          name: NowTuneUp-1.8.1-build-18
           path: |
             web/public/downloads/NowTuneUp.apk
-            release-1.8.0-status.txt
+            release-1.8.1-status.txt
           if-no-files-found: error
