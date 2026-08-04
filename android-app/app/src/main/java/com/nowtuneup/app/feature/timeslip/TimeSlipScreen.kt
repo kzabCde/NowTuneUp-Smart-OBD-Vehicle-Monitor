@@ -2,8 +2,10 @@ package com.nowtuneup.app.feature.timeslip
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,13 +39,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -53,12 +58,14 @@ import com.nowtuneup.app.presentation.dashboard.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
 fun TimeSlipScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
+    val configuration = LocalConfiguration.current
     val readings by viewModel.readings.collectAsState()
     val connection by viewModel.connection.collectAsState()
     val speedReading = readings.firstOrNull { it.pid == VEHICLE_SPEED_PID }
@@ -73,6 +80,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     var safetyAcknowledged by remember { mutableStateOf(repository.safetyAcknowledged()) }
     var showSafetyDialog by remember { mutableStateOf(false) }
     var lastSavedRecordId by remember { mutableStateOf<String?>(null) }
+    var uiClockMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     fun armNow() {
         snapshot = engine.arm(
@@ -82,6 +90,13 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
             wallClockMillis = System.currentTimeMillis(),
         )
         showHistory = false
+    }
+
+    LaunchedEffect(snapshot.active) {
+        while (snapshot.active) {
+            uiClockMillis = System.currentTimeMillis()
+            delay(50L)
+        }
     }
 
     LaunchedEffect(speedReading?.updatedAt) {
@@ -100,9 +115,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(connection) {
-        if (connection != ConnectionState.CONNECTED && snapshot.active) {
-            snapshot = engine.connectionLost()
-        }
+        if (connection != ConnectionState.CONNECTED && snapshot.active) snapshot = engine.connectionLost()
     }
 
     DisposableEffect(snapshot.active) {
@@ -115,24 +128,31 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         AlertDialog(
             onDismissRequest = { showSafetyDialog = false },
             title = { Text("คำเตือนด้านความปลอดภัย") },
-            text = {
-                Text(
-                    "ใช้การทดสอบ Performance เฉพาะในสนามแข่ง พื้นที่ปิด หรือพื้นที่ส่วนบุคคลที่อนุญาตเท่านั้น " +
-                        "ห้ามทดสอบอัตราเร่งบนถนนสาธารณะ โปรดปฏิบัติตามกฎหมายและให้ความสำคัญกับความปลอดภัย",
-                )
-            },
-            dismissButton = {
-                TextButton(onClick = { showSafetyDialog = false }) { Text("ยกเลิก") }
-            },
+            text = { Text("ใช้ Time Slip เฉพาะในสนามแข่ง พื้นที่ปิด หรือพื้นที่ส่วนบุคคลที่ได้รับอนุญาต ห้ามทดสอบบนถนนสาธารณะ") },
+            dismissButton = { TextButton(onClick = { showSafetyDialog = false }) { Text("ยกเลิก") } },
             confirmButton = {
                 Button(onClick = {
                     repository.acknowledgeSafety()
                     safetyAcknowledged = true
                     showSafetyDialog = false
                     armNow()
-                }) { Text("รับทราบและ Arm Test") }
+                }) { Text("รับทราบและเตรียมทดสอบ") }
             },
         )
+    }
+
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    if (snapshot.active) {
+        ActiveRunScreen(
+            snapshot = snapshot,
+            currentSpeedKmh = currentSpeedKmh,
+            speedUpdatedAt = speedReading?.updatedAt ?: 0L,
+            uiClockMillis = uiClockMillis,
+            connected = connection == ConnectionState.CONNECTED,
+            landscape = isLandscape,
+            onCancel = { snapshot = engine.cancel() },
+        )
+        return
     }
 
     LazyColumn(
@@ -148,7 +168,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
             ) {
                 Column {
                     Text("Time Slip", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                    Text("Performance Test • NowTuneUp 1.7", style = MaterialTheme.typography.bodySmall)
+                    Text("Performance Test • NowTuneUp 1.7.2", style = MaterialTheme.typography.bodySmall)
                 }
                 FilledTonalButton(onClick = { showHistory = !showHistory }) {
                     Icon(Icons.Default.History, contentDescription = null)
@@ -177,31 +197,9 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                     },
                 )
             }
-            if (history.isNotEmpty()) {
-                item {
-                    OutlinedButton(
-                        onClick = {
-                            repository.clear()
-                            history = emptyList()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                        Text(" ล้างประวัติทั้งหมด")
-                    }
-                }
-            }
         } else {
-            item {
-                SetupCard(
-                    config = config,
-                    enabled = !snapshot.active,
-                    onConfigChange = { config = it },
-                )
-            }
-
-            item { LivePerformanceCard(snapshot, currentSpeedKmh) }
-
+            item { PresetCard(config, onConfigChange = { config = it }) }
+            item { SetupCard(config, onConfigChange = { config = it }) }
             snapshot.record?.let { record ->
                 item {
                     ResultCard(
@@ -211,41 +209,98 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                     )
                 }
             }
-
             item {
-                Row(
+                Button(
+                    onClick = { if (safetyAcknowledged) armNow() else showSafetyDialog = true },
+                    enabled = connection == ConnectionState.CONNECTED,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Button(
-                        onClick = {
-                            if (safetyAcknowledged) armNow() else showSafetyDialog = true
-                        },
-                        enabled = connection == ConnectionState.CONNECTED && !snapshot.active,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Text(" Arm Test")
-                    }
-                    OutlinedButton(
-                        onClick = { snapshot = engine.cancel() },
-                        enabled = snapshot.active,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("ยกเลิก")
-                    }
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Text(" เตรียมทดสอบ")
                 }
             }
-
             item {
                 Text(
-                    "ระยะทางในเวอร์ชันนี้คำนวณจาก PID 010D ด้วย trapezoidal integration และแสดงเป็นค่าประมาณ " +
-                        "การทดสอบความเร็วใช้ interpolation ระหว่างตัวอย่าง OBD ไม่ใช้เวลา UI หรือ Date.now()",
+                    "Estimated distance — OBD only: ระยะทางคำนวณจาก PID 010D และยังไม่มี GPS/accelerometer correction",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
         item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun ActiveRunScreen(
+    snapshot: TimeSlipSnapshot,
+    currentSpeedKmh: Double,
+    speedUpdatedAt: Long,
+    uiClockMillis: Long,
+    connected: Boolean,
+    landscape: Boolean,
+    onCancel: () -> Unit,
+) {
+    val delayed = speedUpdatedAt <= 0L || uiClockMillis - speedUpdatedAt > 800L
+    val displayedElapsed = if (snapshot.status == TimeSlipStatus.RUNNING && speedUpdatedAt > 0L) {
+        snapshot.elapsedMillis + (uiClockMillis - speedUpdatedAt).coerceIn(0L, 1_500L)
+    } else snapshot.elapsedMillis
+    val target = when {
+        snapshot.config.mode == PerformanceMode.ROLLING_START -> snapshot.config.rollingTargetKmh.toInt().toString()
+        snapshot.config.selectedDistanceTarget != null -> snapshot.config.selectedDistanceTarget.label
+        else -> snapshot.config.speedOnlyTargetKmh.toInt().toString()
+    }
+
+    Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+        if (landscape) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MetricBlock("ความเร็ว", currentSpeedKmh.roundToInt().toString(), "km/h")
+                MetricBlock("เวลา", formatSeconds(displayedElapsed), "s")
+                MetricBlock("เป้าหมาย", target, if (snapshot.config.selectedDistanceTarget == null) "km/h" else "")
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(snapshot.status.displayName(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Text(
+                    formatSeconds(displayedElapsed),
+                    fontSize = 64.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text("seconds", style = MaterialTheme.typography.labelLarge)
+                Text(currentSpeedKmh.roundToInt().toString(), fontSize = 72.sp, fontWeight = FontWeight.Black)
+                Text("km/h • Target $target", style = MaterialTheme.typography.titleMedium)
+                snapshot.speedMilestones.lastOrNull()?.let {
+                    Text("ล่าสุด ${it.label}: ${formatSeconds(it.elapsedMillis)} s", fontWeight = FontWeight.Bold)
+                }
+                snapshot.message?.let { Text(it, textAlign = TextAlign.Center) }
+                Text(
+                    when {
+                        !connected -> "OBD disconnected"
+                        delayed -> "OBD data delayed"
+                        else -> "OBD live • ${snapshot.sampleCount} samples"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("กดเพื่อยกเลิกการทดสอบ") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricBlock(label: String, value: String, unit: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Text(value, fontSize = 46.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+        Text(unit, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -259,10 +314,7 @@ private fun ConnectionSummary(connected: Boolean, speedKmh: Double, updatedAt: L
         ) {
             Column {
                 Text(if (connected) "OBD-II เชื่อมต่อแล้ว" else "ยังไม่ได้เชื่อมต่อ OBD-II", fontWeight = FontWeight.Bold)
-                Text(
-                    if (updatedAt > 0L) "PID 010D พร้อมใช้งาน" else "กำลังรอข้อมูลความเร็ว PID 010D",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text(if (updatedAt > 0L) "PID 010D พร้อมใช้งาน" else "กำลังรอข้อมูลความเร็ว", style = MaterialTheme.typography.bodySmall)
             }
             Text("${speedKmh.roundToInt()} km/h", fontSize = 24.sp, fontWeight = FontWeight.Black)
         }
@@ -270,130 +322,65 @@ private fun ConnectionSummary(connected: Boolean, speedKmh: Double, updatedAt: L
 }
 
 @Composable
-private fun SetupCard(
-    config: TimeSlipConfig,
-    enabled: Boolean,
-    onConfigChange: (TimeSlipConfig) -> Unit,
-) {
+private fun PresetCard(config: TimeSlipConfig, onConfigChange: (TimeSlipConfig) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Quick presets", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ChoiceButton(config.selectedDistanceTarget == null && config.speedOnlyTargetKmh == 60.0, "0–60", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 60.0))
+                })
+                ChoiceButton(config.selectedDistanceTarget == null && config.speedOnlyTargetKmh == 100.0, "0–100", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 100.0))
+                })
+                ChoiceButton(config.mode == PerformanceMode.ROLLING_START, "60–100", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null, rollingStartKmh = 60.0, rollingTargetKmh = 100.0))
+                })
+                ChoiceButton(config.selectedDistanceTarget == DistanceTarget.EIGHTH_MILE, "1/8 mile", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = DistanceTarget.EIGHTH_MILE))
+                })
+                ChoiceButton(config.selectedDistanceTarget == DistanceTarget.QUARTER_MILE, "1/4 mile", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = DistanceTarget.QUARTER_MILE))
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupCard(config: TimeSlipConfig, onConfigChange: (TimeSlipConfig) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("ตั้งค่าการทดสอบ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("รูปแบบการออกตัว", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChoiceButton(
-                    selected = config.mode == PerformanceMode.STANDING_START,
-                    enabled = enabled,
-                    label = "Standing Start",
-                    onClick = { onConfigChange(config.copy(mode = PerformanceMode.STANDING_START)) },
-                )
-                ChoiceButton(
-                    selected = config.mode == PerformanceMode.ROLLING_START,
-                    enabled = enabled,
-                    label = "Rolling Start",
-                    onClick = {
-                        onConfigChange(config.copy(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null))
-                    },
-                )
+                ChoiceButton(config.mode == PerformanceMode.STANDING_START, "Standing", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.STANDING_START))
+                })
+                ChoiceButton(config.mode == PerformanceMode.ROLLING_START, "Rolling", onClick = {
+                    onConfigChange(config.copy(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null))
+                })
             }
-
-            if (config.mode == PerformanceMode.ROLLING_START) {
-                Text("ช่วงความเร็ว", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChoiceButton(
-                        selected = config.rollingStartKmh == 60.0 && config.rollingTargetKmh == 100.0,
-                        enabled = enabled,
-                        label = "60–100 km/h",
-                        onClick = {
-                            onConfigChange(config.copy(rollingStartKmh = 60.0, rollingTargetKmh = 100.0))
-                        },
-                    )
-                    ChoiceButton(
-                        selected = config.rollingStartKmh == 80.0 && config.rollingTargetKmh == 120.0,
-                        enabled = enabled,
-                        label = "80–120 km/h",
-                        onClick = {
-                            onConfigChange(config.copy(rollingStartKmh = 80.0, rollingTargetKmh = 120.0))
-                        },
-                    )
-                }
-            } else {
-                Text("เป้าหมายสูงสุด", style = MaterialTheme.typography.labelLarge)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ChoiceButton(
-                        selected = config.selectedDistanceTarget == null,
-                        enabled = enabled,
-                        label = "Speed only",
-                        onClick = { onConfigChange(config.copy(selectedDistanceTarget = null)) },
-                    )
-                    listOf(
-                        DistanceTarget.EIGHTH_MILE,
-                        DistanceTarget.QUARTER_MILE,
-                        DistanceTarget.HALF_MILE,
-                        DistanceTarget.ONE_MILE,
-                    ).forEach { target ->
-                        ChoiceButton(
-                            selected = config.selectedDistanceTarget == target,
-                            enabled = enabled,
-                            label = target.label,
-                            onClick = { onConfigChange(config.copy(selectedDistanceTarget = target)) },
-                        )
-                    }
-                }
-                if (config.selectedDistanceTarget == null) {
-                    Text("ความเร็วเป้าหมาย", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(100.0, 120.0, 160.0).forEach { target ->
-                            ChoiceButton(
-                                selected = config.speedOnlyTargetKmh == target,
-                                enabled = enabled,
-                                label = "0–${target.toInt()} km/h",
-                                onClick = { onConfigChange(config.copy(speedOnlyTargetKmh = target)) },
-                            )
-                        }
-                    }
-                }
-            }
+            Text(
+                if (config.mode == PerformanceMode.ROLLING_START) {
+                    "เริ่มจับเวลาที่ ${config.rollingStartKmh.toInt()} และจบที่ ${config.rollingTargetKmh.toInt()} km/h"
+                } else if (config.selectedDistanceTarget != null) {
+                    "จับเวลาระยะ ${config.selectedDistanceTarget.label} (Estimated / Low confidence)"
+                } else {
+                    "จับเวลา 0–${config.speedOnlyTargetKmh.toInt()} km/h"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
 
 @Composable
-private fun ChoiceButton(selected: Boolean, enabled: Boolean, label: String, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick, enabled = enabled) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick, enabled = enabled) { Text(label) }
-    }
-}
-
-@Composable
-private fun LivePerformanceCard(snapshot: TimeSlipSnapshot, currentSpeedKmh: Double) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(Icons.Default.Speed, contentDescription = null)
-            Text("${currentSpeedKmh.roundToInt()}", fontSize = 58.sp, fontWeight = FontWeight.Black)
-            Text("km/h", style = MaterialTheme.typography.titleMedium)
-            Text(formatSeconds(snapshot.elapsedMillis) + " s", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-            Text("${"%.1f".format(snapshot.distanceMeters)} m • ${snapshot.status.displayName()}")
-            snapshot.message?.let { Text(it, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall) }
-            if (snapshot.distanceSplits.isNotEmpty()) {
-                HorizontalDivider()
-                snapshot.distanceSplits.forEach { split ->
-                    Text(
-                        "${split.target.label}: ${formatSeconds(split.elapsedMillis)} s • " +
-                            "${"%.1f".format(split.trapSpeedKmh)} km/h",
-                    )
-                }
-            }
-        }
-    }
+private fun ChoiceButton(selected: Boolean, label: String, onClick: () -> Unit) {
+    if (selected) Button(onClick = onClick) { Text(label) }
+    else OutlinedButton(onClick = onClick) { Text(label) }
 }
 
 @Composable
@@ -403,26 +390,19 @@ private fun ResultCard(record: TimeSlipRecord, onShare: () -> Unit, onCsv: () ->
             Text("NTU PERFORMANCE TIME SLIP", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
             Text(formatDate(record.startedAtEpochMillis), style = MaterialTheme.typography.bodySmall)
             record.speedMilestones.forEach { ResultRow(it.label, "${formatSeconds(it.elapsedMillis)} s") }
-            record.distanceSplits.forEach {
-                ResultRow(
-                    it.target.label,
-                    "${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h",
-                )
-            }
+            record.distanceSplits.forEach { ResultRow(it.target.label, "${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h") }
             HorizontalDivider()
             ResultRow("Maximum speed", "${"%.1f".format(record.maximumSpeedKmh)} km/h")
             ResultRow("OBD sample rate", "${"%.1f".format(record.obdSampleRateHz)} Hz")
             ResultRow("Measurement quality", record.measurementQuality.displayName())
             ResultRow("Timing uncertainty", "±${record.estimatedTimingErrorMillis} ms")
-            if (record.distanceEstimated) {
-                Text("ระยะทางเป็นค่าประมาณจาก OBD-II และยังไม่มี GPS correction", style = MaterialTheme.typography.bodySmall)
-            }
+            if (record.distanceEstimated) Text("Estimated distance — OBD only", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Share, contentDescription = null)
                     Text(" แชร์ผล")
                 }
-                OutlinedButton(onClick = onCsv, modifier = Modifier.weight(1f)) { Text("Export CSV") }
+                OutlinedButton(onClick = onCsv, modifier = Modifier.weight(1f)) { Text("CSV") }
             }
         }
     }
@@ -439,28 +419,14 @@ private fun ResultRow(label: String, value: String) {
 
 @Composable
 private fun HistorySummary(history: List<TimeSlipRecord>) {
-    val bestZeroToHundred = history
-        .filter {
-            it.measurementQuality == MeasurementQuality.HIGH ||
-                it.measurementQuality == MeasurementQuality.MEDIUM
-        }
-        .mapNotNull { record ->
-            record.speedMilestones.firstOrNull { it.label == "0–100 km/h" }?.elapsedMillis
-        }
+    val best = history.filter { it.measurementQuality != MeasurementQuality.INVALID }
+        .mapNotNull { record -> record.speedMilestones.firstOrNull { it.label == "0–100 km/h" }?.elapsedMillis }
         .minOrNull()
-    val bestQuarter = history
-        .filter { it.measurementQuality != MeasurementQuality.INVALID }
-        .mapNotNull { record ->
-            record.distanceSplits.firstOrNull { it.target == DistanceTarget.QUARTER_MILE }?.elapsedMillis
-        }
-        .minOrNull()
-
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text("สถิติที่ดีที่สุด", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            ResultRow("0–100 km/h", bestZeroToHundred?.let { "${formatSeconds(it)} s" } ?: "—")
-            ResultRow("1/4 mile (estimated)", bestQuarter?.let { "${formatSeconds(it)} s" } ?: "—")
-            Text("รายการความแม่นยำต่ำไม่ถูกนำไปเทียบสถิติความเร็ว", style = MaterialTheme.typography.bodySmall)
+            ResultRow("0–100 km/h", best?.let { "${formatSeconds(it)} s" } ?: "—")
+            Text("ผล Invalid ไม่ถูกนำมาคำนวณ Personal Best", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -470,31 +436,11 @@ private fun HistoryRecordCard(record: TimeSlipRecord, onShare: () -> Unit, onDel
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(formatDate(record.startedAtEpochMillis), fontWeight = FontWeight.Bold)
-            Text(
-                record.speedMilestones.joinToString(" • ") {
-                    "${it.label} ${formatSeconds(it.elapsedMillis)}s"
-                }.ifBlank {
-                    record.distanceSplits.lastOrNull()?.let {
-                        "${it.target.label} ${formatSeconds(it.elapsedMillis)}s"
-                    }.orEmpty()
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "${record.measurementQuality.displayName()} • ${"%.1f".format(record.obdSampleRateHz)} Hz",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            Text(record.speedMilestones.joinToString(" • ") { "${it.label} ${formatSeconds(it.elapsedMillis)}s" }.ifBlank { "Distance run" })
+            Text("${record.measurementQuality.displayName()} • ${"%.1f".format(record.obdSampleRateHz)} Hz", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(
-                    onClick = onShare,
-                    label = { Text("แชร์") },
-                    leadingIcon = { Icon(Icons.Default.Share, null) },
-                )
-                AssistChip(
-                    onClick = onDelete,
-                    label = { Text("ลบ") },
-                    leadingIcon = { Icon(Icons.Default.Delete, null) },
-                )
+                AssistChip(onClick = onShare, label = { Text("แชร์") }, leadingIcon = { Icon(Icons.Default.Share, null) })
+                AssistChip(onClick = onDelete, label = { Text("ลบ") }, leadingIcon = { Icon(Icons.Default.Delete, null) })
             }
         }
     }
@@ -502,7 +448,7 @@ private fun HistoryRecordCard(record: TimeSlipRecord, onShare: () -> Unit, onDel
 
 private fun TimeSlipStatus.displayName(): String = when (this) {
     TimeSlipStatus.IDLE -> "พร้อมตั้งค่า"
-    TimeSlipStatus.ARMED -> "ARMED"
+    TimeSlipStatus.ARMED -> "READY — รอออกตัว"
     TimeSlipStatus.RUNNING -> "RUNNING"
     TimeSlipStatus.COMPLETED -> "COMPLETED"
     TimeSlipStatus.CANCELLED -> "CANCELLED"
@@ -517,10 +463,7 @@ private fun MeasurementQuality.displayName(): String = when (this) {
     MeasurementQuality.INVALID -> "Invalid"
 }
 
-private fun formatDate(epochMillis: Long): String = SimpleDateFormat(
-    "dd MMM yyyy HH:mm:ss",
-    Locale.getDefault(),
-).format(Date(epochMillis))
+private fun formatDate(epochMillis: Long): String = SimpleDateFormat("dd MMM yyyy HH:mm:ss", Locale.getDefault()).format(Date(epochMillis))
 
 private fun shareText(context: Context, text: String, mimeType: String) {
     val intent = Intent(Intent.ACTION_SEND).apply {
