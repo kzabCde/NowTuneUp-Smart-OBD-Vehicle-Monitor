@@ -42,6 +42,32 @@ class TurboPressureEstimatorTest {
     }
 
     @Test
+    fun unrelatedPidRefreshDoesNotAdvanceFilter() {
+        val estimator = TurboPressureEstimator()
+        estimator.update(baroPid, 100.0, 0L, mapPid, baroPid)
+        estimator.update(mapPid, 120.0, 100L, mapPid, baroPid)
+        val original = estimator.current(200L).valueKpa
+
+        repeat(20) { index ->
+            val current = estimator.current(250L + index)
+            assertEquals(original, current.valueKpa)
+        }
+    }
+
+    @Test
+    fun gradualMapChangesRemainResponsiveWithoutOscillation() {
+        val estimator = TurboPressureEstimator()
+        estimator.update(baroPid, 100.0, 0L, mapPid, baroPid)
+        estimator.update(mapPid, 110.0, 100L, mapPid, baroPid)
+        estimator.update(mapPid, 112.0, 200L, mapPid, baroPid)
+        val before = estimator.update(mapPid, 114.0, 300L, mapPid, baroPid).valueKpa!!
+        val after = estimator.update(mapPid, 125.0, 400L, mapPid, baroPid).valueKpa!!
+
+        assertTrue(after > before)
+        assertTrue(after < 25.0)
+    }
+
+    @Test
     fun resetClearsPreviousFilteredState() {
         val estimator = TurboPressureEstimator()
         estimator.update(baroPid, 100.0, 0L, mapPid, baroPid)
