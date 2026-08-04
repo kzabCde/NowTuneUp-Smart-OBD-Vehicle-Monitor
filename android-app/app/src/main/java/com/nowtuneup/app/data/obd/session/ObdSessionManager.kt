@@ -41,6 +41,7 @@ class ObdSessionManager @Inject constructor(
     val readings: StateFlow<List<VehicleReading>> = _readings.asStateFlow()
     private val _supportedPids = MutableStateFlow<Set<Int>>(emptySet())
     val supportedPids: StateFlow<Set<Int>> = _supportedPids.asStateFlow()
+    private val turboEstimator = TurboPressureEstimator()
     private var polling: Job? = null
 
     @Volatile
@@ -48,6 +49,7 @@ class ObdSessionManager @Inject constructor(
 
     suspend fun connect(): Result<Unit> {
         pause()
+        turboEstimator.reset()
         elm327.resetInitializationState()
         transport.connect().onFailure { return Result.failure(it) }
         return elm327.initialize().mapCatching { result ->
@@ -91,6 +93,7 @@ class ObdSessionManager @Inject constructor(
 
     suspend fun disconnect() {
         pause()
+        turboEstimator.reset()
         _supportedPids.value = emptySet()
         elm327.resetInitializationState()
         transport.disconnect()
@@ -106,10 +109,7 @@ class ObdSessionManager @Inject constructor(
             var failedSoftRecoveries = 0
             var successfulCommands = 0L
             val startedAt = System.currentTimeMillis()
-            logger.info(
-                "Polling",
-                "Realtime polling started with ${scheduler.snapshot().size} priority slots",
-            )
+            logger.info("Polling", "Realtime polling started with ${scheduler.snapshot().size} priority slots")
 
             while (isActive && connectionState.value == ConnectionState.CONNECTED) {
                 val slot = scheduler.next()
@@ -134,7 +134,6 @@ class ObdSessionManager @Inject constructor(
                         consecutiveTransportFailures += 1
                         hardTransportFailure = isHardTransportFailure(error)
                     } else {
-                        // NO DATA or an individual malformed PID still proves that the adapter link is alive.
                         consecutiveTransportFailures = 0
                         failedSoftRecoveries = 0
                     }
@@ -156,10 +155,7 @@ class ObdSessionManager @Inject constructor(
                 }
 
                 if (consecutiveTransportFailures >= SOFT_RECOVERY_THRESHOLD) {
-                    logger.warning(
-                        "Polling",
-                        "ELM327 response stream stalled; attempting soft resync without disconnect",
-                    )
+                    logger.warning("Polling", "ELM327 response stream stalled; attempting soft resync without disconnect")
                     val recovered = elm327.recoverLiveSession().isSuccess
                     consecutiveTransportFailures = 0
                     if (recovered) {
@@ -167,19 +163,12 @@ class ObdSessionManager @Inject constructor(
                         delay(POST_RECOVERY_SETTLE_MILLIS)
                     } else {
                         failedSoftRecoveries += 1
-                        logger.warning(
-                            "Polling",
-                            "Soft resync failed ($failedSoftRecoveries/$MAX_FAILED_SOFT_RECOVERIES)",
-                        )
+                        logger.warning("Polling", "Soft resync failed ($failedSoftRecoveries/$MAX_FAILED_SOFT_RECOVERIES)")
                     }
                 }
 
                 if (failedSoftRecoveries >= MAX_FAILED_SOFT_RECOVERIES) {
-                    logger.error(
-                        "Polling",
-                        "ELM327 stream could not be recovered; reconnecting the Bluetooth transport",
-                        null,
-                    )
+                    logger.error("Polling", "ELM327 stream could not be recovered; reconnecting the Bluetooth transport", null)
                     transport.disconnect()
                     break
                 }
@@ -259,22 +248,31 @@ class ObdSessionManager @Inject constructor(
 
     private fun publish(pid: Int, value: Double) {
         val now = System.currentTimeMillis()
+        val estimate = if (pid == DerivedPids.MAP || pid == DerivedPids.BAROMETRIC_PRESSURE) {
+            turboEstimator.update(
+                pid = pid,
+                valueKpa = value,
+                nowMillis = now,
+                mapPid = DerivedPids.MAP,
+                baroPid = DerivedPids.BAROMETRIC_PRESSURE,
+            )
+        } else {
+            turboEstimator.current(now)
+        }
+
         _readings.update { readings ->
             val updated = readings.map { reading ->
                 if (reading.pid == pid) reading.copy(value = value, updatedAt = now) else reading
             }
-            val map = updated.firstOrNull { it.pid == DerivedPids.MAP }
-            val barometric = updated.firstOrNull { it.pid == DerivedPids.BAROMETRIC_PRESSURE }
-            val supported = map?.supported == true && barometric?.supported == true
-            val turboValue = if (supported && map?.value != null && barometric?.value != null) {
-                DerivedPids.turboPressureKpa(map.value, barometric.value)
-            } else {
-                null
-            }
-            val derivedTimestamp = if (turboValue != null) minOf(map!!.updatedAt, barometric!!.updatedAt) else now
+            val turboSupported = updated.firstOrNull { it.pid == DerivedPids.MAP }?.supported == true &&
+                updated.firstOrNull { it.pid == DerivedPids.BAROMETRIC_PRESSURE }?.supported == true
             updated.map { reading ->
                 if (reading.pid == DerivedPids.TURBO_PRESSURE) {
-                    reading.copy(value = turboValue, supported = supported, updatedAt = derivedTimestamp)
+                    reading.copy(
+                        value = if (turboSupported) estimate.valueKpa else null,
+                        supported = turboSupported,
+                        updatedAt = estimate.updatedAtMillis,
+                    )
                 } else {
                     reading
                 }
