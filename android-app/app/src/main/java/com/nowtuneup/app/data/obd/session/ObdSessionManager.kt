@@ -12,8 +12,13 @@ import com.nowtuneup.app.data.obd.polling.PidPollingScheduler
 import com.nowtuneup.app.data.obd.polling.PollingGroup
 import com.nowtuneup.app.data.obd.polling.PollingSlot
 import com.nowtuneup.app.data.transport.ObdTransport
+import com.nowtuneup.app.data.vehicle.VehicleProfileRepository
+import com.nowtuneup.app.domain.model.AdapterSelfTestResult
 import com.nowtuneup.app.domain.model.ConnectionState
+import com.nowtuneup.app.domain.model.DiagnosticOverview
 import com.nowtuneup.app.domain.model.ObdError
+import com.nowtuneup.app.domain.model.VehicleIdentity
+import com.nowtuneup.app.domain.model.VehicleProfileRecord
 import com.nowtuneup.app.domain.model.VehicleReading
 import java.util.ArrayDeque
 import javax.inject.Inject
@@ -37,6 +42,7 @@ class ObdSessionManager @Inject constructor(
     private val transport: ObdTransport,
     private val elm327: Elm327Client,
     private val logger: DiagnosticLogger,
+    private val vehicleProfiles: VehicleProfileRepository,
 ) {
     val connectionState = transport.connectionState
     val initialization = elm327.initialization
@@ -52,19 +58,36 @@ class ObdSessionManager @Inject constructor(
     val speedReadiness: StateFlow<SpeedPidReadiness> = _speedReadiness.asStateFlow()
     private val _performanceSampling = MutableStateFlow(false)
     val performanceSampling: StateFlow<Boolean> = _performanceSampling.asStateFlow()
+    private val _adapterHealth = MutableStateFlow(AdapterHealthState())
+    val adapterHealth: StateFlow<AdapterHealthState> = _adapterHealth.asStateFlow()
+    private val _vehicleIdentity = MutableStateFlow(VehicleIdentity())
+    val vehicleIdentity: StateFlow<VehicleIdentity> = _vehicleIdentity.asStateFlow()
+    private val _turboQuality = MutableStateFlow(TurboDataQuality.STALE)
+    val turboQuality: StateFlow<TurboDataQuality> = _turboQuality.asStateFlow()
 
     private val turboEstimator = TurboPressureEstimator()
+    private val healthTracker = AdapterHealthTracker()
     private val speedWindow = ArrayDeque<ObdSpeedSample>()
     private var polling: Job? = null
+    private var identityProbe: Job? = null
     private var performanceIndex = 0
+    private var latestRpm: Double? = null
 
     @Volatile
     private var refreshIntervalMillis: Long = 500L
 
+    @Volatile
+    private var requestedPids: Set<Int>? = DEFAULT_CORE_DEMAND
+
     suspend fun connect(): Result<Unit> {
         pause()
+        identityProbe?.cancel()
         resetPerformanceTelemetry()
         turboEstimator.reset()
+        _turboQuality.value = TurboDataQuality.STALE
+        latestRpm = null
+        healthTracker.reset()
+        _adapterHealth.value = healthTracker.snapshot()
         elm327.resetInitializationState()
         transport.connect().onFailure { return Result.failure(it) }
         return elm327.initialize().mapCatching { result ->
@@ -76,6 +99,7 @@ class ObdSessionManager @Inject constructor(
             updateSpeedReadiness()
             logger.info("OBD", "ECU ready with ${discovered.size} supported Mode 01 PIDs")
             startPolling()
+            scheduleVehicleIdentityProbe()
         }.onFailure { error ->
             logger.error("OBD", "Connection or initialization failed", error)
             disconnect()
@@ -108,10 +132,17 @@ class ObdSessionManager @Inject constructor(
     }
 
     suspend fun disconnect() {
+        if (initialization.value.ecuConnected) {
+            vehicleProfiles.saveLastSessionReport(diagnosticReport())
+        }
         pause()
+        identityProbe?.cancel()
+        identityProbe = null
         setPerformanceSampling(false)
         resetPerformanceTelemetry()
         turboEstimator.reset()
+        _turboQuality.value = TurboDataQuality.STALE
+        latestRpm = null
         _supportedPids.value = emptySet()
         elm327.resetInitializationState()
         transport.disconnect()
@@ -119,20 +150,38 @@ class ObdSessionManager @Inject constructor(
         updateSpeedReadiness()
     }
 
+    /** Null requests all supported PIDs; a set requests only values needed by the current UX. */
+    fun setRequestedPids(pids: Set<Int>?) {
+        requestedPids = expandRequestedPids(pids)
+        val label = requestedPids?.sorted()?.joinToString { "0x%02X".format(it) } ?: "ALL"
+        logger.info("Polling", "Demand updated: $label")
+    }
+
+    private fun expandRequestedPids(pids: Set<Int>?): Set<Int>? {
+        if (pids == null) return null
+        val expanded = pids.toMutableSet()
+        if (DerivedPids.TURBO_PRESSURE in expanded) {
+            expanded.remove(DerivedPids.TURBO_PRESSURE)
+            expanded += DerivedPids.MAP
+            expanded += DerivedPids.BAROMETRIC_PRESSURE
+        }
+        return expanded
+    }
+
     fun startPolling() {
         if (polling?.isActive == true || connectionState.value != ConnectionState.CONNECTED) return
-        val standardScheduler = PidPollingScheduler(_supportedPids.value)
+        val standardScheduler = PidPollingScheduler(_supportedPids.value, requestedPids)
         if (standardScheduler.isEmpty()) return
 
         polling = scope.launch {
             var consecutiveHealthFailures = 0
             var failedSoftRecoveries = 0
             var successfulCommands = 0L
-            val startedAt = System.currentTimeMillis()
-            logger.info("Polling", "Realtime polling started with conservative adapter pacing")
+            logger.info("Polling", "Realtime polling started with adaptive demand-based pacing")
 
             try {
                 while (isActive && connectionState.value == ConnectionState.CONNECTED) {
+                    standardScheduler.updateDemand(requestedPids)
                     val slot = if (_performanceSampling.value) nextPerformanceSlot() else standardScheduler.next()
                     if (slot == null) {
                         delay(120L)
@@ -151,16 +200,23 @@ class ObdSessionManager @Inject constructor(
                         ).onSuccess { reading ->
                             val value = reading.value ?: return@onSuccess
                             val responseReceivedAtNanos = SystemClock.elapsedRealtimeNanos()
+                            val latencyMillis = ((responseReceivedAtNanos - commandSentAtNanos) / 1_000_000L).coerceAtLeast(0L)
                             consecutiveHealthFailures = 0
                             failedSoftRecoveries = 0
                             successfulCommands += 1
+                            val health = healthTracker.recordSuccess(latencyMillis)
+                            _adapterHealth.value = health
                             publish(
                                 pid = reading.pid,
                                 value = value,
                                 commandSentAtNanos = commandSentAtNanos,
                                 responseReceivedAtNanos = responseReceivedAtNanos,
                             )
+                            if (health.totalCommands > 0 && health.totalCommands % PROFILE_HEALTH_SAVE_INTERVAL == 0L) {
+                                persistVehicleProfile(health.recommendedMode.name)
+                            }
                         }.onFailure { error ->
+                            _adapterHealth.value = healthTracker.recordFailure()
                             when {
                                 isHardTransportFailure(error) -> hardFailure = error
                                 isTransportHealthFailure(error) -> consecutiveHealthFailures += 1
@@ -178,6 +234,7 @@ class ObdSessionManager @Inject constructor(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (unexpected: Throwable) {
+                        _adapterHealth.value = healthTracker.recordFailure()
                         logger.error("Polling", "Unexpected PID loop error; keeping session alive", unexpected)
                         consecutiveHealthFailures += 1
                     }
@@ -191,6 +248,7 @@ class ObdSessionManager @Inject constructor(
                     if (consecutiveHealthFailures >= SOFT_RECOVERY_THRESHOLD) {
                         logger.warning("Polling", "ELM327 response stream delayed; running soft resync")
                         val recovered = runCatching { elm327.recoverLiveSession().isSuccess }.getOrDefault(false)
+                        _adapterHealth.value = healthTracker.recordRecovery()
                         consecutiveHealthFailures = 0
                         if (recovered) {
                             failedSoftRecoveries = 0
@@ -200,7 +258,7 @@ class ObdSessionManager @Inject constructor(
                             logger.warning("Polling", "Soft resync did not complete • attempt=$failedSoftRecoveries")
                             delay(RECOVERY_BACKOFF_MILLIS)
                             if (failedSoftRecoveries >= MAX_FAILED_SOFT_RECOVERIES) {
-                                logger.warning("Polling", "Adapter remains slow; continuing at safe pacing without dropping connection")
+                                logger.warning("Polling", "Adapter remains slow; adaptive mode will stay conservative")
                                 failedSoftRecoveries = 0
                             }
                         }
@@ -211,12 +269,14 @@ class ObdSessionManager @Inject constructor(
                     if (elapsed < pacing) delay(pacing - elapsed)
 
                     if (successfulCommands > 0 && successfulCommands % HEALTH_LOG_EVERY_COMMANDS == 0L) {
-                        val totalElapsed = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
-                        val commandsPerSecond = successfulCommands * 1_000.0 / totalElapsed
+                        val health = _adapterHealth.value
                         logger.info(
                             "Polling",
-                            "Live rate %.2f commands/s • mode=%s".format(
-                                commandsPerSecond,
+                            "Health=%s • %.2f cmd/s • %d ms • %.1f%% success • demand=%s".format(
+                                health.grade.name,
+                                health.commandsPerSecond,
+                                health.averageLatencyMillis,
+                                health.successRate * 100.0,
                                 if (_performanceSampling.value) "TIME_SLIP" else "NORMAL",
                             ),
                         )
@@ -237,7 +297,7 @@ class ObdSessionManager @Inject constructor(
         if (_performanceSampling.value == enabled) return
         _performanceSampling.value = enabled
         performanceIndex = 0
-        logger.info("TimeSlip", if (enabled) "Speed-priority sampling enabled" else "Normal PID scheduler restored")
+        logger.info("TimeSlip", if (enabled) "Speed-priority sampling enabled" else "Demand scheduler restored")
     }
 
     private fun nextPerformanceSlot(): PollingSlot? {
@@ -262,27 +322,159 @@ class ObdSessionManager @Inject constructor(
         refreshIntervalMillis = intervalMillis.coerceIn(250L, 1_500L)
     }
 
-    suspend fun readDtcs() = elm327.readStoredDtcs()
+    suspend fun readDtcs() = withPollingPaused { elm327.readStoredDtcs() }
 
-    suspend fun clearDtcs(): Result<Unit> {
-        pause()
-        return elm327.clearStoredDtcs().onSuccess {
-            logger.warning("DTC", "Mode 04 clear command acknowledged")
-        }.also {
-            if (connectionState.value == ConnectionState.CONNECTED) startPolling()
+    suspend fun readVehicleIdentity(): Result<String> = withPollingPaused {
+        elm327.readVin().onSuccess { vin -> updateVehicleIdentity(vin) }
+    }
+
+    suspend fun readDiagnosticOverview(): Result<DiagnosticOverview> = withPollingPaused {
+        val stored = elm327.readStoredDtcs().getOrElse { emptyList() }
+        val pending = elm327.readPendingDtcs().getOrElse { emptyList() }
+        val permanent = elm327.readPermanentDtcs().getOrElse { emptyList() }
+        val readiness = elm327.readReadiness().getOrNull()
+        val freezeFrame = elm327.readFreezeFrameSummary().getOrNull()
+        val vin = elm327.readVin().getOrNull() ?: _vehicleIdentity.value.vin
+        if (vin != null) updateVehicleIdentity(vin)
+        Result.success(
+            DiagnosticOverview(
+                stored = stored,
+                pending = pending,
+                permanent = permanent,
+                readiness = readiness,
+                freezeFrame = freezeFrame,
+                vin = vin,
+                readAtMillis = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    suspend fun runAdapterSelfTest(): Result<AdapterSelfTestResult> = withPollingPaused {
+        val details = mutableListOf<String>()
+        val latencies = mutableListOf<Long>()
+        var passed = 0
+        var total = 0
+        val identity = initialization.value.adapterIdentity
+
+        total += 1
+        if (!identity.isNullOrBlank()) {
+            passed += 1
+            details += "ELM identity: $identity"
+        } else {
+            details += "ELM identity: unavailable"
         }
+
+        suspend fun check(label: String, action: suspend () -> Boolean) {
+            total += 1
+            val started = SystemClock.elapsedRealtime()
+            val ok = runCatching { action() }.getOrDefault(false)
+            latencies += (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            if (ok) passed += 1
+            details += "$label: ${if (ok) "PASS" else "NO DATA"}"
+        }
+
+        var voltage: Double? = null
+        check("Adapter voltage") {
+            voltage = elm327.readVoltage().getOrNull()
+            voltage != null
+        }
+        if (ENGINE_RPM_PID in _supportedPids.value) check("RPM PID 010C") { elm327.requestPid(ENGINE_RPM_PID).isSuccess }
+        if (VEHICLE_SPEED_PID in _supportedPids.value) check("Speed PID 010D") { elm327.requestPid(VEHICLE_SPEED_PID).isSuccess }
+        if (DerivedPids.MAP in _supportedPids.value) check("MAP PID 010B") { elm327.requestPid(DerivedPids.MAP).isSuccess }
+        if (DerivedPids.BAROMETRIC_PRESSURE in _supportedPids.value) {
+            check("BARO PID 0133") { elm327.requestPid(DerivedPids.BAROMETRIC_PRESSURE).isSuccess }
+        }
+
+        val averageLatency = latencies.takeIf { it.isNotEmpty() }?.average()?.toLong() ?: 0L
+        val passRate = if (total > 0) passed.toDouble() / total else 0.0
+        val recommended = when {
+            passRate < 0.85 || averageLatency > 450L -> AdaptivePollingMode.STABLE
+            passRate >= 0.98 && averageLatency in 1..120 -> AdaptivePollingMode.FAST
+            else -> AdaptivePollingMode.BALANCED
+        }
+        persistVehicleProfile(recommended.name)
+        Result.success(
+            AdapterSelfTestResult(
+                adapterIdentity = identity,
+                voltage = voltage,
+                passedChecks = passed,
+                totalChecks = total,
+                averageLatencyMillis = averageLatency,
+                timeSlipSupported = VEHICLE_SPEED_PID in _supportedPids.value,
+                turboSupported = DerivedPids.MAP in _supportedPids.value && DerivedPids.BAROMETRIC_PRESSURE in _supportedPids.value,
+                recommendedMode = recommended.name,
+                details = details,
+            ),
+        )
+    }
+
+    suspend fun clearDtcs(): Result<Unit> = withPollingPaused {
+        elm327.clearStoredDtcs().onSuccess {
+            logger.warning("DTC", "Mode 04 clear command acknowledged")
+        }
+    }
+
+    private suspend fun <T> withPollingPaused(block: suspend () -> Result<T>): Result<T> {
+        val shouldResume = connectionState.value == ConnectionState.CONNECTED
+        pause()
+        return try {
+            block()
+        } finally {
+            if (shouldResume && connectionState.value == ConnectionState.CONNECTED) startPolling()
+        }
+    }
+
+    private fun scheduleVehicleIdentityProbe() {
+        identityProbe?.cancel()
+        identityProbe = scope.launch {
+            delay(1_200L)
+            readVehicleIdentity().onFailure {
+                logger.info("Vehicle", "Mode 09 VIN not available: ${it.message}")
+            }
+        }
+    }
+
+    private fun updateVehicleIdentity(vin: String) {
+        val normalized = vin.trim().uppercase()
+        if (normalized.length != 17) return
+        _vehicleIdentity.value = VehicleIdentity(normalized, System.currentTimeMillis())
+        persistVehicleProfile(_adapterHealth.value.recommendedMode.name)
+    }
+
+    private fun persistVehicleProfile(recommendedMode: String) {
+        val vin = _vehicleIdentity.value.vin ?: return
+        val previous = vehicleProfiles.find(vin)
+        vehicleProfiles.save(
+            VehicleProfileRecord(
+                vin = vin,
+                displayName = previous?.displayName ?: vin,
+                adapterIdentity = initialization.value.adapterIdentity,
+                supportedPids = _supportedPids.value,
+                recommendedPollingMode = recommendedMode,
+                lastSeenAtMillis = System.currentTimeMillis(),
+            ),
+        )
     }
 
     fun diagnosticReport(): String = buildString {
         val init = initialization.value
         val readiness = currentSpeedReadiness()
+        val health = _adapterHealth.value
         appendLine("NOWTUNEUP HARDWARE DIAGNOSTIC REPORT")
         appendLine("Generated: ${java.util.Date()}")
         appendLine("Connection: ${connectionState.value}")
         appendLine("ELM identity: ${init.adapterIdentity ?: "unknown"}")
+        appendLine("VIN: ${_vehicleIdentity.value.vin ?: "unavailable"}")
         appendLine("Adapter initialized: ${init.adapterInitialized}")
         appendLine("ECU connected: ${init.ecuConnected}")
         appendLine("Supported Mode 01 PIDs: ${_supportedPids.value.sorted().joinToString { "0x%02X".format(it) }}")
+        appendLine("Requested PIDs: ${requestedPids?.sorted()?.joinToString { "0x%02X".format(it) } ?: "ALL"}")
+        appendLine("Adapter health: ${health.grade} / ${health.recommendedMode}")
+        appendLine("Average latency: ${health.averageLatencyMillis} ms")
+        appendLine("Success rate: ${"%.1f".format(health.successRate * 100.0)} %")
+        appendLine("Command rate: ${"%.2f".format(health.commandsPerSecond)} commands/s")
+        appendLine("Soft recoveries: ${health.softRecoveries}")
+        appendLine("Turbo quality: ${_turboQuality.value}")
         appendLine("Time Slip sampling: ${_performanceSampling.value}")
         appendLine("Speed supported: ${readiness.supported}")
         appendLine("Speed sample rate: ${"%.2f".format(readiness.sampleRateHz)} Hz")
@@ -293,26 +485,44 @@ class ObdSessionManager @Inject constructor(
         append(logger.exportText())
     }
 
+    fun lastSessionReport(): String = vehicleProfiles.lastSessionReport().ifBlank { diagnosticReport() }
+
     fun close() {
         pause()
     }
 
     fun shutdown() {
         pause()
+        identityProbe?.cancel()
         scope.cancel()
     }
 
-    private fun commandPacingMillis(): Long = when {
-        _performanceSampling.value -> 55L
-        refreshIntervalMillis <= 300L -> 65L
-        refreshIntervalMillis <= 700L -> 90L
-        else -> 130L
+    private fun commandPacingMillis(): Long {
+        val base = when {
+            _performanceSampling.value -> 45L
+            refreshIntervalMillis <= 300L -> 55L
+            refreshIntervalMillis <= 700L -> 80L
+            else -> 120L
+        }
+        val adaptiveFloor = when (_adapterHealth.value.recommendedMode) {
+            AdaptivePollingMode.FAST -> 45L
+            AdaptivePollingMode.BALANCED -> 75L
+            AdaptivePollingMode.STABLE -> 140L
+        }
+        return maxOf(base, adaptiveFloor)
     }
 
-    private fun timeoutFor(group: PollingGroup): Long = when (group) {
-        PollingGroup.FAST -> if (_performanceSampling.value) 1_500L else 1_700L
-        PollingGroup.NORMAL -> 2_000L
-        PollingGroup.SLOW -> 2_400L
+    private fun timeoutFor(group: PollingGroup): Long {
+        val adaptiveExtra = when (_adapterHealth.value.recommendedMode) {
+            AdaptivePollingMode.FAST -> 0L
+            AdaptivePollingMode.BALANCED -> 300L
+            AdaptivePollingMode.STABLE -> 800L
+        }
+        return when (group) {
+            PollingGroup.FAST -> (if (_performanceSampling.value) 1_500L else 1_700L) + adaptiveExtra
+            PollingGroup.NORMAL -> 2_000L + adaptiveExtra
+            PollingGroup.SLOW -> 2_400L + adaptiveExtra
+        }
     }
 
     private fun isTransportHealthFailure(error: Throwable): Boolean = when (error.toObdError()) {
@@ -345,6 +555,10 @@ class ObdSessionManager @Inject constructor(
         responseReceivedAtNanos: Long,
     ) {
         val now = System.currentTimeMillis()
+        if (pid == ENGINE_RPM_PID) latestRpm = value
+        if (pid == DerivedPids.MAP && (latestRpm ?: Double.MAX_VALUE) <= KOEO_MAX_RPM) {
+            turboEstimator.calibrateBarometricBaseline(value, now)
+        }
         val estimate = if (pid == DerivedPids.MAP || pid == DerivedPids.BAROMETRIC_PRESSURE) {
             turboEstimator.update(
                 pid = pid,
@@ -356,6 +570,7 @@ class ObdSessionManager @Inject constructor(
         } else {
             turboEstimator.current(now)
         }
+        _turboQuality.value = estimate.quality
 
         _readings.update { readings ->
             readings.map { reading ->
@@ -365,7 +580,7 @@ class ObdSessionManager @Inject constructor(
                         val turboSupported = DerivedPids.MAP in _supportedPids.value &&
                             DerivedPids.BAROMETRIC_PRESSURE in _supportedPids.value
                         reading.copy(
-                            value = if (turboSupported) estimate.valueKpa else null,
+                            value = if (turboSupported && estimate.quality == TurboDataQuality.GOOD) estimate.valueKpa else null,
                             supported = turboSupported,
                             updatedAt = estimate.updatedAtMillis,
                         )
@@ -446,10 +661,13 @@ class ObdSessionManager @Inject constructor(
         private const val POST_RECOVERY_SETTLE_MILLIS = 220L
         private const val RECOVERY_BACKOFF_MILLIS = 350L
         private const val HEALTH_LOG_EVERY_COMMANDS = 50L
+        private const val PROFILE_HEALTH_SAVE_INTERVAL = 50L
         private const val SPEED_WINDOW_SIZE = 8
         private const val MIN_READY_SAMPLES = 3
         private const val MIN_READY_RATE_HZ = 0.8
         private const val SPEED_FRESH_MILLIS = 1_800L
+        private const val KOEO_MAX_RPM = 50.0
+        private val DEFAULT_CORE_DEMAND = setOf(0x0C, 0x0D, 0x05)
 
         fun defaultReadings(): List<VehicleReading> = StandardPids.all.map { definition ->
             VehicleReading(
