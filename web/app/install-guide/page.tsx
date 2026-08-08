@@ -20,8 +20,8 @@ export default function Guide() {
     <>
       <section className="shell section-space">
         <p className="eyebrow">Installation</p>
-        <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.96] tracking-[-0.055em] md:text-7xl">Install, connect and verify the adapter.</h1>
-        <p className="muted mt-6 max-w-3xl text-lg leading-8">The APK installation is the same for Bluetooth and USB. Only the adapter connection step changes.</p>
+        <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.96] tracking-[-0.055em] md:text-7xl">Install NowTuneUp</h1>
+        <p className="muted mt-6 max-w-3xl text-lg leading-8">Install the APK, connect a Bluetooth Classic or USB ELM327 adapter, then verify the ECU connection. The APK installation itself is the same for both connection types.</p>
       </section>
       <section className="section-rule">
         <div className="shell section-space">
