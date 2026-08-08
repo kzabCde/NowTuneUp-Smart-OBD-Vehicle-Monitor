@@ -10,8 +10,8 @@ const steps = [
   "Review Android's security warning and confirm installation.",
   "Open NowTuneUp after installation completes.",
   "For Bluetooth Classic, pair the ELM327 adapter in Android. For USB, connect the supported adapter through USB OTG.",
-  "Close other OBD apps so only NowTuneUp owns the adapter connection.",
-  "Turn the vehicle ignition on in a safe, ventilated location.",
+  "Grant NowTuneUp access to the USB device when Android asks; Bluetooth adapters do not need the USB permission step.",
+  "Close other OBD apps, turn the vehicle ignition on in a safe ventilated location, and keep only NowTuneUp connected to the adapter.",
   "Open the connection screen, choose the adapter and connect to the ECU.",
 ];
 
