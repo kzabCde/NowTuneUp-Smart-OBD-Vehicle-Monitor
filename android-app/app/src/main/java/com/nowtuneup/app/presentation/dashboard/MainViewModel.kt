@@ -12,6 +12,7 @@ import com.nowtuneup.app.data.transport.ObdTransportManager
 import com.nowtuneup.app.domain.alert.AlertEngine
 import com.nowtuneup.app.domain.connection.ReconnectBackoff
 import com.nowtuneup.app.domain.model.AdaptiveLayoutProfile
+import com.nowtuneup.app.domain.model.AdapterSelfTestResult
 import com.nowtuneup.app.domain.model.AlertSeverity
 import com.nowtuneup.app.domain.model.BluetoothDeviceInfo
 import com.nowtuneup.app.domain.model.ConnectionPhase
@@ -20,6 +21,7 @@ import com.nowtuneup.app.domain.model.ConnectionUiState
 import com.nowtuneup.app.domain.model.DashboardAlert
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardPreferences
+import com.nowtuneup.app.domain.model.DiagnosticOverview
 import com.nowtuneup.app.domain.model.Dtc
 import com.nowtuneup.app.domain.model.HudColorPreset
 import com.nowtuneup.app.domain.model.ObdTransportType
@@ -53,6 +55,9 @@ class MainViewModel @Inject constructor(
     val connection = session.connectionState
     val initialization = session.initialization
     val readings = session.readings
+    val adapterHealth = session.adapterHealth
+    val vehicleIdentity = session.vehicleIdentity
+    val turboQuality = session.turboQuality
     val diagnosticLogs = logger.entries
     val dashboards = dashboardRepository.dashboards.stateIn(
         viewModelScope,
@@ -69,6 +74,10 @@ class MainViewModel @Inject constructor(
     val error = _error.asStateFlow()
     private val _dtcs = MutableStateFlow<List<Dtc>>(emptyList())
     val dtcs = _dtcs.asStateFlow()
+    private val _diagnosticOverview = MutableStateFlow<DiagnosticOverview?>(null)
+    val diagnosticOverview = _diagnosticOverview.asStateFlow()
+    private val _adapterSelfTest = MutableStateFlow<AdapterSelfTestResult?>(null)
+    val adapterSelfTest = _adapterSelfTest.asStateFlow()
     private val _readingStats = MutableStateFlow<Map<Int, ReadingStats>>(emptyMap())
     val readingStats = _readingStats.asStateFlow()
     private val _activeAlerts = MutableStateFlow<List<DashboardAlert>>(emptyList())
@@ -87,6 +96,8 @@ class MainViewModel @Inject constructor(
     private var manualDisconnect = false
     private var wasEcuConnected = false
     private var autoConnectAttemptedAddress: String? = null
+    private var liveDataVisible = false
+    private var dashboardDemandPids: Set<Int> = emptySet()
 
     init {
         viewModelScope.launch {
@@ -121,6 +132,17 @@ class MainViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            combine(dashboards, dashboardPreferences) { profiles, preferences ->
+                val selected = profiles.firstOrNull { it.id == preferences.selectedDashboardId }
+                selected?.let { profile ->
+                    (profile.portrait.widgets + profile.landscape.widgets).map { it.pid }.toSet()
+                }.orEmpty()
+            }.collect { pids ->
+                dashboardDemandPids = pids
+                applyPollingDemand()
+            }
+        }
+        viewModelScope.launch {
             readings.collect { current ->
                 updateStats(current)
                 evaluateAlerts(current)
@@ -140,6 +162,15 @@ class MainViewModel @Inject constructor(
                 rebuildConnectionUiState()
             }
         }
+    }
+
+    private fun applyPollingDemand() {
+        session.setRequestedPids(if (liveDataVisible) null else dashboardDemandPids)
+    }
+
+    fun setLiveDataVisible(visible: Boolean) {
+        liveDataVisible = visible
+        applyPollingDemand()
     }
 
     fun refreshBluetoothState() {
@@ -239,6 +270,7 @@ class MainViewModel @Inject constructor(
         session.connect().onSuccess {
             wasEcuConnected = true
             reconnectAttempt.value = 0
+            applyPollingDemand()
             logger.info("Connection", "Transport, ELM327 and ECU validation succeeded")
         }.onFailure(::showConnectionError)
     }
@@ -346,27 +378,41 @@ class MainViewModel @Inject constructor(
         _readingStats.value = emptyMap()
     }
 
+    /** Full read-only vehicle health scan: Stored/Pending/Permanent DTC, readiness, freeze frame and VIN. */
     fun scan() = viewModelScope.launch {
-        session.readDtcs().onSuccess {
-            _dtcs.value = it
+        session.readDiagnosticOverview().onSuccess { overview ->
+            _diagnosticOverview.value = overview
+            _dtcs.value = overview.allDtcs
             dao.insertScan(
                 DiagnosticScanEntity(
-                    readAt = System.currentTimeMillis(),
-                    codes = it.joinToString { code -> code.code },
-                    raw = it.firstOrNull()?.raw.orEmpty(),
+                    readAt = overview.readAtMillis,
+                    codes = overview.allDtcs.joinToString { code -> "${code.status}:${code.code}" },
+                    raw = overview.allDtcs.firstOrNull()?.raw.orEmpty(),
                 ),
             )
+        }.onFailure(::showConnectionError)
+    }
+
+    fun refreshVehicleIdentity() = viewModelScope.launch {
+        session.readVehicleIdentity().onFailure(::showConnectionError)
+    }
+
+    fun runAdapterSelfTest() = viewModelScope.launch {
+        session.runAdapterSelfTest().onSuccess {
+            _adapterSelfTest.value = it
         }.onFailure(::showConnectionError)
     }
 
     fun clearDtcsConfirmed() = viewModelScope.launch {
         session.clearDtcs().onSuccess {
             _dtcs.value = emptyList()
+            _diagnosticOverview.value = null
         }.onFailure(::showConnectionError)
     }
 
     fun clearDiagnosticLogs() = logger.clear()
-    fun exportDiagnosticLogs(): String = logger.exportText()
+    fun exportDiagnosticLogs(): String = session.diagnosticReport()
+    fun exportLastSessionReport(): String = session.lastSessionReport()
 
     private fun updateStats(current: List<VehicleReading>) {
         val next = _readingStats.value.toMutableMap()
@@ -377,7 +423,7 @@ class MainViewModel @Inject constructor(
             next[reading.pid] = ReadingStats(
                 minimum = previous?.minimum?.let { minOf(it, value) } ?: value,
                 maximum = previous?.maximum?.let { maxOf(it, value) } ?: value,
-                peak = previous?.peak?.let { maxOf(it, value) } ?: value,
+                peak = null,
                 updatedAt = reading.updatedAt,
             )
         }
@@ -467,6 +513,7 @@ class MainViewModel @Inject constructor(
                 session.connect().onSuccess {
                     reconnectAttempt.value = 0
                     wasEcuConnected = true
+                    applyPollingDemand()
                     return@launch
                 }.onFailure { error ->
                     lastTechnicalError.value = error.message
@@ -535,7 +582,7 @@ class MainViewModel @Inject constructor(
             message.contains("4100", true) || message.contains("ECU", true) -> "เชื่อมต่ออะแดปเตอร์ได้ แต่ ECU ไม่ตอบสนอง กรุณาเปิดสวิตช์กุญแจและตรวจพอร์ต OBD-II"
             message.contains("timeout", true) || message.contains("Timed out", true) -> "หมดเวลารอการตอบกลับจาก ELM327 กรุณาตรวจระยะ Bluetooth และสวิตช์กุญแจ"
             message.contains("socket", true) -> "การเชื่อมต่อ Bluetooth หลุดหรืออะแดปเตอร์อยู่นอกระยะ"
-            else -> "เชื่อมต่อรถไม่สำเร็จ กรุณาตรวจอะแดปเตอร์ Bluetooth สวิตช์กุญแจ และลองใหม่"
+            else -> "ดำเนินการกับรถไม่สำเร็จ กรุณาตรวจ ELM327 สวิตช์กุญแจ และลองใหม่"
         }
     }
 
