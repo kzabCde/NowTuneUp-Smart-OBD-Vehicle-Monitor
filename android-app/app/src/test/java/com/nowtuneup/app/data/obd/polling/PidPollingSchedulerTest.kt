@@ -15,6 +15,31 @@ class PidPollingSchedulerTest {
     }
 
     @Test
+    fun demandLimitsPollingToVisibleWidgetPids() {
+        val supported = setOf(0x0C, 0x0D, 0x05, 0x0B, 0x42)
+        val scheduler = PidPollingScheduler(supported, requestedPids = setOf(0x0C, 0x05))
+
+        assertEquals(setOf(0x0C, 0x05), scheduler.snapshot().map { it.pid }.toSet())
+    }
+
+    @Test
+    fun demandCanChangeWithoutRecreatingScheduler() {
+        val supported = setOf(0x0C, 0x0D, 0x05, 0x42)
+        val scheduler = PidPollingScheduler(supported, requestedPids = setOf(0x0C))
+        assertEquals(setOf(0x0C), scheduler.snapshot().map { it.pid }.toSet())
+
+        scheduler.updateDemand(setOf(0x0D, 0x42))
+        assertEquals(setOf(0x0D, 0x42), scheduler.snapshot().map { it.pid }.toSet())
+    }
+
+    @Test
+    fun unsupportedDemandFallsBackToSafeCorePid() {
+        val scheduler = PidPollingScheduler(setOf(0x0C, 0x0D, 0x05), requestedPids = setOf(0x99))
+        assertTrue(scheduler.snapshot().all { it.pid in setOf(0x0C, 0x0D, 0x05) })
+        assertFalse(scheduler.isEmpty())
+    }
+
+    @Test
     fun fastPidsReceiveGreaterWeight() {
         val scheduler = PidPollingScheduler(setOf(0x0C, 0x05, 0x42))
         val slots = scheduler.snapshot()
