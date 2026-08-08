@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { localRelease } from "@/lib/local-release";
 import { ReleaseCard } from "@/components/ui/ReleaseCard";
 
@@ -65,7 +66,7 @@ export default function Releases() {
       <section className="shell section-space">
         <div className="panel-soft flex flex-col justify-between gap-4 p-6 md:flex-row md:items-center">
           <div><strong>Release verification</strong><p className="muted mt-1 text-sm">The current download page publishes the production APK size, build number and SHA-256 checksum.</p></div>
-          <a href="/download" className="button">Verify current APK</a>
+          <Link href="/download" className="button">Verify current APK</Link>
         </div>
       </section>
     </>
