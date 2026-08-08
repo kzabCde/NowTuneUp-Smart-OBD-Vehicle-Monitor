@@ -19,11 +19,8 @@ data class TurboPressureEstimate(
 /**
  * Stable derived boost pressure for low-cost ELM327 adapters.
  *
- * Important behavior:
- * - filtering is applied only when MAP or BARO receives a new sample;
- * - reading unrelated PIDs never advances the filter;
- * - BARO is treated as a slowly changing baseline;
- * - stale data is shown as unavailable instead of snapping to zero.
+ * MAP is median-filtered, BARO is a slow baseline, and KOEO (engine speed near zero) may calibrate
+ * that baseline from MAP. Unrelated PID reads never advance the filter.
  */
 class TurboPressureEstimator(
     private val maximumPairSkewMillis: Long = 5_000L,
@@ -38,7 +35,6 @@ class TurboPressureEstimator(
     private var baroSample: Sample? = null
     private var filteredValue: Double? = null
     private var lastRawValue: Double? = null
-    private var filteredAtMillis: Long = 0L
 
     fun reset() {
         mapWindow.clear()
@@ -46,7 +42,14 @@ class TurboPressureEstimator(
         baroSample = null
         filteredValue = null
         lastRawValue = null
-        filteredAtMillis = 0L
+    }
+
+    /** Key-on/engine-off calibration. Safe only when the caller has confirmed RPM is near zero. */
+    fun calibrateBarometricBaseline(mapKpa: Double, nowMillis: Long) {
+        if (!mapKpa.isFinite() || mapKpa !in 70.0..115.0) return
+        baroSample = Sample(mapKpa, nowMillis)
+        filteredValue = 0.0
+        lastRawValue = 0.0
     }
 
     fun update(pid: Int, valueKpa: Double, nowMillis: Long, mapPid: Int, baroPid: Int): TurboPressureEstimate {
@@ -122,7 +125,6 @@ class TurboPressureEstimator(
         var next = if (previous == null) raw else previous + alpha * (raw - previous)
         if (abs(next) <= zeroDeadbandKpa) next = 0.0
         filteredValue = next
-        filteredAtMillis = nowMillis
         return current(nowMillis)
     }
 
