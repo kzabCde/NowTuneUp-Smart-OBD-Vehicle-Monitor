@@ -164,6 +164,7 @@ class ObdSessionManager @Inject constructor(
             expanded.remove(DerivedPids.TURBO_PRESSURE)
             expanded += DerivedPids.MAP
             expanded += DerivedPids.BAROMETRIC_PRESSURE
+            expanded += ENGINE_RPM_PID
         }
         return expanded
     }
