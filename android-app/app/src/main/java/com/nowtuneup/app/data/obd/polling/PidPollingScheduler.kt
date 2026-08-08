@@ -5,15 +5,29 @@ enum class PollingGroup { FAST, NORMAL, SLOW }
 data class PollingSlot(val pid: Int, val group: PollingGroup)
 
 /**
- * Produces a deterministic interleaved schedule optimized for dashboard responsiveness.
+ * Demand-aware PID scheduler.
  *
- * RPM, speed and throttle are intentionally queried much more often than temperatures, voltage
- * and fuel level. Lower-priority groups are still rotated fairly and never removed from polling.
+ * The dashboard asks only for PIDs that are currently useful. Live Data can request all supported
+ * PIDs, while Time Slip uses its dedicated speed-priority schedule in ObdSessionManager.
  */
-class PidPollingScheduler(supportedPids: Set<Int>) {
-    private val schedule: List<PollingSlot> = buildInterleavedSchedule(supportedPids)
+class PidPollingScheduler(
+    private val supportedPids: Set<Int>,
+    requestedPids: Set<Int>? = null,
+) {
+    private var requested: Set<Int>? = requestedPids
+    private var schedule: List<PollingSlot> = buildInterleavedSchedule(resolveDemand())
     private var index = 0
 
+    @Synchronized
+    fun updateDemand(requestedPids: Set<Int>?) {
+        val normalized = requestedPids?.toSet()
+        if (normalized == requested) return
+        requested = normalized
+        schedule = buildInterleavedSchedule(resolveDemand())
+        index = 0
+    }
+
+    @Synchronized
     fun next(): PollingSlot? {
         if (schedule.isEmpty()) return null
         val slot = schedule[index]
@@ -21,15 +35,26 @@ class PidPollingScheduler(supportedPids: Set<Int>) {
         return slot
     }
 
+    @Synchronized
     fun isEmpty(): Boolean = schedule.isEmpty()
 
+    @Synchronized
     fun snapshot(): List<PollingSlot> = schedule.toList()
 
-    private fun buildInterleavedSchedule(supportedPids: Set<Int>): List<PollingSlot> {
-        val fast = listOf(0x0C, 0x0D, 0x11).filter(supportedPids::contains)
-        val normal = listOf(0x04, 0x05, 0x0B, 0x0F, 0x10).filter(supportedPids::contains)
-        val slow = listOf(0x2F, 0x42, 0x33).filter(supportedPids::contains)
-        if (fast.isEmpty() && normal.isEmpty() && slow.isEmpty()) return emptyList()
+    private fun resolveDemand(): Set<Int> {
+        val requestedPids = requested
+        if (requestedPids == null) return supportedPids
+        val supportedRequested = requestedPids.intersect(supportedPids)
+        if (supportedRequested.isNotEmpty()) return supportedRequested
+        return DEFAULT_CORE_PIDS.intersect(supportedPids)
+    }
+
+    private fun buildInterleavedSchedule(activePids: Set<Int>): List<PollingSlot> {
+        if (activePids.isEmpty()) return emptyList()
+
+        val fast = activePids.filter { it in FAST_PIDS }.sorted()
+        val normal = activePids.filter { it in NORMAL_PIDS || it !in FAST_PIDS + SLOW_PIDS }.sorted()
+        val slow = activePids.filter { it in SLOW_PIDS }.sorted()
 
         val rounds = maxOf(
             fast.size * FAST_WEIGHT,
@@ -63,6 +88,10 @@ class PidPollingScheduler(supportedPids: Set<Int>) {
     }
 
     private companion object {
+        val FAST_PIDS = setOf(0x0C, 0x0D, 0x11)
+        val NORMAL_PIDS = setOf(0x04, 0x05, 0x0B, 0x0F, 0x10)
+        val SLOW_PIDS = setOf(0x2F, 0x42, 0x33)
+        val DEFAULT_CORE_PIDS = setOf(0x0C, 0x0D, 0x05)
         const val FAST_WEIGHT = 8
         const val NORMAL_WEIGHT = 3
         const val SLOW_WEIGHT = 1
