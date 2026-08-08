@@ -4,11 +4,16 @@ import com.nowtuneup.app.data.logging.DiagnosticLogger
 import com.nowtuneup.app.data.obd.command.ObdCommandQueue
 import com.nowtuneup.app.data.obd.command.ObdRequest
 import com.nowtuneup.app.data.obd.parser.DtcParser
+import com.nowtuneup.app.data.obd.parser.FreezeFrameParser
 import com.nowtuneup.app.data.obd.parser.ObdResponseParser
+import com.nowtuneup.app.data.obd.parser.ReadinessParser
+import com.nowtuneup.app.data.obd.parser.VinParser
 import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.AdapterInitializationStatus
 import com.nowtuneup.app.domain.model.Dtc
+import com.nowtuneup.app.domain.model.FreezeFrameSummary
 import com.nowtuneup.app.domain.model.ObdError
+import com.nowtuneup.app.domain.model.ReadinessStatus
 import com.nowtuneup.app.domain.model.VehicleReading
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -124,11 +129,7 @@ class Elm327Client @Inject constructor(
         }
     }
 
-    /**
-     * Repairs the command stream without resetting the Bluetooth socket or forcing protocol search.
-     * This is intentionally lighter than ATZ so transient ELM327 clone stalls do not become a full
-     * disconnect/reconnect cycle while the vehicle is moving.
-     */
+    /** Repairs the command stream without resetting the Bluetooth socket or forcing protocol search. */
     suspend fun recoverLiveSession(): Result<Unit> = runCatching {
         executeCommand("AT", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
         executeCommand("ATE0", timeoutMillis = RECOVERY_COMMAND_TIMEOUT_MILLIS, retryLimit = 0).getOrThrow()
@@ -141,7 +142,42 @@ class Elm327Client @Inject constructor(
     }
 
     suspend fun readStoredDtcs(): Result<List<Dtc>> =
-        executeCommand("03", timeoutMillis = 5_000L, retryLimit = 0).map { DtcParser.parse(it.raw) }
+        executeCommand("03", timeoutMillis = 5_000L, retryLimit = 0)
+            .map { DtcParser.parse(it.raw, command = "03", responseMode = 0x43, status = "Stored") }
+
+    suspend fun readPendingDtcs(): Result<List<Dtc>> =
+        executeCommand("07", timeoutMillis = 5_000L, retryLimit = 0)
+            .map { DtcParser.parse(it.raw, command = "07", responseMode = 0x47, status = "Pending") }
+
+    suspend fun readPermanentDtcs(): Result<List<Dtc>> =
+        executeCommand("0A", timeoutMillis = 5_000L, retryLimit = 0)
+            .map { DtcParser.parse(it.raw, command = "0A", responseMode = 0x4A, status = "Permanent") }
+
+    suspend fun readVin(): Result<String> =
+        executeCommand("0902", timeoutMillis = 5_000L, retryLimit = 0).mapCatching { response ->
+            VinParser.parse(response.raw) ?: error("VIN unavailable or Mode 09 PID 02 unsupported")
+        }
+
+    suspend fun readReadiness(): Result<ReadinessStatus> =
+        executeCommand("0101", timeoutMillis = 4_000L, retryLimit = 0).mapCatching { response ->
+            ReadinessParser.parse(response.raw) ?: error("Readiness response unavailable")
+        }
+
+    suspend fun readFreezeFrameSummary(): Result<FreezeFrameSummary> =
+        executeCommand("020200", timeoutMillis = 5_000L, retryLimit = 0).mapCatching { response ->
+            FreezeFrameParser.parse(response.raw) ?: error("Freeze frame trigger DTC unavailable")
+        }
+
+    suspend fun readVoltage(): Result<Double> =
+        executeCommand("ATRV", timeoutMillis = 3_000L, retryLimit = 0).mapCatching { response ->
+            val text = response.normalizedLines.joinToString(" ")
+            Regex("([0-9]+(?:\\.[0-9]+)?)\\s*V?", RegexOption.IGNORE_CASE)
+                .find(text)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toDoubleOrNull()
+                ?: error("Adapter voltage response unavailable")
+        }
 
     suspend fun clearStoredDtcs(): Result<Unit> =
         executeCommand("04", timeoutMillis = 5_000L, retryLimit = 0).mapCatching { response ->
