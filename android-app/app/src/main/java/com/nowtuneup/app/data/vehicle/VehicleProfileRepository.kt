@@ -37,9 +37,17 @@ class VehicleProfileRepository @Inject constructor(
         preferences.edit().putString(KEY_PROFILES, gson.toJson(updated, type)).apply()
     }
 
+    fun saveLastSessionReport(report: String) {
+        preferences.edit().putString(KEY_LAST_SESSION_REPORT, report.take(MAX_REPORT_CHARS)).apply()
+    }
+
+    fun lastSessionReport(): String = preferences.getString(KEY_LAST_SESSION_REPORT, "").orEmpty()
+
     companion object {
         private const val PREFERENCES_NAME = "ntu_vehicle_profiles"
         private const val KEY_PROFILES = "profiles_v1"
+        private const val KEY_LAST_SESSION_REPORT = "last_session_report"
         private const val MAX_PROFILES = 20
+        private const val MAX_REPORT_CHARS = 40_000
     }
 }
