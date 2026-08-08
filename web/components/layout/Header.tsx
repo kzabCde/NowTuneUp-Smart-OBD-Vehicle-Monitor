@@ -1,3 +1,49 @@
 import Link from "next/link";
-const links=[["Features","/features"],["Devices","/supported-devices"],["Releases","/releases"],["Install","/install-guide"]];
-export function Header(){return <header className="shell flex items-center justify-between py-5"><Link href="/" className="flex items-center gap-3 font-black text-xl" aria-label="NowTuneUp home"><span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300 text-slate-950">N</span><span>NowTuneUp</span></Link><nav aria-label="Main navigation" className="desktop-nav flex gap-6 text-sm text-slate-300">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</nav><Link href="/download" className="button">Download APK</Link></header>}
+
+const links = [
+  ["Features", "/features"],
+  ["Compatibility", "/supported-devices"],
+  ["Releases", "/releases"],
+  ["Install", "/install-guide"],
+];
+
+function Brand() {
+  return (
+    <Link href="/" className="flex items-center gap-3 font-black tracking-[-0.03em]" aria-label="NowTuneUp home">
+      <span className="logo-mark" aria-hidden="true">N</span>
+      <span className="text-lg">NowTuneUp</span>
+    </Link>
+  );
+}
+
+export function Header() {
+  return (
+    <header className="site-header">
+      <div className="shell flex min-h-18 items-center justify-between gap-4">
+        <Brand />
+
+        <nav aria-label="Main navigation" className="desktop-nav flex items-center gap-7 text-sm font-semibold text-slate-300">
+          {links.map(([label, href]) => (
+            <Link key={href} href={href} className="transition-colors hover:text-white">{label}</Link>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <Link href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor" className="button ghost desktop-only" target="_blank" rel="noreferrer">
+            GitHub
+          </Link>
+          <Link href="/download" className="button desktop-only">Download</Link>
+
+          <details className="mobile-nav relative">
+            <summary className="button secondary" aria-label="Open navigation">Menu</summary>
+            <nav className="mobile-nav-panel" aria-label="Mobile navigation">
+              {links.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+              <Link href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor" target="_blank" rel="noreferrer">GitHub</Link>
+              <Link href="/download" className="button mt-1">Download APK</Link>
+            </nav>
+          </details>
+        </div>
+      </div>
+    </header>
+  );
+}
