@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.8.1: stability-first OBD polling and simplified UX.
+    // Release 1.9.0: adaptive OBD stability and vehicle intelligence.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.8.1"
+        versionCode = 19
+        versionName = "1.9.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -36,7 +36,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-ui-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp 1.8.1 Test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.9.0 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -62,9 +62,9 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.8.1-release.apk"
+                "NowTuneUp-v1.9.0-release.apk"
             } else {
-                "NowTuneUp-v1.8.1-ui-test.apk"
+                "NowTuneUp-v1.9.0-ui-test.apk"
             }
         }
     }
