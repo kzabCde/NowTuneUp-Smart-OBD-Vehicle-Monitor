@@ -69,7 +69,7 @@ export default function Guide() {
           <article className="panel p-7 md:p-9">
             <p className="eyebrow">USB</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Connect through USB Host / OTG.</h2>
-            <p className="muted mt-5 leading-7">Attach a supported USB serial adapter and accept Android's device-access prompt when NowTuneUp requests it.</p>
+            <p className="muted mt-5 leading-7">Attach a supported USB serial adapter and accept Android&apos;s device-access prompt when NowTuneUp requests it.</p>
             <div className="mt-7 technical-card px-5"><div className="spec-row"><span className="spec-key">Pairing</span><span className="spec-value">Not required</span></div><div className="spec-row"><span className="spec-key">Device permission</span><span className="spec-value">Required</span></div></div>
           </article>
         </div>
