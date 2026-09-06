@@ -9,9 +9,12 @@ const links = [
 
 function Brand() {
   return (
-    <Link href="/" className="flex items-center gap-3 font-black tracking-[-0.03em]" aria-label="NowTuneUp home">
+    <Link href="/" className="brand-lockup" aria-label="NowTuneUp home">
       <span className="logo-mark" aria-hidden="true">N</span>
-      <span className="text-lg">NowTuneUp</span>
+      <span className="brand-copy">
+        <span className="brand-name">NowTuneUp</span>
+        <span className="brand-kicker">Vehicle telemetry</span>
+      </span>
     </Link>
   );
 }
@@ -22,17 +25,22 @@ export function Header() {
       <div className="shell flex min-h-18 items-center justify-between gap-4">
         <Brand />
 
-        <nav aria-label="Main navigation" className="desktop-nav flex items-center gap-7 text-sm font-semibold text-slate-300">
+        <nav aria-label="Main navigation" className="desktop-nav flex items-center gap-7">
           {links.map(([label, href]) => (
-            <Link key={href} href={href} className="transition-colors hover:text-white">{label}</Link>
+            <Link key={href} href={href} className="nav-link">{label}</Link>
           ))}
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor" className="button ghost desktop-only" target="_blank" rel="noreferrer">
+          <Link
+            href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor"
+            className="button ghost desktop-only"
+            target="_blank"
+            rel="noreferrer"
+          >
             GitHub
           </Link>
-          <Link href="/download" className="button desktop-only">Download</Link>
+          <Link href="/download" className="button desktop-only">Download APK</Link>
 
           <details className="mobile-nav relative">
             <summary className="button secondary" aria-label="Open navigation">Menu</summary>

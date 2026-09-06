@@ -26,47 +26,52 @@ const history = [
 export default function Releases() {
   return (
     <>
-      <section className="shell section-space">
-        <p className="eyebrow">Release history</p>
-        <h1 className="mt-4 max-w-5xl text-5xl font-black leading-[.96] tracking-[-0.055em] md:text-7xl">Production builds, with the important changes up front.</h1>
-        <p className="muted mt-6 max-w-3xl text-lg leading-8">The latest signed APK is the canonical download. Previous milestones remain listed here to make the product direction and major stability changes easy to follow.</p>
-      </section>
-
-      <section className="section-rule">
-        <div className="shell section-space">
-          <ReleaseCard release={localRelease} />
+      <section className="page-hero">
+        <div className="shell">
+          <p className="eyebrow">Release history</p>
+          <h1 className="page-title mt-4">Production first. History second.</h1>
+          <p className="page-lede mt-7">The current signed APK stays visually dominant. Earlier milestones remain available so stability changes and product direction are easy to trace without turning this page into a raw changelog.</p>
         </div>
       </section>
 
       <section className="section-rule">
         <div className="shell section-space">
-          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div><p className="eyebrow">Earlier milestones</p><h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-6xl">How NowTuneUp got here.</h2></div>
-            <p className="muted max-w-md text-sm leading-6">Historical entries summarize product milestones. The official download button always points to the current production APK.</p>
+          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">The build to install now.</h2></div>
+          <ReleaseCard release={localRelease} />
+        </div>
+      </section>
+
+      <section className="section-rule">
+        <div className="shell section-space grid gap-10 lg:grid-cols-[.72fr_1.28fr]">
+          <div className="section-heading lg:sticky lg:top-28 lg:self-start">
+            <p className="eyebrow">Earlier milestones</p>
+            <h2 className="section-title">How the current architecture got here.</h2>
+            <p className="section-copy">Historical entries summarize meaningful product milestones. The official download always points to the current production APK.</p>
           </div>
 
-          <div className="mt-10 grid gap-4">
-            {history.map((release, index) => (
-              <article key={release.version} className="panel grid gap-6 p-6 md:grid-cols-[160px_1fr] md:p-8">
-                <div>
-                  <span className="text-xs font-black text-cyan-300">0{index + 2}</span>
-                  <p className="mt-4 text-3xl font-black tracking-[-0.05em]">{release.version}</p>
-                  <p className="muted mt-2 text-sm">{release.date}</p>
-                </div>
-                <div>
-                  <p className="eyebrow">{release.label}</p>
-                  <p className="muted mt-4 max-w-3xl leading-7">{release.description}</p>
-                </div>
+          <div className="release-rail grid gap-10">
+            {history.map((release) => (
+              <article key={release.version} className="release-dot">
+                <div className="flex flex-wrap items-center gap-2"><span className="chip">v{release.version}</span><span className="data-label">{release.date}</span></div>
+                <p className="eyebrow mt-5">{release.label}</p>
+                <h3 className="mt-3 text-3xl font-black tracking-[-0.045em]">NowTuneUp {release.version}</h3>
+                <p className="muted mt-4 max-w-3xl leading-7">{release.description}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="shell section-space">
-        <div className="panel-soft flex flex-col justify-between gap-4 p-6 md:flex-row md:items-center">
-          <div><strong>Release verification</strong><p className="muted mt-1 text-sm">The current download page publishes the production APK size, build number and SHA-256 checksum.</p></div>
-          <Link href="/download" className="button">Verify current APK</Link>
+      <section className="section-rule">
+        <div className="shell section-space">
+          <div className="panel grid gap-6 p-7 md:grid-cols-[1fr_auto] md:items-center md:p-9">
+            <div>
+              <p className="eyebrow">Release verification</p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.045em]">Version, build, file size and checksum in one place.</h2>
+              <p className="muted mt-3 max-w-2xl leading-7">Use the download page when you need to verify the production APK rather than relying on a filename alone.</p>
+            </div>
+            <Link href="/download" className="button">Verify current APK</Link>
+          </div>
         </div>
       </section>
     </>
