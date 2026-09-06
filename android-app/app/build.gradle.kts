@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.9.0: adaptive OBD stability and vehicle intelligence.
+    // Release 1.13.0: consolidated 1.10–1.13 vehicle intelligence release train.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.9.0"
+        versionCode = 23
+        versionName = "1.13.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -36,16 +36,13 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-ui-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp 1.9.0 Test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.13.0 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -62,21 +59,16 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.9.0-release.apk"
+                "NowTuneUp-v1.13.0-release.apk"
             } else {
-                "NowTuneUp-v1.9.0-ui-test.apk"
+                "NowTuneUp-v1.13.0-ui-test.apk"
             }
         }
     }
 }
 
-kotlin {
-    jvmToolchain(17)
-}
-
-kapt {
-    correctErrorTypes = true
-}
+kotlin { jvmToolchain(17) }
+kapt { correctErrorTypes = true }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.05.01")

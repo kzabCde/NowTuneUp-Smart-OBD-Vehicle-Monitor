@@ -12,7 +12,7 @@ jobs:
         working-directory: android-app
     steps:
       - uses: actions/checkout@v4
-      - name: Read canonical website release metadata
+      - name: Read application and canonical release metadata
         id: release
         working-directory: .
         shell: bash
@@ -21,14 +21,16 @@ jobs:
           python3 <<'PY' >> "$GITHUB_OUTPUT"
           from pathlib import Path
           import re
-          text = Path("web/lib/local-release.ts").read_text()
-          def value(pattern):
+          local = Path("web/lib/local-release.ts").read_text()
+          gradle = Path("android-app/app/build.gradle.kts").read_text()
+          def value(text, pattern):
               match = re.search(pattern, text)
               if not match:
                   raise SystemExit(f"Missing release metadata: {pattern}")
               return match.group(1)
-          print(f"version={value(r'version: \"([^\"]+)\"')}")
-          print(f"sha256={value(r'sha256: \"([a-f0-9]{64})\"')}")
+          print(f"canonical_version={value(local, r'version: \"([^\"]+)\"')}")
+          print(f"canonical_sha256={value(local, r'sha256: \"([a-f0-9]{64})\"')}")
+          print(f"app_version={value(gradle, r'versionName = \"([^\"]+)\"')}")
           PY
       - name: Verify canonical signed APK bundle
         working-directory: .
@@ -37,13 +39,13 @@ jobs:
           set -euo pipefail
           test -s web/public/downloads/NowTuneUp.apk
           unzip -t web/public/downloads/NowTuneUp.apk >/dev/null
-          echo "${{ steps.release.outputs.sha256 }}  web/public/downloads/NowTuneUp.apk" | sha256sum -c -
-          cp web/public/downloads/NowTuneUp.apk "NowTuneUp-v${{ steps.release.outputs.version }}-release.apk"
+          echo "${{ steps.release.outputs.canonical_sha256 }}  web/public/downloads/NowTuneUp.apk" | sha256sum -c -
+          cp web/public/downloads/NowTuneUp.apk "NowTuneUp-v${{ steps.release.outputs.canonical_version }}-release.apk"
       - name: Upload canonical signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-${{ steps.release.outputs.version }}-main-release
-          path: NowTuneUp-v${{ steps.release.outputs.version }}-release.apk
+          name: NowTuneUp-${{ steps.release.outputs.canonical_version }}-canonical-release
+          path: NowTuneUp-v${{ steps.release.outputs.canonical_version }}-release.apk
           if-no-files-found: error
       - uses: actions/setup-java@v4
         with:
@@ -63,15 +65,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-diagnostics
+          name: gradle-diagnostics-${{ steps.release.outputs.app_version }}
           path: |
             android-app/gradle-build.log
             android-app/debug-deps.txt
             android-app/build/reports/problems/problems-report.html
           if-no-files-found: ignore
-      - name: Upload 1.9.0 UI test APK
+      - name: Upload UI test APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.9.0-ui-test
-          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v1.9.0-ui-test.apk
+          name: NowTuneUp-${{ steps.release.outputs.app_version }}-ui-test
+          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v${{ steps.release.outputs.app_version }}-ui-test.apk
           if-no-files-found: error

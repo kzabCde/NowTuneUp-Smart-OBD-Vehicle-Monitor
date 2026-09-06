@@ -1,6 +1,6 @@
 name: Build bundled website APK
 
-# NowTuneUp 1.9.0 adaptive stability and vehicle intelligence release pipeline.
+# Consolidated NowTuneUp 1.13.0 release train (1.10–1.13).
 on:
   workflow_dispatch:
   push:
@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
+      RELEASE_VERSION: 1.13.0
+      RELEASE_CODE: 23
       NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
       NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
       NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
@@ -34,15 +36,46 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check whether canonical APK is already current
+        id: canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=false
+          if test -s web/public/downloads/NowTuneUp.apk; then
+            CURRENT_SHA="$(sha256sum web/public/downloads/NowTuneUp.apk | awk '{print $1}')"
+            if python3 - "$RELEASE_VERSION" "$RELEASE_CODE" "$CURRENT_SHA" <<'PY'
+          from pathlib import Path
+          import re, sys
+          version, code, sha = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          text = Path("web/lib/local-release.ts").read_text()
+          checks = [
+              re.search(r'version: "([^"]+)",', text),
+              re.search(r'versionCode: (\d+),', text),
+              re.search(r'sha256: "([a-f0-9]{64})",', text),
+          ]
+          ok = all(checks) and checks[0].group(1) == version and int(checks[1].group(1)) == code and checks[2].group(1) == sha
+          raise SystemExit(0 if ok else 1)
+          PY
+            then CURRENT=true; fi
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          if [[ "$CURRENT" == "true" ]]; then
+            echo "Canonical $RELEASE_VERSION build $RELEASE_CODE is already bundled; no rebuild or metadata rewrite required."
+          fi
+
       - uses: actions/setup-java@v4
+        if: steps.canonical.outputs.current != 'true'
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
 
       - uses: android-actions/setup-android@v3
+        if: steps.canonical.outputs.current != 'true'
 
       - name: Validate signing prerequisites
+        if: steps.canonical.outputs.current != 'true'
         shell: bash
         run: |
           test -s "$NTU_KEYSTORE_FILE"
@@ -50,17 +83,19 @@ jobs:
           test -n "$NTU_KEY_ALIAS"
           test -n "$NTU_KEY_PASSWORD"
 
-      - name: Test, lint, and build signed APK 1.9.0 build 19
+      - name: Test, lint, and build signed APK
+        if: steps.canonical.outputs.current != 'true'
         working-directory: android-app
         run: |
           chmod +x gradlew
           ./gradlew clean test lint assembleRelease
 
       - name: Verify and bundle APK with website
+        if: steps.canonical.outputs.current != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v1.9.0-release.apk"
+          SOURCE="android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
           TARGET="web/public/downloads/NowTuneUp.apk"
           test -s "$SOURCE"
           unzip -t "$SOURCE" >/dev/null
@@ -72,37 +107,33 @@ jobs:
           SHA256="$(sha256sum "$TARGET" | awk '{print $1}')"
           SIZE="$(stat -c%s "$TARGET")"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
-          python3 - "$SHA256" "$SIZE" "$PUBLISHED_AT" <<'PY'
+          python3 - "$RELEASE_VERSION" "$RELEASE_CODE" "$SHA256" "$SIZE" "$PUBLISHED_AT" <<'PY'
           from pathlib import Path
-          import re
-          import sys
-
-          sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          import re, sys
+          version, code, sha256, size, published_at = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5]
           path = Path("web/lib/local-release.ts")
           text = path.read_text()
-          text = re.sub(r'version: "[^"]+",', 'version: "1.9.0",', text)
-          text = re.sub(r'tagName: "[^"]+",', 'tagName: "v1.9.0",', text)
-          text = re.sub(r'versionCode: \d+,', 'versionCode: 19,', text)
+          text = re.sub(r'version: "[^"]+",', f'version: "{version}",', text)
+          text = re.sub(r'tagName: "[^"]+",', f'tagName: "v{version}",', text)
+          text = re.sub(r'versionCode: \d+,', f'versionCode: {code},', text)
           text = re.sub(r'apkSize: \d+,', f'apkSize: {size},', text)
           text = re.sub(r'sha256: (?:null|"[a-f0-9]{64}"),', f'sha256: "{sha256}",', text)
           text = re.sub(r'publishedAt: "[^"]+",', f'publishedAt: "{published_at}",', text)
-          text = re.sub(
-              r'releaseNotes: "[^"]*",',
-              'releaseNotes: "NowTuneUp 1.9.0 combines the 1.8.2 stability foundation with Vehicle Intelligence: adaptive ELM327 health-based pacing, demand-based PID polling, KOEO Turbo baseline calibration and quality gating, persisted last-session reports, VIN-based vehicle profiles, Mode 01 readiness, Stored/Pending/Permanent DTC scanning, freeze-frame trigger reading, adapter compatibility self-test, and a simplified diagnostics UX.",',
-              text,
-          )
+          notes = "NowTuneUp 1.13.0 consolidates the 1.10–1.13 release train: adaptive adapter profiles and health history, Live Data session recording with Min/Max/Average summaries, Diagnostics v2 history and optional Mode 06 monitoring, and OBD-only Time Slip v2 with automatic launch validation, interpolated crossings and run quality scoring."
+          text = re.sub(r'releaseNotes: "[^"]*",', f'releaseNotes: "{notes}",', text)
           path.write_text(text)
           PY
-          test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$SHA256"
+          echo "$SHA256  $TARGET" | sha256sum -c -
           {
-            echo "release=1.9.0"
-            echo "version_code=19"
+            echo "release=$RELEASE_VERSION"
+            echo "version_code=$RELEASE_CODE"
             echo "apk_size=$SIZE"
             echo "sha256=$SHA256"
             echo "apksigner_verified=true"
-          } > release-1.9.0-status.txt
+          } > "release-${RELEASE_VERSION}-status.txt"
 
       - name: Commit signed APK and release metadata
+        if: steps.canonical.outputs.current != 'true'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -112,14 +143,15 @@ jobs:
             echo "Bundled APK is already current."
             exit 0
           fi
-          git commit -m "Bundle NowTuneUp APK 1.9.0 build 19"
+          git commit -m "Bundle NowTuneUp APK ${RELEASE_VERSION} build ${RELEASE_CODE}"
           git push
 
       - name: Upload signed release artifact
+        if: steps.canonical.outputs.current != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.9.0-build-19
+          name: NowTuneUp-${{ env.RELEASE_VERSION }}-build-${{ env.RELEASE_CODE }}
           path: |
             web/public/downloads/NowTuneUp.apk
-            release-1.9.0-status.txt
+            release-${{ env.RELEASE_VERSION }}-status.txt
           if-no-files-found: error

@@ -5,6 +5,7 @@ import com.nowtuneup.app.data.obd.command.ObdCommandQueue
 import com.nowtuneup.app.data.obd.command.ObdRequest
 import com.nowtuneup.app.data.obd.parser.DtcParser
 import com.nowtuneup.app.data.obd.parser.FreezeFrameParser
+import com.nowtuneup.app.data.obd.parser.Mode06Parser
 import com.nowtuneup.app.data.obd.parser.ObdResponseParser
 import com.nowtuneup.app.data.obd.parser.ReadinessParser
 import com.nowtuneup.app.data.obd.parser.VinParser
@@ -12,6 +13,7 @@ import com.nowtuneup.app.data.transport.ObdTransport
 import com.nowtuneup.app.domain.model.AdapterInitializationStatus
 import com.nowtuneup.app.domain.model.Dtc
 import com.nowtuneup.app.domain.model.FreezeFrameSummary
+import com.nowtuneup.app.domain.model.Mode06Summary
 import com.nowtuneup.app.domain.model.ObdError
 import com.nowtuneup.app.domain.model.ReadinessStatus
 import com.nowtuneup.app.domain.model.VehicleReading
@@ -166,6 +168,12 @@ class Elm327Client @Inject constructor(
     suspend fun readFreezeFrameSummary(): Result<FreezeFrameSummary> =
         executeCommand("020200", timeoutMillis = 5_000L, retryLimit = 0).mapCatching { response ->
             FreezeFrameParser.parse(response.raw) ?: error("Freeze frame trigger DTC unavailable")
+        }
+
+    /** Mode 06 is optional; callers should treat failure as unsupported monitor data. */
+    suspend fun readMode06Summary(): Result<Mode06Summary> =
+        executeCommand("0600", timeoutMillis = 5_000L, retryLimit = 0).mapCatching { response ->
+            Mode06Parser.parse(response.raw) ?: error("Mode 06 monitor data unavailable")
         }
 
     suspend fun readVoltage(): Result<Double> =
