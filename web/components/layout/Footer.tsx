@@ -5,15 +5,19 @@ const support = [["Install guide", "/install-guide"], ["Privacy", "/privacy"], [
 
 export function Footer() {
   return (
-    <footer className="mt-24 border-t border-white/8 bg-black/10">
-      <div className="shell grid gap-10 py-12 md:grid-cols-[1.25fr_.75fr_.75fr]">
+    <footer className="site-footer">
+      <div className="shell grid gap-10 py-12 md:grid-cols-[1.3fr_.7fr_.7fr] md:py-14">
         <div>
-          <div className="flex items-center gap-3">
+          <p className="footer-kicker">OBD-II / Android</p>
+          <div className="mt-5 flex items-center gap-3">
             <span className="logo-mark" aria-hidden="true">N</span>
-            <strong className="text-lg tracking-[-0.03em]">NowTuneUp</strong>
+            <div>
+              <strong className="block text-lg tracking-[-0.035em]">NowTuneUp</strong>
+              <span className="muted mt-1 block text-xs">Local-first vehicle intelligence</span>
+            </div>
           </div>
-          <p className="muted mt-4 max-w-md leading-7">
-            Local-first OBD-II telemetry, diagnostics and performance tools for Android. Connect through compatible Bluetooth Classic or USB ELM327 hardware.
+          <p className="muted mt-5 max-w-md leading-7">
+            Live OBD-II telemetry, diagnostics and performance tools for Android through compatible Bluetooth Classic or USB ELM327 hardware.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <span className="chip">Android 8+</span>
@@ -23,23 +27,26 @@ export function Footer() {
         </div>
 
         <nav aria-label="Product links">
-          <p className="text-sm font-bold text-white">Product</p>
-          <div className="mt-4 grid gap-3 text-sm text-slate-400">
-            {product.map(([label, href]) => <Link key={href} href={href} className="hover:text-white">{label}</Link>)}
+          <p className="text-sm font-black text-white">Product</p>
+          <div className="mt-4 grid gap-3 text-sm">
+            {product.map(([label, href]) => <Link key={href} href={href} className="footer-link">{label}</Link>)}
           </div>
         </nav>
 
         <nav aria-label="Support links">
-          <p className="text-sm font-bold text-white">Support</p>
-          <div className="mt-4 grid gap-3 text-sm text-slate-400">
-            {support.map(([label, href]) => <Link key={href} href={href} className="hover:text-white">{label}</Link>)}
-            <Link href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor" target="_blank" rel="noreferrer" className="hover:text-white">GitHub</Link>
+          <p className="text-sm font-black text-white">Support</p>
+          <div className="mt-4 grid gap-3 text-sm">
+            {support.map(([label, href]) => <Link key={href} href={href} className="footer-link">{label}</Link>)}
+            <Link href="https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor" target="_blank" rel="noreferrer" className="footer-link">GitHub</Link>
           </div>
         </nav>
       </div>
-      <div className="shell flex flex-wrap justify-between gap-3 border-t border-white/8 py-5 text-xs text-slate-500">
-        <span>NowTuneUp · Monitor · Diagnose · Measure · Understand</span>
-        <span>Vehicle data availability depends on ECU and adapter support.</span>
+
+      <div className="footer-rail">
+        <div className="shell flex flex-wrap justify-between gap-3 py-5">
+          <span>NOWTUNEUP // MONITOR · DIAGNOSE · MEASURE · UNDERSTAND</span>
+          <span>Data availability depends on ECU and adapter support.</span>
+        </div>
       </div>
     </footer>
   );
