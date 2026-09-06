@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.9.0",
-  tagName: "v1.9.0",
-  versionCode: 19,
+  version: "1.13.0",
+  tagName: "v1.13.0",
+  versionCode: 23,
   apkName: "NowTuneUp.apk",
-  apkSize: 12904734,
+  apkSize: 12937506,
   downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "f773bba79348f4fdefae7b2755f87f72bfbf802f4dd0680dd1f800045ec79e41",
+  sha256: "9e4cd6e28c8011ef9de1142202ffcd895816c4e150f97dd5de5431cd86c5ef63",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-08-08T04:13:40.000Z",
-  releaseNotes: "NowTuneUp 1.9.0 combines the 1.8.2 stability foundation with Vehicle Intelligence: adaptive ELM327 health-based pacing, demand-based PID polling, KOEO Turbo baseline calibration and quality gating, persisted last-session reports, VIN-based vehicle profiles, Mode 01 readiness, Stored/Pending/Permanent DTC scanning, freeze-frame trigger reading, adapter compatibility self-test, and a simplified diagnostics UX.",
+  publishedAt: "2026-09-06T23:57:31.000Z",
+  releaseNotes: "NowTuneUp 1.13.0 consolidates the 1.10–1.13 release train: adaptive adapter profiles and health history, Live Data session recording with Min/Max/Average summaries, Diagnostics v2 history and optional Mode 06 monitoring, and OBD-only Time Slip v2 with automatic launch validation, interpolated crossings and run quality scoring.",
 };
 
 export function getLocalRelease(version?: string) {
