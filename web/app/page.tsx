@@ -12,7 +12,7 @@ const liveValues = [
 const capabilities = [
   ["01", "Monitor", "Live telemetry", "Demand-based polling keeps the active dashboard responsive without spending adapter bandwidth on unused PIDs."],
   ["02", "Diagnose", "Vehicle Intelligence", "VIN, readiness, stored, pending and permanent DTCs, plus freeze-frame context where the ECU supports them."],
-  ["03", "Measure", "Time Slip", "A dedicated speed-priority mode for 0–60, 0–100, 60–100 km/h and quarter-mile timing."],
+  ["03", "Measure", "Time Slip", "A dedicated speed-priority mode for 0–60, 0–100, quarter-mile, half-mile and one-mile OBD-based timing."],
   ["04", "Understand", "Adapter health", "Rolling latency, success rate and recovery behavior help NowTuneUp adapt pacing to the connection you actually have."],
 ];
 
@@ -44,11 +44,11 @@ export default function Home() {
               <span className="chip"><span className="status-dot" aria-hidden="true" /> Production {localRelease.version}</span>
               <span className="chip">Android 8+</span>
               <span className="chip">Bluetooth + USB</span>
-              <span className="chip">Local-first</span>
+              <span className="chip">Zero demo vehicles</span>
             </div>
             <p className="eyebrow mt-8">OBD-II vehicle intelligence</p>
             <h1 className="page-title mt-4">Your car, translated into <span className="text-cyan-300">live signal.</span></h1>
-            <p className="page-lede mt-7">Monitor realtime vehicle data, inspect read-only diagnostics, time performance runs and understand adapter health — directly on Android without requiring a cloud account.</p>
+            <p className="page-lede mt-7">Create your own vehicle profile, monitor realtime data, inspect read-only diagnostics, time performance runs and understand adapter health — directly on Android without requiring a cloud account.</p>
             <div className="page-actions mt-9">
               <Link href="/download" className="button">Download {localRelease.version}</Link>
               <Link href="/supported-devices" className="button secondary">Check compatibility</Link>
@@ -120,6 +120,30 @@ export default function Home() {
       </section>
 
       <section className="section-rule">
+        <div className="shell section-space grid gap-5 lg:grid-cols-2">
+          <article className="panel p-7 md:p-9">
+            <p className="eyebrow">Vehicle Profiles · v1.14.0</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Start with zero vehicles. Add only yours.</h2>
+            <p className="muted mt-5 leading-7">NowTuneUp no longer ships default, demo or automatically generated saved vehicles. Create, edit, duplicate, delete and select the active vehicle explicitly on-device.</p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <div className="technical-card p-5"><p className="data-label">Fresh install</p><p className="data-value mt-3 text-xl">0 profiles</p></div>
+              <div className="technical-card p-5"><p className="data-label">Persistence</p><p className="data-value mt-3 text-xl">Local device</p></div>
+            </div>
+          </article>
+          <article className="panel telemetry-grid p-7 md:p-9">
+            <p className="eyebrow">Premium motion</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">N + tachometer, from launcher to live state.</h2>
+            <p className="muted mt-5 leading-7">The v1.14.0 visual system adds the N + tachometer identity, animated splash, connection-state motion and restrained interaction transitions while keeping telemetry and timing calculations independent from presentation.</p>
+            <div className="mt-7 technical-card px-5">
+              <div className="spec-row"><span className="spec-key">Motion</span><span className="spec-value">150–300 ms UI</span></div>
+              <div className="spec-row"><span className="spec-key">Telemetry</span><span className="spec-value">Unmodified</span></div>
+              <div className="spec-row"><span className="spec-key">Accessibility</span><span className="spec-value">Reduce Motion aware</span></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className="section-rule">
         <div className="shell section-space grid gap-10 lg:grid-cols-[.88fr_1.12fr] lg:items-center">
           <div className="section-heading">
             <p className="eyebrow">Vehicle Intelligence</p>
@@ -149,8 +173,8 @@ export default function Home() {
               <div className="section-heading">
                 <p className="eyebrow">Time Slip · Performance mode</p>
                 <h2 className="section-title">Measure the run with the data already on the bus.</h2>
-                <p className="section-copy">Time Slip prioritizes the vehicle speed PID during a run. Actual timing precision still depends on ECU update rate and adapter latency, so it is presented as OBD-based performance timing rather than GPS-grade instrumentation.</p>
-                <div className="mt-2 flex flex-wrap gap-2"><span className="chip">0–60 km/h</span><span className="chip">0–100 km/h</span><span className="chip">60–100 km/h</span><span className="chip">1/4 mile</span></div>
+                <p className="section-copy">Time Slip prioritizes the vehicle speed PID during a run. The 3 → 2 → 1 → GO countdown and result animations are presentation only; recorded timing continues to use actual OBD telemetry timestamps and interpolated crossings.</p>
+                <div className="mt-2 flex flex-wrap gap-2"><span className="chip">0–60 km/h</span><span className="chip">0–100 km/h</span><span className="chip">1/4 mile</span><span className="chip">1/2 mile</span><span className="chip">1 mile</span></div>
               </div>
               <div className="technical-card p-6 md:p-8">
                 <div className="flex justify-between gap-4"><span className="data-label">0–100 km/h</span><span className="data-label text-cyan-300">READY</span></div>
@@ -185,7 +209,7 @@ export default function Home() {
             <p className="eyebrow">Local-first</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Your vehicle data stays with the device.</h2>
             <div className="mt-7 grid gap-2">
-              {["No account required for core OBD use", "No cloud backend required for live monitoring", "Vehicle profiles stored locally", "Diagnostic session reports remain local unless you share them"].map(item => <div key={item} className="status-panel"><span className="font-semibold">{item}</span><span className="status-good font-black">✓</span></div>)}
+              {["No account required for core OBD use", "No cloud backend required for live monitoring", "Only explicit user-created vehicle profiles", "Diagnostic session reports remain local unless you share them"].map(item => <div key={item} className="status-panel"><span className="font-semibold">{item}</span><span className="status-good font-black">✓</span></div>)}
             </div>
           </article>
           <article className="panel p-7 md:p-9">

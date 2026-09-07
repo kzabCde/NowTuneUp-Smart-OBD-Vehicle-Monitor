@@ -10,6 +10,18 @@ export const metadata: Metadata = {
 
 const history = [
   {
+    version: "1.13.0",
+    label: "Vehicle intelligence consolidation",
+    date: "September 7, 2026",
+    description: "Consolidated adaptive adapter profiles and health history, Live Data recording and summaries, Diagnostics v2 history and optional Mode 06 monitoring, plus OBD-only Time Slip v2 quality scoring.",
+  },
+  {
+    version: "1.9.0",
+    label: "Adaptive stability & vehicle intelligence",
+    date: "August 2026",
+    description: "Expanded adaptive connection behavior and vehicle intelligence foundations that later releases built on for diagnostics, telemetry quality and session context.",
+  },
+  {
     version: "1.8.1",
     label: "Stability & UX hotfix",
     date: "August 4, 2026",
@@ -19,7 +31,7 @@ const history = [
     version: "1.8.0",
     label: "Accurate Time Slip",
     date: "August 4, 2026",
-    description: "Introduced the dedicated Time Slip timing architecture and performance sampling groundwork before the 1.8.1 stability simplification.",
+    description: "Introduced the dedicated Time Slip timing architecture and performance sampling groundwork before the later stability and quality improvements.",
   },
 ];
 
@@ -28,7 +40,8 @@ export default function Releases() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <p className="eyebrow">Release history</p>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span></div>
+          <p className="eyebrow mt-8">Release history</p>
           <h1 className="page-title mt-4">Production first. History second.</h1>
           <p className="page-lede mt-7">The current signed APK stays visually dominant. Earlier milestones remain available so stability changes and product direction are easy to trace without turning this page into a raw changelog.</p>
         </div>

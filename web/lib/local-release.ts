@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.13.0",
-  tagName: "v1.13.0",
-  versionCode: 23,
-  apkName: "NowTuneUp.apk",
-  apkSize: 12937506,
-  downloadUrl: "/downloads/NowTuneUp.apk",
-  sha256: "9e4cd6e28c8011ef9de1142202ffcd895816c4e150f97dd5de5431cd86c5ef63",
+  version: "1.14.0",
+  tagName: "v1.14.0",
+  versionCode: 24,
+  apkName: "NowTuneUp-v1.14.0-release.apk",
+  apkSize: 12988486,
+  downloadUrl: "https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor/releases/download/v1.14.0/NowTuneUp-v1.14.0-release.apk",
+  sha256: "89b640b159dde6a4f61947cf11d0860bd79b71451cb5ab434392e0989fd20156",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-09-06T23:57:31.000Z",
-  releaseNotes: "NowTuneUp 1.13.0 consolidates the 1.10–1.13 release train: adaptive adapter profiles and health history, Live Data session recording with Min/Max/Average summaries, Diagnostics v2 history and optional Mode 06 monitoring, and OBD-only Time Slip v2 with automatic launch validation, interpolated crossings and run quality scoring.",
+  publishedAt: "2026-09-07T19:39:31.000Z",
+  releaseNotes: "NowTuneUp 1.14.0 adds user-created vehicle profiles with zero default/demo vehicles, a premium reduce-motion-aware automotive animation system and N + tachometer visual language, plus expanded Time Slip presets for 0–60, 0–100, 1/4 mile, 1/2 mile and 1 mile. OBD telemetry and timing remain driven by actual measurement data, independent from presentation animation.",
 };
 
 export function getLocalRelease(version?: string) {
