@@ -12,6 +12,11 @@ import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -37,6 +43,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -81,9 +88,13 @@ import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
 import com.nowtuneup.app.ui.connection.ConnectionScreen
 import com.nowtuneup.app.ui.dashboard.DashboardScreen
 import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
+import com.nowtuneup.app.ui.motion.NtuMotion
+import com.nowtuneup.app.ui.motion.NowTuneUpSplash
 import com.nowtuneup.app.ui.screens.DiagnosticsScreen
 import com.nowtuneup.app.ui.screens.LiveDataScreen
 import com.nowtuneup.app.ui.screens.SettingsScreen
+import com.nowtuneup.app.ui.vehicle.VehicleProfilesScreen
+import com.nowtuneup.app.ui.vehicle.rememberVehicleProfileRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 
@@ -114,6 +125,11 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
+    val vehicleRepository = rememberVehicleProfileRepository()
+    val vehicleProfiles by vehicleRepository.profiles.collectAsState()
+    val activeVehicle = vehicleProfiles.firstOrNull { it.isActive }
+    var showVehicleProfiles by remember { mutableStateOf(vehicleProfiles.isEmpty() || activeVehicle == null) }
+    var splashVisible by remember { mutableStateOf(true) }
     val context = LocalContext.current
     val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -128,6 +144,17 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val chromeHidden = selectedDestination == 0 && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
     val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE
     val activity = context as? Activity
+
+    LaunchedEffect(preferences.reduceMotion) {
+        if (splashVisible) {
+            if (!preferences.reduceMotion) delay(NtuMotion.Splash.toLong())
+            splashVisible = false
+        }
+    }
+
+    LaunchedEffect(vehicleProfiles.isEmpty(), activeVehicle?.id) {
+        if (vehicleProfiles.isEmpty() || activeVehicle == null) showVehicleProfiles = true
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -197,74 +224,100 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     }
 
     NtuTheme(preferences.theme) {
-        Scaffold(
-            topBar = {
-                if (!chromeHidden) {
-                    TopAppBar(
-                        title = {
-                            Column {
-                                Text("NTU", fontWeight = FontWeight.Black)
-                                Text(
-                                    when (deviceLayout) {
-                                        ResolvedDeviceLayout.PHONE -> "ตัวช่วยดูข้อมูลรถ"
-                                        ResolvedDeviceLayout.TABLET -> "หน้าปัดสำหรับแท็บเล็ต"
-                                        ResolvedDeviceLayout.HEAD_UNIT -> "หน้าปัดสำหรับจอรถ"
+        when {
+            splashVisible -> NowTuneUpSplash(reduceMotion = preferences.reduceMotion)
+
+            vehicleProfiles.isEmpty() || activeVehicle == null || showVehicleProfiles -> VehicleProfilesScreen(
+                repository = vehicleRepository,
+                onContinue = if (activeVehicle != null) ({ showVehicleProfiles = false }) else null,
+                showBackAction = activeVehicle != null,
+                onBack = if (activeVehicle != null) ({ showVehicleProfiles = false }) else null,
+            )
+
+            else -> Scaffold(
+                topBar = {
+                    if (!chromeHidden) {
+                        TopAppBar(
+                            title = {
+                                Column {
+                                    Text(activeVehicle.displayName, fontWeight = FontWeight.Black)
+                                    Text(
+                                        when (deviceLayout) {
+                                            ResolvedDeviceLayout.PHONE -> "NOWTUNEUP • ตัวช่วยดูข้อมูลรถ"
+                                            ResolvedDeviceLayout.TABLET -> "NOWTUNEUP • หน้าปัดสำหรับแท็บเล็ต"
+                                            ResolvedDeviceLayout.HEAD_UNIT -> "NOWTUNEUP • หน้าปัดสำหรับจอรถ"
+                                        },
+                                        fontSize = 11.sp,
+                                    )
+                                }
+                            },
+                            actions = {
+                                IconButton(onClick = { showVehicleProfiles = true }) {
+                                    Icon(Icons.Default.DirectionsCar, contentDescription = "Vehicle profiles")
+                                }
+                                AssistChip(
+                                    onClick = { selectedDestination = 1 },
+                                    label = { Text(connectionState.shortLabel()) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
+                                            contentDescription = "เปิดหน้าการเชื่อมต่อ OBD-II",
+                                        )
                                     },
-                                    fontSize = 11.sp,
+                                )
+                            },
+                        )
+                    }
+                },
+                bottomBar = {
+                    if (!chromeHidden && !useNavigationRail) {
+                        NavigationBar {
+                            destinations.forEachIndexed { index, destination ->
+                                NavigationBarItem(
+                                    selected = selectedDestination == index,
+                                    onClick = { selectedDestination = index },
+                                    icon = { Icon(destination.icon, contentDescription = destination.title) },
+                                    label = { Text(destination.title, fontSize = 9.sp) },
                                 )
                             }
-                        },
-                        actions = {
-                            AssistChip(
-                                onClick = { selectedDestination = 1 },
-                                label = { Text(connectionState.shortLabel()) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
-                                        contentDescription = "เปิดหน้าการเชื่อมต่อ OBD-II",
-                                    )
-                                },
-                            )
-                        },
-                    )
-                }
-            },
-            bottomBar = {
-                if (!chromeHidden && !useNavigationRail) {
-                    NavigationBar {
-                        destinations.forEachIndexed { index, destination ->
-                            NavigationBarItem(
-                                selected = selectedDestination == index,
-                                onClick = { selectedDestination = index },
-                                icon = { Icon(destination.icon, contentDescription = destination.title) },
-                                label = { Text(destination.title, fontSize = 9.sp) },
-                            )
                         }
                     }
-                }
-            },
-        ) { innerPadding ->
-            Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                if (!chromeHidden && useNavigationRail) {
-                    NavigationRail {
-                        destinations.forEachIndexed { index, destination ->
-                            NavigationRailItem(
-                                selected = selectedDestination == index,
-                                onClick = { selectedDestination = index },
-                                icon = { Icon(destination.icon, contentDescription = destination.title) },
-                                label = { Text(destination.title, fontSize = 10.sp) },
-                            )
+                },
+            ) { innerPadding ->
+                Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    if (!chromeHidden && useNavigationRail) {
+                        NavigationRail {
+                            destinations.forEachIndexed { index, destination ->
+                                NavigationRailItem(
+                                    selected = selectedDestination == index,
+                                    onClick = { selectedDestination = index },
+                                    icon = { Icon(destination.icon, contentDescription = destination.title) },
+                                    label = { Text(destination.title, fontSize = 10.sp) },
+                                )
+                            }
                         }
                     }
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    when (selectedDestination) {
-                        0 -> Dashboard(viewModel)
-                        1 -> ConnectionScreen(viewModel)
-                        2 -> LiveDataScreen(viewModel)
-                        3 -> DiagnosticsScreen(viewModel)
-                        4 -> TimeSlipScreen(viewModel)
-                        else -> SettingsScreen(viewModel)
+                    Box(modifier = Modifier.weight(1f)) {
+                        AnimatedContent(
+                            targetState = selectedDestination,
+                            transitionSpec = {
+                                if (preferences.reduceMotion) {
+                                    fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                                } else {
+                                    fadeIn(tween(NtuMotion.Standard)) togetherWith fadeOut(tween(NtuMotion.Quick))
+                                }
+                            },
+                            label = "NowTuneUp destination",
+                        ) { destination ->
+                            when (destination) {
+                                0 -> Dashboard(viewModel)
+                                1 -> ConnectionScreen(viewModel)
+                                2 -> LiveDataScreen(viewModel)
+                                3 -> DiagnosticsScreen(viewModel)
+                                4 -> TimeSlipScreen(viewModel)
+                                else -> SettingsScreen(viewModel)
+                            }
+                        }
                     }
                 }
             }
