@@ -9,10 +9,10 @@ export const metadata: Metadata = {
 };
 
 const steps = [
-  ["01", "Download", "Get the official APK from this production download page."],
+  ["01", "Download", "Get the official signed APK from the current GitHub production release."],
   ["02", "Allow installation", "Android may ask your browser or file manager for permission to install apps."],
   ["03", "Install", "Open the APK and review Android's installation confirmation."],
-  ["04", "Connect", "Pair Bluetooth Classic or attach a supported USB adapter, then connect to the ECU."],
+  ["04", "Create your vehicle", "Create and select your own vehicle profile before using vehicle-specific features."],
 ];
 
 export default function Download() {
@@ -24,7 +24,7 @@ export default function Download() {
             <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Android 8+</span></div>
             <p className="eyebrow mt-8">Official Android download</p>
             <h1 className="page-title mt-4">NowTuneUp {localRelease.version}</h1>
-            <p className="page-lede mt-7">Install the canonical production APK bundled with this website release. Build facts and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
+            <p className="page-lede mt-7">Install the canonical production APK published with the official NowTuneUp release. Build facts and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
           </div>
           <ReleaseCard release={localRelease} compact />
         </div>
@@ -49,8 +49,8 @@ export default function Download() {
         <div className="shell section-space">
           <div className="section-heading">
             <p className="eyebrow">Install journey</p>
-            <h2 className="section-title">Four steps from APK to ECU.</h2>
-            <p className="section-copy">APK installation is the same whether you later connect through Bluetooth Classic or USB.</p>
+            <h2 className="section-title">Four steps from APK to your vehicle.</h2>
+            <p className="section-copy">Fresh installations intentionally start with zero vehicle profiles and zero fake vehicle data.</p>
           </div>
           <div className="mt-9 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {steps.map(([number, title, description]) => (
@@ -70,7 +70,7 @@ export default function Download() {
           <article className="panel p-7 md:p-9">
             <div className="flex flex-wrap items-center justify-between gap-3"><p className="eyebrow">Integrity verification</p><span className="chip">SHA-256</span></div>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Verify the APK after download.</h2>
-            <p className="muted mt-5 leading-7">The value below is the production checksum published with the canonical APK metadata.</p>
+            <p className="muted mt-5 leading-7">The value below is the checksum published for the signed production APK.</p>
             <div className="code-value mt-7">{localRelease.sha256}</div>
             <div className="mt-5 technical-card px-5">
               <div className="spec-row"><span className="spec-key">File</span><span className="spec-value">{localRelease.apkName}</span></div>
@@ -81,8 +81,8 @@ export default function Download() {
 
           <article className="panel telemetry-grid p-7 md:p-9">
             <p className="eyebrow">Before connecting</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Match the adapter path first.</h2>
-            <p className="muted mt-5 leading-7">Bluetooth Classic and supported USB serial adapters are both valid paths. Clone quality and vehicle PID availability still vary.</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Create a vehicle, then match the adapter path.</h2>
+            <p className="muted mt-5 leading-7">NowTuneUp never creates a default vehicle silently. After creating your own profile, Bluetooth Classic and supported USB serial adapters are both valid connection paths.</p>
             <div className="mt-7 grid gap-3">
               <div className="status-panel"><div><p className="data-label">Wireless</p><p className="mt-1 font-bold">Bluetooth Classic SPP</p></div><span className="status-good font-black">READY</span></div>
               <div className="status-panel"><div><p className="data-label">Wired</p><p className="mt-1 font-bold">Supported USB serial</p></div><span className="status-good font-black">READY</span></div>
