@@ -18,6 +18,13 @@ data class FreezeFrameSummary(
     val readAtMillis: Long = 0L,
 )
 
+data class Mode06Summary(
+    val supported: Boolean = false,
+    val monitorFrameCount: Int = 0,
+    val raw: String = "",
+    val readAtMillis: Long = 0L,
+)
+
 data class DiagnosticOverview(
     val stored: List<Dtc> = emptyList(),
     val pending: List<Dtc> = emptyList(),

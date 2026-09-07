@@ -12,30 +12,10 @@ enum class TimeSlipStatus {
     INVALID_RUN,
 }
 
-enum class PerformanceMode {
-    STANDING_START,
-    ROLLING_START,
-}
-
-enum class MeasurementQuality {
-    HIGH,
-    MEDIUM,
-    LOW,
-    INVALID,
-}
-
-enum class MeasurementSource {
-    OBD_ONLY,
-    OBD_GPS_IMU,
-    REPLAY,
-}
-
-enum class ConfidenceLevel {
-    HIGH,
-    MEDIUM,
-    LOW,
-    INVALID,
-}
+enum class PerformanceMode { STANDING_START, ROLLING_START }
+enum class MeasurementQuality { HIGH, MEDIUM, LOW, INVALID }
+enum class MeasurementSource { OBD_ONLY, OBD_GPS_IMU, REPLAY }
+enum class ConfidenceLevel { HIGH, MEDIUM, LOW, INVALID }
 
 enum class DistanceTarget(val meters: Double, val label: String) {
     SIXTY_FEET(18.288, "60 ft"),
@@ -57,7 +37,7 @@ data class TimeSlipConfig(
     val launchThresholdKmh: Double = 2.0,
     val stationaryHoldMillis: Long = 1_000L,
     val oneFootRollout: Boolean = false,
-    val useSensorFusion: Boolean = true,
+    val useSensorFusion: Boolean = false,
     val vehicleProfileId: String = "default",
 )
 
@@ -106,7 +86,12 @@ data class TimeSlipRecord(
     val droppedSampleCount: Int = 0,
     val obdSampleRateHz: Double = 0.0,
     val measurementQuality: MeasurementQuality = MeasurementQuality.INVALID,
+    val qualityScore: Int = 0,
     val estimatedTimingErrorMillis: Long = 0L,
+    val averageTransportLatencyMillis: Long = 0L,
+    val invalidSampleRatio: Double = 0.0,
+    val validityNotes: List<String> = emptyList(),
+    val launchDetectedAutomatically: Boolean = true,
     val dataSource: String = "OBD-II PID 010D",
     val distanceEstimated: Boolean = true,
     val reactionTimeMillis: Long = 0L,

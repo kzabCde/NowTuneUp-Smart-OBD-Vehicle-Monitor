@@ -47,28 +47,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nowtuneup.app.data.vehicle.ConnectionProfileRepository
 import com.nowtuneup.app.domain.model.ConnectionPhase
 import com.nowtuneup.app.domain.model.ObdTransportType
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ConnectionProfileEntryPoint {
+    fun connectionProfileRepository(): ConnectionProfileRepository
+}
 
 @Composable
 fun ConnectionScreen(viewModel: MainViewModel) {
     val state by viewModel.connectionUiState.collectAsState()
+    val health by viewModel.adapterHealth.collectAsState()
+    val identity by viewModel.vehicleIdentity.collectAsState()
+    val readings by viewModel.readings.collectAsState()
     val context = LocalContext.current
+    val profileRepository = remember(context) {
+        EntryPointAccessors.fromApplication(context.applicationContext, ConnectionProfileEntryPoint::class.java)
+            .connectionProfileRepository()
+    }
+    val connectionProfile by profileRepository.current.collectAsState()
     var showTechnicalDetails by remember { mutableStateOf(false) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         viewModel.onBluetoothPermissionResult(result.values.all { it })
     }
-    val enableBluetoothLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { viewModel.onBluetoothEnableResult() }
+    val enableBluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.onBluetoothEnableResult()
+    }
 
     LaunchedEffect(state.transportType, state.permissionGranted, state.bluetoothEnabled) {
-        if (state.transportType == ObdTransportType.BLUETOOTH_CLASSIC && state.permissionGranted) {
-            viewModel.refreshBluetoothState()
+        if (state.transportType == ObdTransportType.BLUETOOTH_CLASSIC && state.permissionGranted) viewModel.refreshBluetoothState()
+    }
+    LaunchedEffect(state.phase, health.updatedAtMillis, identity.vin, state.initialization.adapterIdentity) {
+        if (state.phase == ConnectionPhase.CONNECTED && health.totalCommands > 0L) {
+            profileRepository.observe(
+                adapterIdentity = state.initialization.adapterIdentity,
+                vin = identity.vin,
+                supportedPidCount = readings.count { it.supported },
+                health = health,
+            )
         }
     }
 
@@ -79,9 +104,8 @@ fun ConnectionScreen(viewModel: MainViewModel) {
     ) {
         item {
             Text("การเชื่อมต่อ OBD-II", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("เลือก USB หรือ Bluetooth Classic SPP สำหรับ ELM327 ที่จับคู่กับ Android แล้ว")
+            Text("Adaptive Connection v2 จะจดจำสุขภาพของ adapter และแนะนำ FAST / BALANCED / STABLE ให้อัตโนมัติ")
         }
-
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -100,10 +124,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                             leadingIcon = { Icon(Icons.Default.Bluetooth, null) },
                         )
                     }
-                    Text(
-                        "BLE เตรียม interface ไว้แล้วแต่ยังปิดใช้งาน จนกว่าจะทราบ Service UUID และ Characteristic UUID ของอะแดปเตอร์จริง",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Text("BLE เตรียม interface ไว้แล้วแต่ยังปิดใช้งาน จนกว่าจะทราบ Service UUID และ Characteristic UUID ของอะแดปเตอร์จริง", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -112,12 +133,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
 
         if (state.transportType == ObdTransportType.BLUETOOTH_CLASSIC) {
             when {
-                !state.bluetoothSupported -> item {
-                    ActionCard(
-                        title = "อุปกรณ์ไม่รองรับ Bluetooth",
-                        detail = "ยังสามารถใช้สาย USB OTG ได้",
-                    )
-                }
+                !state.bluetoothSupported -> item { ActionCard("อุปกรณ์ไม่รองรับ Bluetooth", "ยังสามารถใช้สาย USB OTG ได้") }
                 !state.permissionGranted -> item {
                     ActionCard(
                         title = "ต้องอนุญาต Nearby devices",
@@ -125,22 +141,11 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                         actionLabel = "อนุญาตสิทธิ์",
                         onAction = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                permissionLauncher.launch(
-                                    arrayOf(
-                                        Manifest.permission.BLUETOOTH_SCAN,
-                                        Manifest.permission.BLUETOOTH_CONNECT,
-                                    ),
-                                )
-                            } else {
-                                viewModel.onBluetoothPermissionResult(true)
-                            }
+                                permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
+                            } else viewModel.onBluetoothPermissionResult(true)
                         },
                         secondaryLabel = "เปิดการตั้งค่าแอป",
-                        onSecondary = {
-                            context.startActivity(
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
-                            )
-                        },
+                        onSecondary = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },
                     )
                 }
                 !state.bluetoothEnabled -> item {
@@ -148,26 +153,17 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                         title = "Bluetooth ปิดอยู่",
                         detail = "เปิด Bluetooth ก่อนเลือก ELM327",
                         actionLabel = "เปิด Bluetooth",
-                        onAction = {
-                            enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                        },
+                        onAction = { enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) },
                     )
                 }
                 else -> {
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {
                                 Text("อุปกรณ์ที่จับคู่ไว้", style = MaterialTheme.typography.titleMedium)
                                 Text("ELM327 V1.5 มักแสดงชื่อ OBDII, OBD2 หรือ ELM327", style = MaterialTheme.typography.bodySmall)
                             }
-                            TextButton(onClick = viewModel::refreshBluetoothState) {
-                                Icon(Icons.Default.Refresh, null)
-                                Text("รีเฟรช")
-                            }
+                            TextButton(onClick = viewModel::refreshBluetoothState) { Icon(Icons.Default.Refresh, null); Text("รีเฟรช") }
                         }
                     }
                     if (state.pairedDevices.isEmpty()) {
@@ -185,20 +181,9 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 ListItem(
                                     headlineContent = { Text(device.name, fontWeight = FontWeight.SemiBold) },
-                                    supportingContent = {
-                                        Column {
-                                            Text(device.address)
-                                            Text("Bluetooth Classic · RFCOMM SPP", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    },
+                                    supportingContent = { Column { Text(device.address); Text("Bluetooth Classic · RFCOMM SPP", style = MaterialTheme.typography.bodySmall) } },
                                     leadingContent = { Icon(Icons.Default.Bluetooth, null) },
-                                    trailingContent = {
-                                        if (selected) {
-                                            AssistChip(onClick = {}, label = { Text("เลือกแล้ว") })
-                                        } else {
-                                            OutlinedButton(onClick = { viewModel.selectBluetoothDevice(device) }) { Text("เลือก") }
-                                        }
-                                    },
+                                    trailingContent = { if (selected) AssistChip(onClick = {}, label = { Text("เลือกแล้ว") }) else OutlinedButton(onClick = { viewModel.selectBluetoothDevice(device) }) { Text("เลือก") } },
                                 )
                             }
                         }
@@ -218,10 +203,20 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                     init.currentCommand?.let { Text("กำลังส่งคำสั่ง $it") }
                     init.adapterIdentity?.let { Text("Adapter: $it", style = MaterialTheme.typography.bodySmall) }
                     if (init.totalSteps > 0 && init.completedSteps < init.totalSteps) {
-                        LinearProgressIndicator(
-                            progress = { init.completedSteps.toFloat() / init.totalSteps.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        LinearProgressIndicator(progress = { init.completedSteps.toFloat() / init.totalSteps.toFloat() }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+
+        connectionProfile?.let { profile ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Adapter Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Stability ${profile.stabilityScore}/100 • ${profile.latestGrade} • แนะนำ ${profile.recommendedMode}")
+                        Text("Latency ${profile.averageLatencyMillis} ms • ${"%.1f".format(profile.successRate * 100)}% success • ${profile.supportedPidCount} PIDs")
+                        Text("Health history ${profile.healthHistory.size} จุด • ระบบจะเรียนรู้ profile เฉพาะ adapter/รถคันนี้", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -229,29 +224,13 @@ fun ConnectionScreen(viewModel: MainViewModel) {
 
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val connectedOrBusy = state.phase in setOf(
-                    ConnectionPhase.CONNECTED,
-                    ConnectionPhase.CONNECTING,
-                    ConnectionPhase.INITIALIZING_ADAPTER,
-                )
+                val connectedOrBusy = state.phase in setOf(ConnectionPhase.CONNECTED, ConnectionPhase.CONNECTING, ConnectionPhase.INITIALIZING_ADAPTER)
                 Button(
-                    onClick = {
-                        if (connectedOrBusy) viewModel.disconnectManually()
-                        else viewModel.connectSelected()
-                    },
+                    onClick = { if (connectedOrBusy) viewModel.disconnectManually() else viewModel.connectSelected() },
                     modifier = Modifier.weight(1f),
-                    enabled = state.phase !in setOf(
-                        ConnectionPhase.PERMISSION_REQUIRED,
-                        ConnectionPhase.BLUETOOTH_DISABLED,
-                        ConnectionPhase.BLUETOOTH_UNAVAILABLE,
-                        ConnectionPhase.DEVICE_SELECTION,
-                    ),
-                ) {
-                    Text(if (connectedOrBusy) "ตัดการเชื่อมต่อ" else "เชื่อมต่อ")
-                }
-                if (state.phase == ConnectionPhase.RECONNECTING) {
-                    OutlinedButton(onClick = viewModel::cancelReconnect) { Text("ยกเลิก") }
-                }
+                    enabled = state.phase !in setOf(ConnectionPhase.PERMISSION_REQUIRED, ConnectionPhase.BLUETOOTH_DISABLED, ConnectionPhase.BLUETOOTH_UNAVAILABLE, ConnectionPhase.DEVICE_SELECTION),
+                ) { Text(if (connectedOrBusy) "ตัดการเชื่อมต่อ" else "เชื่อมต่อ") }
+                if (state.phase == ConnectionPhase.RECONNECTING) OutlinedButton(onClick = viewModel::cancelReconnect) { Text("ยกเลิก") }
             }
         }
 
@@ -259,14 +238,9 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
-                            Text("  $message", color = MaterialTheme.colorScheme.error)
-                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error); Text("  $message", color = MaterialTheme.colorScheme.error) }
                         if (!state.technicalError.isNullOrBlank()) {
-                            TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) {
-                                Text(if (showTechnicalDetails) "ซ่อนรายละเอียดทางเทคนิค" else "ดูรายละเอียดทางเทคนิค")
-                            }
+                            TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) { Text(if (showTechnicalDetails) "ซ่อนรายละเอียดทางเทคนิค" else "ดูรายละเอียดทางเทคนิค") }
                             if (showTechnicalDetails) Text(state.technicalError.orEmpty(), style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -302,13 +276,7 @@ private fun ConnectionStatusCard(phase: ConnectionPhase, completed: Int, total: 
         ListItem(
             headlineContent = { Text(title, fontWeight = FontWeight.Bold) },
             supportingContent = { Text(detail) },
-            leadingContent = {
-                Icon(
-                    if (phase == ConnectionPhase.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
-                    contentDescription = null,
-                    tint = if (phase == ConnectionPhase.CONNECTED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                )
-            },
+            leadingContent = { Icon(if (phase == ConnectionPhase.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth, null, tint = if (phase == ConnectionPhase.CONNECTED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary) },
         )
     }
 }
@@ -328,12 +296,7 @@ private fun ActionCard(
             Text(detail)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (actionLabel != null && onAction != null) Button(onClick = onAction) { Text(actionLabel) }
-                if (secondaryLabel != null && onSecondary != null) {
-                    OutlinedButton(onClick = onSecondary) {
-                        Icon(Icons.Default.Settings, null)
-                        Text(secondaryLabel)
-                    }
-                }
+                if (secondaryLabel != null && onSecondary != null) OutlinedButton(onClick = onSecondary) { Icon(Icons.Default.Settings, null); Text(secondaryLabel) }
             }
         }
     }
