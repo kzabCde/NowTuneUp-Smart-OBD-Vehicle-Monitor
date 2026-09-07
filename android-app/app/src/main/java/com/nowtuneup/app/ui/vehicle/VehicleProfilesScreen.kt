@@ -1,9 +1,6 @@
 package com.nowtuneup.app.ui.vehicle
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -52,7 +50,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.nowtuneup.app.data.vehicle.VehicleProfileRepository
@@ -90,18 +87,17 @@ fun VehicleProfilesScreen(
 ) {
     val profiles by repository.profiles.collectAsState()
     val active = profiles.firstOrNull { it.isActive }
-    var editingProfile by remember { mutableStateOf<VehicleProfileRecord?>(null) }
+    var editor by remember { mutableStateOf<VehicleProfileRecord?>(null) }
     var deleteCandidate by remember { mutableStateOf<VehicleProfileRecord?>(null) }
 
-    editingProfile?.let { profile ->
+    editor?.let { profile ->
         VehicleProfileEditorDialog(
             initial = profile,
             isNew = profile.id.isBlank(),
-            onDismiss = { editingProfile = null },
+            onDismiss = { editor = null },
             onSave = { saved ->
-                if (profile.id.isBlank()) repository.create(saved)
-                else repository.update(saved)
-                editingProfile = null
+                if (profile.id.isBlank()) repository.create(saved) else repository.update(saved)
+                editor = null
             },
         )
     }
@@ -113,19 +109,14 @@ fun VehicleProfilesScreen(
             text = {
                 Text(
                     if (profiles.size == 1) {
-                        "${profile.displayName} is your last vehicle. Deleting it will return NowTuneUp to the first-use vehicle setup screen."
+                        "${profile.displayName} is your last vehicle. Deleting it returns NowTuneUp to vehicle setup."
                     } else {
-                        "${profile.displayName} will be removed from this device. This does not clear ECU data from the vehicle."
+                        "${profile.displayName} will be removed from this device."
                     },
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        repository.delete(profile.id)
-                        deleteCandidate = null
-                    },
-                ) { Text("Delete") }
+                Button(onClick = { repository.delete(profile.id); deleteCandidate = null }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") } },
         )
@@ -138,110 +129,84 @@ fun VehicleProfilesScreen(
                     Column {
                         Text("Vehicles", fontWeight = FontWeight.Black)
                         Text(
-                            if (profiles.isEmpty()) "Create your first vehicle profile" else "${profiles.size} user-created profile${if (profiles.size == 1) "" else "s"}",
+                            if (profiles.isEmpty()) "Create your first vehicle profile" else "${profiles.size} user-created vehicle${if (profiles.size == 1) "" else "s"}",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 },
                 navigationIcon = {
-                    if (showBackAction && onBack != null) {
-                        TextButton(onClick = onBack) { Text("Back") }
-                    }
+                    if (showBackAction && onBack != null) TextButton(onClick = onBack) { Text("Back") }
                 },
                 actions = {
-                    IconButton(onClick = { editingProfile = VehicleProfileRecord(userCreated = true) }) {
+                    IconButton(onClick = { editor = VehicleProfileRecord(userCreated = true) }) {
                         Icon(Icons.Default.Add, contentDescription = "Create vehicle profile")
                     }
                 },
             )
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AnimatedVisibility(
-                visible = profiles.isEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
+        if (profiles.isEmpty()) {
+            VehicleProfileEmptyState(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                onCreate = { editor = VehicleProfileRecord(userCreated = true) },
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                VehicleProfileEmptyState(
-                    onCreate = { editingProfile = VehicleProfileRecord(userCreated = true) },
-                )
-            }
-
-            AnimatedVisibility(
-                visible = profiles.isNotEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                ) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                Text("Active vehicle", style = MaterialTheme.typography.labelLarge)
-                                Text(active?.displayName ?: "Choose a vehicle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-                                Text(
-                                    "Only profiles you create here are stored. VIN detection and OBD scans never create a vehicle automatically.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Active vehicle", style = MaterialTheme.typography.labelLarge)
+                            Text(active?.displayName ?: "Choose a vehicle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                            Text(
+                                "Only vehicles you create are stored. VIN detection and OBD scans never create a vehicle automatically.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
-
-                    items(profiles, key = { it.id }) { profile ->
-                        VehicleProfileCard(
-                            profile = profile,
-                            onActivate = { repository.setActive(profile.id) },
-                            onEdit = { editingProfile = profile },
-                            onDuplicate = { repository.duplicate(profile.id) },
-                            onDelete = { deleteCandidate = profile },
-                        )
-                    }
-
-                    item {
-                        OutlinedButton(
-                            onClick = { editingProfile = VehicleProfileRecord(userCreated = true) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Text("  Create another vehicle")
-                        }
-                    }
-
-                    if (onContinue != null) {
-                        item {
-                            Button(
-                                onClick = onContinue,
-                                enabled = active != null,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                Text("  Continue to NowTuneUp")
-                            }
-                        }
-                    }
-                    item { Spacer(Modifier.height(18.dp)) }
                 }
+                items(profiles, key = { it.id }) { profile ->
+                    VehicleProfileCard(
+                        profile = profile,
+                        onActivate = { repository.setActive(profile.id) },
+                        onEdit = { editor = profile },
+                        onDuplicate = { repository.duplicate(profile.id) },
+                        onDelete = { deleteCandidate = profile },
+                    )
+                }
+                item {
+                    OutlinedButton(
+                        onClick = { editor = VehicleProfileRecord(userCreated = true) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("  Create another vehicle")
+                    }
+                }
+                if (onContinue != null) {
+                    item {
+                        Button(onClick = onContinue, enabled = active != null, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Text("  Continue to NowTuneUp")
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(18.dp)) }
             }
         }
     }
 }
 
 @Composable
-private fun VehicleProfileEmptyState(onCreate: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+private fun VehicleProfileEmptyState(modifier: Modifier = Modifier, onCreate: () -> Unit) {
+    Box(modifier = modifier.padding(24.dp), contentAlignment = Alignment.Center) {
         Card(
             modifier = Modifier.fillMaxWidth().animateContentSize(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -255,7 +220,7 @@ private fun VehicleProfileEmptyState(onCreate: () -> Unit) {
                 Icon(Icons.Default.DirectionsCar, contentDescription = null)
                 Text("No vehicles yet", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
                 Text(
-                    "Create your first vehicle profile to start using NowTuneUp. No demo vehicle, detected VIN, or sample data will be created for you.",
+                    "Create your first vehicle profile to start using NowTuneUp. No demo vehicle, detected VIN, or sample vehicle will be created for you.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
@@ -282,10 +247,7 @@ private fun VehicleProfileCard(
             else MaterialTheme.colorScheme.surfaceContainer,
         ),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -311,17 +273,11 @@ private fun VehicleProfileCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            profile.vin.takeIf { it.isNotBlank() }?.let {
-                Text("VIN $it", style = MaterialTheme.typography.labelSmall)
-            }
-            profile.notes.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
+            profile.vin.takeIf { it.isNotBlank() }?.let { Text("VIN $it", style = MaterialTheme.typography.labelSmall) }
+            profile.notes.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!profile.isActive) {
-                    FilledTonalButton(onClick = onActivate, modifier = Modifier.weight(1f)) {
-                        Text("Use")
-                    }
+                    FilledTonalButton(onClick = onActivate, modifier = Modifier.weight(1f)) { Text("Use") }
                 }
                 IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit ${profile.displayName}") }
                 IconButton(onClick = onDuplicate) { Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate ${profile.displayName}") }
@@ -349,7 +305,7 @@ private fun VehicleProfileEditorDialog(
     var notes by remember(initial.id) { mutableStateOf(initial.notes) }
 
     val requiredValid = listOf(displayName, brand, model, year, engine, fuelType, transmission).all { it.isNotBlank() }
-    val yearValid = year.length == 4 && year.all(Char::isDigit)
+    val yearValid = year.length == 4 && year.all { it.isDigit() }
     val vinNormalized = vin.trim().uppercase()
     val vinValid = vinNormalized.isBlank() || vinNormalized.length == 17
     val canSave = requiredValid && yearValid && vinValid
@@ -362,16 +318,13 @@ private fun VehicleProfileEditorDialog(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "Required fields are marked by the form. VIN is optional and is never used to auto-create another vehicle.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text("VIN is optional and never creates another profile automatically.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(displayName, { displayName = it }, label = { Text("Vehicle name / nickname") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(brand, { brand = it }, label = { Text("Brand") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = year,
-                    onValueChange = { value -> year = value.filter(Char::isDigit).take(4) },
+                    onValueChange = { value -> year = value.filter { it.isDigit() }.take(4) },
                     label = { Text("Year") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = year.isNotBlank() && !yearValid,
