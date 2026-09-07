@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.13.0: consolidated 1.10–1.13 vehicle intelligence release train.
+    // Release 1.14.0: user-created vehicle profiles and premium automotive motion.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.13.0"
+        versionCode = 24
+        versionName = "1.14.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
@@ -36,7 +36,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-ui-test"
-            manifestPlaceholders["appLabel"] = "NowTuneUp 1.13.0 Test"
+            manifestPlaceholders["appLabel"] = "NowTuneUp 1.14.0 Test"
             buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
         }
         release {
@@ -59,9 +59,9 @@ android {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
             output.outputFileName = if (buildType.name == "release") {
-                "NowTuneUp-v1.13.0-release.apk"
+                "NowTuneUp-v1.14.0-release.apk"
             } else {
-                "NowTuneUp-v1.13.0-ui-test.apk"
+                "NowTuneUp-v1.14.0-ui-test.apk"
             }
         }
     }
