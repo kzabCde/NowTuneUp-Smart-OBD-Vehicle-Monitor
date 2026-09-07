@@ -38,7 +38,7 @@ data class TimeSlipConfig(
     val stationaryHoldMillis: Long = 1_000L,
     val oneFootRollout: Boolean = false,
     val useSensorFusion: Boolean = false,
-    val vehicleProfileId: String = "default",
+    val vehicleProfileId: String = "",
 )
 
 data class TimeSlipTelemetrySample(
