@@ -91,8 +91,8 @@ class VehicleProfileRepository @Inject constructor(
             updatedAtMillis = now,
             lastSeenAtMillis = now,
         )
-        persist((list() + duplicate).takeLast(MAX_PROFILES))
-        return duplicate
+        persist(normalizeActive((list() + duplicate).takeLast(MAX_PROFILES)))
+        return findById(duplicate.id)
     }
 
     fun delete(profileId: String) {
@@ -129,7 +129,7 @@ class VehicleProfileRepository @Inject constructor(
             .filter { it.userCreated && it.id.isNotBlank() }
             .map(::sanitize)
             .take(MAX_PROFILES)
-            .let(::normalizeActive)
+            .let { normalizeActive(it) }
     }.getOrDefault(emptyList())
 
     private fun persist(records: List<VehicleProfileRecord>) {
