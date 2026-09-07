@@ -8,6 +8,12 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +32,7 @@ import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +59,7 @@ import com.nowtuneup.app.data.vehicle.ConnectionProfileRepository
 import com.nowtuneup.app.domain.model.ConnectionPhase
 import com.nowtuneup.app.domain.model.ObdTransportType
 import com.nowtuneup.app.presentation.dashboard.MainViewModel
+import com.nowtuneup.app.ui.motion.NtuMotion
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -68,6 +77,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
     val health by viewModel.adapterHealth.collectAsState()
     val identity by viewModel.vehicleIdentity.collectAsState()
     val readings by viewModel.readings.collectAsState()
+    val preferences by viewModel.dashboardPreferences.collectAsState()
     val context = LocalContext.current
     val profileRepository = remember(context) {
         EntryPointAccessors.fromApplication(context.applicationContext, ConnectionProfileEntryPoint::class.java)
@@ -129,7 +139,14 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             }
         }
 
-        item { ConnectionStatusCard(state.phase, state.initialization.completedSteps, state.initialization.totalSteps) }
+        item {
+            ConnectionStatusCard(
+                phase = state.phase,
+                completed = state.initialization.completedSteps,
+                total = state.initialization.totalSteps,
+                reduceMotion = preferences.reduceMotion,
+            )
+        }
 
         if (state.transportType == ObdTransportType.BLUETOOTH_CLASSIC) {
             when {
@@ -163,7 +180,10 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                                 Text("อุปกรณ์ที่จับคู่ไว้", style = MaterialTheme.typography.titleMedium)
                                 Text("ELM327 V1.5 มักแสดงชื่อ OBDII, OBD2 หรือ ELM327", style = MaterialTheme.typography.bodySmall)
                             }
-                            TextButton(onClick = viewModel::refreshBluetoothState) { Icon(Icons.Default.Refresh, null); Text("รีเฟรช") }
+                            TextButton(onClick = viewModel::refreshBluetoothState) {
+                                Icon(Icons.Default.Refresh, null)
+                                Text("รีเฟรช")
+                            }
                         }
                     }
                     if (state.pairedDevices.isEmpty()) {
@@ -181,9 +201,17 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 ListItem(
                                     headlineContent = { Text(device.name, fontWeight = FontWeight.SemiBold) },
-                                    supportingContent = { Column { Text(device.address); Text("Bluetooth Classic · RFCOMM SPP", style = MaterialTheme.typography.bodySmall) } },
+                                    supportingContent = {
+                                        Column {
+                                            Text(device.address)
+                                            Text("Bluetooth Classic · RFCOMM SPP", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    },
                                     leadingContent = { Icon(Icons.Default.Bluetooth, null) },
-                                    trailingContent = { if (selected) AssistChip(onClick = {}, label = { Text("เลือกแล้ว") }) else OutlinedButton(onClick = { viewModel.selectBluetoothDevice(device) }) { Text("เลือก") } },
+                                    trailingContent = {
+                                        if (selected) AssistChip(onClick = {}, label = { Text("เลือกแล้ว") })
+                                        else OutlinedButton(onClick = { viewModel.selectBluetoothDevice(device) }) { Text("เลือก") }
+                                    },
                                 )
                             }
                         }
@@ -203,7 +231,10 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                     init.currentCommand?.let { Text("กำลังส่งคำสั่ง $it") }
                     init.adapterIdentity?.let { Text("Adapter: $it", style = MaterialTheme.typography.bodySmall) }
                     if (init.totalSteps > 0 && init.completedSteps < init.totalSteps) {
-                        LinearProgressIndicator(progress = { init.completedSteps.toFloat() / init.totalSteps.toFloat() }, modifier = Modifier.fillMaxWidth())
+                        LinearProgressIndicator(
+                            progress = { init.completedSteps.toFloat() / init.totalSteps.toFloat() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
             }
@@ -228,7 +259,12 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                 Button(
                     onClick = { if (connectedOrBusy) viewModel.disconnectManually() else viewModel.connectSelected() },
                     modifier = Modifier.weight(1f),
-                    enabled = state.phase !in setOf(ConnectionPhase.PERMISSION_REQUIRED, ConnectionPhase.BLUETOOTH_DISABLED, ConnectionPhase.BLUETOOTH_UNAVAILABLE, ConnectionPhase.DEVICE_SELECTION),
+                    enabled = state.phase !in setOf(
+                        ConnectionPhase.PERMISSION_REQUIRED,
+                        ConnectionPhase.BLUETOOTH_DISABLED,
+                        ConnectionPhase.BLUETOOTH_UNAVAILABLE,
+                        ConnectionPhase.DEVICE_SELECTION,
+                    ),
                 ) { Text(if (connectedOrBusy) "ตัดการเชื่อมต่อ" else "เชื่อมต่อ") }
                 if (state.phase == ConnectionPhase.RECONNECTING) OutlinedButton(onClick = viewModel::cancelReconnect) { Text("ยกเลิก") }
             }
@@ -238,9 +274,14 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error); Text("  $message", color = MaterialTheme.colorScheme.error) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
+                            Text("  $message", color = MaterialTheme.colorScheme.error)
+                        }
                         if (!state.technicalError.isNullOrBlank()) {
-                            TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) { Text(if (showTechnicalDetails) "ซ่อนรายละเอียดทางเทคนิค" else "ดูรายละเอียดทางเทคนิค") }
+                            TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails }) {
+                                Text(if (showTechnicalDetails) "ซ่อนรายละเอียดทางเทคนิค" else "ดูรายละเอียดทางเทคนิค")
+                            }
                             if (showTechnicalDetails) Text(state.technicalError.orEmpty(), style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -257,7 +298,30 @@ fun ConnectionScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun ConnectionStatusCard(phase: ConnectionPhase, completed: Int, total: Int) {
+private fun ConnectionStatusCard(
+    phase: ConnectionPhase,
+    completed: Int,
+    total: Int,
+    reduceMotion: Boolean,
+) {
+    val pulse = remember { Animatable(1f) }
+    val busy = phase in setOf(
+        ConnectionPhase.SCANNING,
+        ConnectionPhase.CONNECTING,
+        ConnectionPhase.INITIALIZING_ADAPTER,
+        ConnectionPhase.RECONNECTING,
+    )
+    LaunchedEffect(busy, reduceMotion) {
+        if (!busy || reduceMotion) {
+            pulse.snapTo(1f)
+        } else {
+            while (true) {
+                pulse.animateTo(0.68f, tween(520))
+                pulse.animateTo(1f, tween(520))
+            }
+        }
+    }
+
     val (title, detail) = when (phase) {
         ConnectionPhase.BLUETOOTH_UNAVAILABLE -> "Bluetooth unavailable" to "อุปกรณ์นี้ไม่มี Bluetooth"
         ConnectionPhase.BLUETOOTH_DISABLED -> "Bluetooth disabled" to "กรุณาเปิด Bluetooth"
@@ -272,11 +336,62 @@ private fun ConnectionStatusCard(phase: ConnectionPhase, completed: Int, total: 
         ConnectionPhase.CONNECTION_FAILED -> "Connection failed" to "ตรวจอะแดปเตอร์ ระยะสัญญาณ และสวิตช์กุญแจ"
         ConnectionPhase.UNSUPPORTED_ADAPTER -> "Unsupported" to "ยังไม่รองรับ transport หรืออะแดปเตอร์นี้"
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val errorPhase = phase in setOf(ConnectionPhase.CONNECTION_FAILED, ConnectionPhase.UNSUPPORTED_ADAPTER, ConnectionPhase.BLUETOOTH_UNAVAILABLE)
+    val containerColor = when {
+        phase == ConnectionPhase.CONNECTED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+        errorPhase -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.52f)
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+    val icon = when {
+        phase == ConnectionPhase.CONNECTED -> Icons.Default.CheckCircle
+        errorPhase -> Icons.Default.Error
+        else -> Icons.Default.Bluetooth
+    }
+    val iconTint = when {
+        phase == ConnectionPhase.CONNECTED -> MaterialTheme.colorScheme.primary
+        errorPhase -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.secondary
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+    ) {
         ListItem(
-            headlineContent = { Text(title, fontWeight = FontWeight.Bold) },
-            supportingContent = { Text(detail) },
-            leadingContent = { Icon(if (phase == ConnectionPhase.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth, null, tint = if (phase == ConnectionPhase.CONNECTED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary) },
+            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = containerColor),
+            headlineContent = {
+                AnimatedContent(
+                    targetState = title,
+                    transitionSpec = {
+                        if (reduceMotion) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                        else fadeIn(tween(NtuMotion.Standard)) togetherWith fadeOut(tween(NtuMotion.Quick))
+                    },
+                    label = "connection title",
+                ) { value -> Text(value, fontWeight = FontWeight.Bold) }
+            },
+            supportingContent = {
+                AnimatedContent(
+                    targetState = detail,
+                    transitionSpec = {
+                        if (reduceMotion) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                        else fadeIn(tween(NtuMotion.Standard)) togetherWith fadeOut(tween(NtuMotion.Quick))
+                    },
+                    label = "connection detail",
+                ) { value -> Text(value) }
+            },
+            leadingContent = {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = pulse.value
+                        val scale = 0.92f + pulse.value * 0.08f
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                )
+            },
         )
     }
 }
@@ -296,7 +411,10 @@ private fun ActionCard(
             Text(detail)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (actionLabel != null && onAction != null) Button(onClick = onAction) { Text(actionLabel) }
-                if (secondaryLabel != null && onSecondary != null) OutlinedButton(onClick = onSecondary) { Icon(Icons.Default.Settings, null); Text(secondaryLabel) }
+                if (secondaryLabel != null && onSecondary != null) OutlinedButton(onClick = onSecondary) {
+                    Icon(Icons.Default.Settings, null)
+                    Text(secondaryLabel)
+                }
             }
         }
     }

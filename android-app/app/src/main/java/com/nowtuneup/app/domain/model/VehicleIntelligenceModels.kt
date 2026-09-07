@@ -38,12 +38,32 @@ data class DiagnosticOverview(
         get() = stored + pending + permanent
 }
 
+/**
+ * A vehicle that the user explicitly created.
+ *
+ * VIN/OBD discovery is deliberately separate from this model's lifecycle. OBD code may build a
+ * record for capability metadata, but VehicleProfileRepository refuses to persist records unless
+ * [userCreated] is true. This prevents detected VINs, demos, and hardcoded data from silently
+ * becoming saved vehicles.
+ */
 data class VehicleProfileRecord(
-    val vin: String,
-    val displayName: String = vin,
+    val id: String = "",
+    val vin: String = "",
+    val displayName: String = "",
+    val brand: String = "",
+    val model: String = "",
+    val year: String = "",
+    val engine: String = "",
+    val fuelType: String = "",
+    val transmission: String = "",
+    val notes: String = "",
+    val isActive: Boolean = false,
+    val userCreated: Boolean = false,
     val adapterIdentity: String? = null,
     val supportedPids: Set<Int> = emptySet(),
     val recommendedPollingMode: String = "BALANCED",
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L,
     val lastSeenAtMillis: Long = 0L,
 )
 

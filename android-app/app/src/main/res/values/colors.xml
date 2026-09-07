@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ntu_icon_background">#080B0E</color>
+    <color name="ntu_icon_foreground">#F5F7F8</color>
+    <color name="ntu_icon_accent">#52FF8A</color>
+</resources>
