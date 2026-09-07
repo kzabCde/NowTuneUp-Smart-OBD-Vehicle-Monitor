@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M24,69 A36,36 0,1 1,84,69"
+        android:strokeColor="@color/ntu_icon_foreground"
+        android:strokeLineCap="round"
+        android:strokeWidth="4.4" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M24,69 A36,36 0,0 1,32,34"
+        android:strokeColor="@color/ntu_icon_accent"
+        android:strokeLineCap="round"
+        android:strokeWidth="4.4" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M35,72 L35,38 L73,72 L73,38"
+        android:strokeColor="@color/ntu_icon_foreground"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="7" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,55 L77,35"
+        android:strokeColor="@color/ntu_icon_accent"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.6" />
+    <path
+        android:fillColor="@color/ntu_icon_background"
+        android:pathData="M49.5,55 A4.5,4.5 0,1 1,58.5,55 A4.5,4.5 0,1 1,49.5,55" />
+    <path
+        android:fillColor="@color/ntu_icon_accent"
+        android:pathData="M51.5,55 A2.5,2.5 0,1 1,56.5,55 A2.5,2.5 0,1 1,51.5,55" />
+</vector>
