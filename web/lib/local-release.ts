@@ -1,16 +1,16 @@
 import type { ReleaseInfo } from "@/lib/validation/releases";
 
 export const localRelease: ReleaseInfo = {
-  version: "1.14.0",
-  tagName: "v1.14.0",
-  versionCode: 24,
-  apkName: "NowTuneUp-v1.14.0-release.apk",
-  apkSize: 12988486,
-  downloadUrl: "https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor/releases/download/v1.14.0/NowTuneUp-v1.14.0-release.apk",
-  sha256: "89b640b159dde6a4f61947cf11d0860bd79b71451cb5ab434392e0989fd20156",
+  version: "1.15.0",
+  tagName: "v1.15.0",
+  versionCode: 25,
+  apkName: "NowTuneUp-v1.15.0-release.apk",
+  apkSize: 13006986,
+  downloadUrl: "https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor/releases/download/v1.15.0/NowTuneUp-v1.15.0-release.apk",
+  sha256: "f0e0fb8c80536ce1307883fbd7defe8fb20f5476d0094a89b7513d31ee75a85c",
   minimumAndroid: "Android 8.0",
-  publishedAt: "2026-09-07T19:39:31.000Z",
-  releaseNotes: "NowTuneUp 1.14.0 adds user-created vehicle profiles with zero default/demo vehicles, a premium reduce-motion-aware automotive animation system and N + tachometer visual language, plus expanded Time Slip presets for 0–60, 0–100, 1/4 mile, 1/2 mile and 1 mile. OBD telemetry and timing remain driven by actual measurement data, independent from presentation animation.",
+  publishedAt: "2026-09-13T04:07:20.000Z",
+  releaseNotes: "NowTuneUp 1.15.0 introduces the unified Graphite and Daylight interface, adaptive launcher and notification icons, accessible reduced-motion animation, clearer Thai-friendly screens, and an empty first-run experience where users create their own vehicle profiles and dashboards.",
 };
 
 export function getLocalRelease(version?: string) {
