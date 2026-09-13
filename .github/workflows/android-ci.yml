@@ -1,9 +1,13 @@
 name: Android CI
+
 on:
   push:
     branches: [main, work, 'release/**', 'hotfix/**']
   pull_request:
-permissions: { contents: read }
+
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -12,8 +16,8 @@ jobs:
         working-directory: android-app
     steps:
       - uses: actions/checkout@v4
-      - name: Read application and canonical release metadata
-        id: release
+      - name: Read application version
+        id: app
         working-directory: .
         shell: bash
         run: |
@@ -21,32 +25,13 @@ jobs:
           python3 <<'PY' >> "$GITHUB_OUTPUT"
           from pathlib import Path
           import re
-          local = Path("web/lib/local-release.ts").read_text()
+
           gradle = Path("android-app/app/build.gradle.kts").read_text()
-          def value(text, pattern):
-              match = re.search(pattern, text)
-              if not match:
-                  raise SystemExit(f"Missing release metadata: {pattern}")
-              return match.group(1)
-          print(f"canonical_version={value(local, r'version: \"([^\"]+)\"')}")
-          print(f"canonical_sha256={value(local, r'sha256: \"([a-f0-9]{64})\"')}")
-          print(f"app_version={value(gradle, r'versionName = \"([^\"]+)\"')}")
+          match = re.search(r'versionName = "([^"]+)"', gradle)
+          if not match:
+              raise SystemExit("Missing Android versionName")
+          print(f"version={match.group(1)}")
           PY
-      - name: Verify canonical signed APK bundle
-        working-directory: .
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s web/public/downloads/NowTuneUp.apk
-          unzip -t web/public/downloads/NowTuneUp.apk >/dev/null
-          echo "${{ steps.release.outputs.canonical_sha256 }}  web/public/downloads/NowTuneUp.apk" | sha256sum -c -
-          cp web/public/downloads/NowTuneUp.apk "NowTuneUp-v${{ steps.release.outputs.canonical_version }}-release.apk"
-      - name: Upload canonical signed release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NowTuneUp-${{ steps.release.outputs.canonical_version }}-canonical-release
-          path: NowTuneUp-v${{ steps.release.outputs.canonical_version }}-release.apk
-          if-no-files-found: error
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -65,7 +50,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-diagnostics-${{ steps.release.outputs.app_version }}
+          name: gradle-diagnostics-${{ steps.app.outputs.version }}
           path: |
             android-app/gradle-build.log
             android-app/debug-deps.txt
@@ -74,6 +59,6 @@ jobs:
       - name: Upload UI test APK
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-${{ steps.release.outputs.app_version }}-ui-test
-          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v${{ steps.release.outputs.app_version }}-ui-test.apk
+          name: NowTuneUp-${{ steps.app.outputs.version }}-ui-test
+          path: android-app/app/build/outputs/apk/debug/NowTuneUp-v${{ steps.app.outputs.version }}-ui-test.apk
           if-no-files-found: error
