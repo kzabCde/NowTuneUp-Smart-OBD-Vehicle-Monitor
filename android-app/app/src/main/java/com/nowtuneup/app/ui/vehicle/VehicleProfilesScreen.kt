@@ -1,6 +1,6 @@
 package com.nowtuneup.app.ui.vehicle
 
-import androidx.compose.animation.animateContentSize
+import com.nowtuneup.app.ui.motion.ntuAnimateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -40,6 +40,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.nowtuneup.app.ui.components.NtuEmptyState
+import com.nowtuneup.app.ui.components.NtuScreenHeader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -105,20 +107,20 @@ fun VehicleProfilesScreen(
     deleteCandidate?.let { profile ->
         AlertDialog(
             onDismissRequest = { deleteCandidate = null },
-            title = { Text("Delete vehicle profile?") },
+            title = { Text("ลบโปรไฟล์รถนี้หรือไม่?") },
             text = {
                 Text(
                     if (profiles.size == 1) {
-                        "${profile.displayName} is your last vehicle. Deleting it returns NowTuneUp to vehicle setup."
+                        "${profile.displayName} เป็นรถคันสุดท้าย เมื่อลบแล้วแอปจะกลับไปหน้าเพิ่มรถ"
                     } else {
-                        "${profile.displayName} will be removed from this device."
+                        "จะลบ ${profile.displayName} ออกจากอุปกรณ์นี้"
                     },
                 )
             },
             confirmButton = {
-                Button(onClick = { repository.delete(profile.id); deleteCandidate = null }) { Text("Delete") }
+                Button(onClick = { repository.delete(profile.id); deleteCandidate = null }) { Text("ลบ") }
             },
-            dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("ยกเลิก") } },
         )
     }
 
@@ -127,19 +129,19 @@ fun VehicleProfilesScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Vehicles", fontWeight = FontWeight.Black)
+                        Text("รถของฉัน", fontWeight = FontWeight.Black)
                         Text(
-                            if (profiles.isEmpty()) "Create your first vehicle profile" else "${profiles.size} user-created vehicle${if (profiles.size == 1) "" else "s"}",
+                            if (profiles.isEmpty()) "เพิ่มรถคันแรกเพื่อเริ่มต้น" else "รถที่คุณสร้าง ${profiles.size} คัน",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 },
                 navigationIcon = {
-                    if (showBackAction && onBack != null) TextButton(onClick = onBack) { Text("Back") }
+                    if (showBackAction && onBack != null) TextButton(onClick = onBack) { Text("กลับ") }
                 },
                 actions = {
                     IconButton(onClick = { editor = VehicleProfileRecord(userCreated = true) }) {
-                        Icon(Icons.Default.Add, contentDescription = "Create vehicle profile")
+                        Icon(Icons.Default.Add, contentDescription = "เพิ่มโปรไฟล์รถ")
                     }
                 },
             )
@@ -162,10 +164,10 @@ fun VehicleProfilesScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     ) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Active vehicle", style = MaterialTheme.typography.labelLarge)
-                            Text(active?.displayName ?: "Choose a vehicle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                            Text("รถที่ใช้งานอยู่", style = MaterialTheme.typography.labelLarge)
+                            Text(active?.displayName ?: "เลือกรถที่ต้องการใช้งาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
                             Text(
-                                "Only vehicles you create are stored. VIN detection and OBD scans never create a vehicle automatically.",
+                                "เลือกรถเพื่อแยกข้อมูลการเชื่อมต่อและผล Time Slip ของแต่ละคัน",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -187,14 +189,14 @@ fun VehicleProfilesScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
-                        Text("  Create another vehicle")
+                        Text("  เพิ่มรถอีกคัน")
                     }
                 }
                 if (onContinue != null) {
                     item {
                         Button(onClick = onContinue, enabled = active != null, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Text("  Continue to NowTuneUp")
+                            Text("  เปิดหน้าปัดของฉัน")
                         }
                     }
                 }
@@ -206,29 +208,12 @@ fun VehicleProfilesScreen(
 
 @Composable
 private fun VehicleProfileEmptyState(modifier: Modifier = Modifier, onCreate: () -> Unit) {
-    Box(modifier = modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-        Card(
-            modifier = Modifier.fillMaxWidth().animateContentSize(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                NowTuneUpLogoMark(modifier = Modifier.height(112.dp).fillMaxWidth(0.48f))
-                Icon(Icons.Default.DirectionsCar, contentDescription = null)
-                Text("No vehicles yet", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-                Text(
-                    "Create your first vehicle profile to start using NowTuneUp. No demo vehicle, detected VIN, or sample vehicle will be created for you.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Text("  Create Vehicle Profile")
-                }
-            }
-        }
+    Box(modifier = modifier.verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
+        NtuEmptyState(
+            title = "ทุกการเดินทาง เริ่มจากรถของคุณ",
+            detail = "เพิ่มรถคันแรก ตั้งชื่อที่จำง่าย แล้วสร้างหน้าปัดสำหรับข้อมูลที่คุณอยากติดตาม",
+            icon = Icons.Default.DirectionsCar, action = "เพิ่มรถคันแรก", onAction = onCreate,
+        )
     }
 }
 
@@ -241,7 +226,7 @@ private fun VehicleProfileCard(
     onDelete: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        modifier = Modifier.fillMaxWidth().ntuAnimateContentSize(),
         colors = CardDefaults.cardColors(
             containerColor = if (profile.isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
             else MaterialTheme.colorScheme.surfaceContainer,
@@ -263,7 +248,7 @@ private fun VehicleProfileCard(
                 if (profile.isActive) {
                     AssistChip(
                         onClick = {},
-                        label = { Text("Active") },
+                        label = { Text("ใช้งานอยู่") },
                         leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null) },
                     )
                 }
@@ -277,11 +262,11 @@ private fun VehicleProfileCard(
             profile.notes.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!profile.isActive) {
-                    FilledTonalButton(onClick = onActivate, modifier = Modifier.weight(1f)) { Text("Use") }
+                    FilledTonalButton(onClick = onActivate, modifier = Modifier.weight(1f)) { Text("ใช้รถคันนี้") }
                 }
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit ${profile.displayName}") }
-                IconButton(onClick = onDuplicate) { Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate ${profile.displayName}") }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete ${profile.displayName}") }
+                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "แก้ไข ${profile.displayName}") }
+                IconButton(onClick = onDuplicate) { Icon(Icons.Default.ContentCopy, contentDescription = "ทำสำเนา ${profile.displayName}") }
+                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "ลบ ${profile.displayName}") }
             }
         }
     }
@@ -312,42 +297,42 @@ private fun VehicleProfileEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "Create Vehicle Profile" else "Edit Vehicle Profile", fontWeight = FontWeight.Black) },
+        title = { Text(if (isNew) "เพิ่มโปรไฟล์รถ" else "แก้ไขโปรไฟล์รถ", fontWeight = FontWeight.Black) },
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("VIN is optional and never creates another profile automatically.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(displayName, { displayName = it }, label = { Text("Vehicle name / nickname") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(brand, { brand = it }, label = { Text("Brand") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("กรอกข้อมูลรถของคุณ โดยเว้นหมายเลข VIN ไว้ก่อนได้", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(displayName, { displayName = it }, label = { Text("ชื่อรถ / ชื่อเล่น") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(brand, { brand = it }, label = { Text("ยี่ห้อ") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(model, { model = it }, label = { Text("รุ่น") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = year,
                     onValueChange = { value -> year = value.filter { it.isDigit() }.take(4) },
-                    label = { Text("Year") },
+                    label = { Text("ปี") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = year.isNotBlank() && !yearValid,
-                    supportingText = { if (year.isNotBlank() && !yearValid) Text("Enter a 4-digit year") },
+                    supportingText = { if (year.isNotBlank() && !yearValid) Text("กรอกปี ค.ศ. 4 หลัก") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(engine, { engine = it }, label = { Text("Engine") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(fuelType, { fuelType = it }, label = { Text("Fuel type") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(transmission, { transmission = it }, label = { Text("Transmission") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(engine, { engine = it }, label = { Text("เครื่องยนต์") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(fuelType, { fuelType = it }, label = { Text("ประเภทเชื้อเพลิง") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(transmission, { transmission = it }, label = { Text("ระบบเกียร์") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = vin,
                     onValueChange = { vin = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(17) },
-                    label = { Text("VIN (optional)") },
+                    label = { Text("VIN (ไม่จำเป็น)") },
                     isError = vin.isNotBlank() && !vinValid,
-                    supportingText = { if (vin.isNotBlank() && !vinValid) Text("VIN must contain 17 characters") },
+                    supportingText = { if (vin.isNotBlank() && !vinValid) Text("VIN ต้องมี 17 ตัวอักษร") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it.take(500) },
-                    label = { Text("Notes (optional)") },
+                    label = { Text("บันทึกเพิ่มเติม (ไม่จำเป็น)") },
                     minLines = 2,
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
@@ -373,8 +358,8 @@ private fun VehicleProfileEditorDialog(
                         ),
                     )
                 },
-            ) { Text(if (isNew) "Create" else "Save") }
+            ) { Text(if (isNew) "เพิ่มรถ" else "บันทึก") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } },
     )
 }

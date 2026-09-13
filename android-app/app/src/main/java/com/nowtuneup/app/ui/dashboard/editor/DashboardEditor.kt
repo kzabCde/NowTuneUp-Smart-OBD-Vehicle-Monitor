@@ -1,5 +1,7 @@
 package com.nowtuneup.app.ui.dashboard.editor
 
+import androidx.activity.compose.BackHandler
+import com.nowtuneup.app.ui.components.NtuScreenHeader
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -18,7 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -104,6 +106,7 @@ fun DashboardEditor(
     onSave: (DashboardConfig) -> Unit,
     onCancel: () -> Unit,
 ) {
+    BackHandler(onBack = onCancel)
     val context = LocalContext.current
     var draft by remember(config) { mutableStateOf(config.copy(isDefault = false)) }
     var orientation by remember { mutableStateOf(EditorOrientation.PORTRAIT) }
@@ -208,6 +211,7 @@ fun DashboardEditor(
             modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            item { NtuScreenHeader("ออกแบบหน้าปัด", "จัดวางข้อมูลและเลือกสไตล์เกจให้เป็นของคุณ ทั้งแนวตั้งและแนวนอน", eyebrow = "DASHBOARD STUDIO") }
             item {
                 SectionTitle("ชื่อโปรไฟล์", "ตั้งชื่อให้จำง่าย เช่น ขับทุกวัน หรือ ดูเทอร์โบ")
                 OutlinedTextField(

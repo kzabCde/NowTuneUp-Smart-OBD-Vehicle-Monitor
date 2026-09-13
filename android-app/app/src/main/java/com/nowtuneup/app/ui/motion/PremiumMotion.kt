@@ -1,5 +1,7 @@
 package com.nowtuneup.app.ui.motion
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -35,8 +37,14 @@ object NtuMotion {
     const val Quick = 150
     const val Standard = 220
     const val Emphasis = 300
-    const val Splash = 1_050
+    const val Splash = 750
 }
+
+val LocalNtuReduceMotion = staticCompositionLocalOf { false }
+
+@Composable
+fun Modifier.ntuAnimateContentSize(): Modifier =
+    animateContentSize(tween(if (LocalNtuReduceMotion.current) 0 else NtuMotion.Standard))
 
 val NtuGraphite = Color(0xFF080B0E)
 val NtuWhite = Color(0xFFF5F7F8)
@@ -55,7 +63,7 @@ fun NowTuneUpSplash(
             progress.snapTo(0f)
             progress.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
             )
         }
     }
@@ -99,59 +107,27 @@ fun NowTuneUpSplash(
 fun NowTuneUpLogoMark(
     modifier: Modifier = Modifier,
     sweepProgress: Float = 1f,
+    foreground: Color = NtuWhite,
+    accent: Color = NtuElectricGreen,
+    background: Color = NtuGraphite,
 ) {
+    // Match the launcher vector in a 108-unit viewport, inside the adaptive icon safe zone.
     Canvas(modifier) {
-        val stroke = size.minDimension * 0.065f
-        val center = center
-        val radius = size.minDimension * 0.40f
-        val topLeft = Offset(center.x - radius, center.y - radius)
-        val arcSize = Size(radius * 2f, radius * 2f)
+        val unit = size.minDimension / 108f
+        val origin = Offset((size.width - 108f * unit) / 2f, (size.height - 108f * unit) / 2f)
+        fun point(x: Float, y: Float) = origin + Offset(x * unit, y * unit)
         val progress = sweepProgress.coerceIn(0f, 1f)
-
-        drawArc(
-            color = NtuWhite.copy(alpha = 0.18f),
-            startAngle = 145f,
-            sweepAngle = 250f,
-            useCenter = false,
-            topLeft = topLeft,
-            size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        drawArc(
-            color = NtuElectricGreen,
-            startAngle = 145f,
-            sweepAngle = 250f * progress,
-            useCenter = false,
-            topLeft = topLeft,
-            size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-
-        val nLeftX = center.x - radius * 0.48f
-        val nRightX = center.x + radius * 0.48f
-        val nTopY = center.y - radius * 0.42f
-        val nBottomY = center.y + radius * 0.42f
-        val nStroke = stroke * 1.22f
-        drawLine(NtuWhite, Offset(nLeftX, nBottomY), Offset(nLeftX, nTopY), nStroke, StrokeCap.Square)
-        drawLine(NtuWhite, Offset(nLeftX, nTopY), Offset(nRightX, nBottomY), nStroke, StrokeCap.Square)
-        drawLine(NtuWhite, Offset(nRightX, nBottomY), Offset(nRightX, nTopY), nStroke, StrokeCap.Square)
-
-        val needleDegrees = 145f + 250f * progress
-        val needleRadians = Math.toRadians(needleDegrees.toDouble())
-        val needleLength = radius * 0.73f
-        val needleEnd = Offset(
-            center.x + cos(needleRadians).toFloat() * needleLength,
-            center.y + sin(needleRadians).toFloat() * needleLength,
-        )
-        drawLine(
-            color = NtuElectricGreen,
-            start = center,
-            end = needleEnd,
-            strokeWidth = stroke * 0.50f,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(NtuGraphite, radius = stroke * 0.75f, center = center)
-        drawCircle(NtuElectricGreen, radius = stroke * 0.42f, center = center)
+        drawArc(foreground.copy(alpha = 0.20f), 135f, 270f, false,
+            point(24f, 24f), Size(60f * unit, 60f * unit), style = Stroke(4f * unit, cap = StrokeCap.Round))
+        drawArc(accent, 135f, 270f * progress, false,
+            point(24f, 24f), Size(60f * unit, 60f * unit), style = Stroke(4f * unit, cap = StrokeCap.Round))
+        // A legible N monogram with an ascending telemetry slash, without an overlapping needle.
+        drawLine(foreground, point(40f, 67f), point(40f, 41f), 6f * unit, StrokeCap.Square)
+        drawLine(foreground, point(40f, 41f), point(66f, 67f), 6f * unit, StrokeCap.Square)
+        drawLine(foreground, point(66f, 67f), point(66f, 41f), 6f * unit, StrokeCap.Square)
+        drawLine(background, point(51f, 57f), point(70f, 38f), 7f * unit, StrokeCap.Square)
+        drawLine(accent, point(51f, 57f), point(70f, 38f), 3.5f * unit, StrokeCap.Square)
+        drawLine(accent, point(48f, 80f), point(60f, 80f), 3f * unit, StrokeCap.Round)
     }
 }
 

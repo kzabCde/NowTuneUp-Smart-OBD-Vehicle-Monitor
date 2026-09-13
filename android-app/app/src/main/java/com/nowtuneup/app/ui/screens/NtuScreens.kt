@@ -1,6 +1,22 @@
 package com.nowtuneup.app.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.ListItemDefaults
+import com.nowtuneup.app.BuildConfig
+import com.nowtuneup.app.ui.components.NtuScreenHeader
+import com.nowtuneup.app.presentation.theme.GraphiteTheme
+import com.nowtuneup.app.presentation.theme.DaylightTheme
+import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,7 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
@@ -93,18 +109,22 @@ fun LiveDataScreen(viewModel: MainViewModel) {
         .sortedWith(compareByDescending<com.nowtuneup.app.domain.model.VehicleReading> { it.value != null }.thenBy { it.name })
         .toList()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScreenIntro(
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            NtuScreenHeader(
+            modifier = Modifier,
             title = "ข้อมูลสด",
             detail = if (connectionState == ConnectionState.CONNECTED && connectionUi.initialization.ecuConnected) {
                 "OBD ${health.thaiLabel} • ${health.averageLatencyMillis} ms • Live Data v2"
             } else "เชื่อมต่อ ELM327 และเปิดสวิตช์กุญแจก่อน",
         )
+        }
         if (connectionState == ConnectionState.CONNECTED && connectionUi.initialization.ecuConnected) {
-            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+            item {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
+                        Column(Modifier.weight(1f)) {
                             Text(if (recording.active) "กำลังบันทึก Session" else "Session recorder", fontWeight = FontWeight.Bold)
                             Text(
                                 if (recording.active) "${recording.readingFrames} frames • ${recording.trackedMetricCount} metrics"
@@ -126,29 +146,35 @@ fun LiveDataScreen(viewModel: MainViewModel) {
                 }
             }
         }
+        }
+        item {
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             label = { Text("ค้นหาค่าที่ต้องการ") },
             singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
         )
+        }
         when {
-            connectionState != ConnectionState.CONNECTED || !connectionUi.initialization.ecuConnected -> MessageCard(
+            connectionState != ConnectionState.CONNECTED || !connectionUi.initialization.ecuConnected -> item { MessageCard(
                 title = "ยังไม่ได้เชื่อมต่อ ECU",
                 message = "ไปที่หน้าเชื่อมต่อ เลือก ELM327 ที่จับคู่ไว้ แล้วกดเชื่อมต่อ",
                 actionLabel = "เชื่อมต่อ",
                 onAction = viewModel::connectSelected,
-            )
-            visibleReadings.isEmpty() -> MessageCard(
+            ) }
+            visibleReadings.isEmpty() -> item { MessageCard(
                 title = if (query.isBlank()) "กำลังรอข้อมูล" else "ไม่พบข้อมูลที่ค้นหา",
                 message = if (query.isBlank()) "ระบบกำลังตรวจว่ารถรองรับค่าใดบ้าง" else "ลองใช้คำค้นหาอื่น",
-            )
-            else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+            ) }
+            else -> {
                 items(visibleReadings, key = { it.pid }) { reading ->
                     val ageMillis = (System.currentTimeMillis() - reading.updatedAt).coerceAtLeast(0L)
                     val turboWaiting = reading.pid == DerivedPids.TURBO_PRESSURE && turboQuality != TurboDataQuality.GOOD
+                    Card(Modifier.fillMaxWidth()) {
                     ListItem(
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         headlineContent = { Text(reading.name, fontWeight = FontWeight.SemiBold) },
                         overlineContent = { Text(if (reading.pid == DerivedPids.TURBO_PRESSURE) "Turbo จาก MAP − BARO • ${turboQuality.name}" else "PID 01%02X".format(reading.pid)) },
                         supportingContent = { Text(when {
@@ -158,9 +184,15 @@ fun LiveDataScreen(viewModel: MainViewModel) {
                             ageMillis <= 4_000L -> "ข้อมูลล่าช้าเล็กน้อย"
                             else -> "ข้อมูลเก่า ระบบกำลังลดภาระ ELM327"
                         }) },
-                        trailingContent = { Text(reading.value?.let { "%.1f %s".format(it, reading.unit) } ?: "--", fontWeight = FontWeight.Bold) },
+                        trailingContent = {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(reading.value?.let { "%.1f".format(it) } ?: "—", fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace, color = if (reading.value != null && ageMillis <= 1_500L && !turboWaiting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(reading.unit, style = MaterialTheme.typography.labelSmall)
+                            }
+                        },
                     )
-                    HorizontalDivider()
+                    }
                 }
             }
         }
@@ -204,7 +236,7 @@ fun DiagnosticsScreen(viewModel: MainViewModel) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { ScreenIntro("ตรวจสุขภาพรถ", "Diagnostics v2: DTC, Readiness, Freeze-frame, VIN, Mode 06 และประวัติการตรวจ") }
+        item { ScreenIntro("ตรวจสุขภาพรถ", "รหัสปัญหา ความพร้อมของระบบ และประวัติการตรวจในที่เดียว") }
         if (connectionState != ConnectionState.CONNECTED || !connectionUi.initialization.ecuConnected) {
             item { MessageCard("เชื่อมต่อก่อนตรวจ", "เปิดสวิตช์กุญแจและเชื่อมต่อ ELM327 ก่อน") }
         } else {
@@ -315,6 +347,18 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { ScreenIntro("การตั้งค่า", "ค่าขั้นสูงถูกปรับอัตโนมัติตามสุขภาพของ ELM327") }
+        item { SettingsSection("หน้าตาแอป", "เลือกโทนที่อ่านสบาย สีเกจที่คุณบันทึกไว้ปรับแยกได้ในหน้าจัดหน้าปัด") }
+        item {
+            ChoiceChips {
+                listOf(GraphiteTheme, DaylightTheme, DashboardDefaults.themes[2]).forEach { theme ->
+                    FilterChip(
+                        selected = preferences.theme == theme,
+                        onClick = { viewModel.selectTheme(theme) },
+                        label = { Text(when (theme.name) { "Graphite" -> "Graphite · เขียว"; "Light" -> "Daylight · สว่าง"; else -> theme.name }) },
+                    )
+                }
+            }
+        }
         item { SettingsSection("การเชื่อมต่อ", "${connectionState.shortLabel()} · ${connectionUi.transportType.displayName()}") }
         item { ChoiceChips { listOf(ObdTransportType.BLUETOOTH_CLASSIC, ObdTransportType.USB).forEach { type -> FilterChip(selected = preferences.preferredTransport == type, onClick = { viewModel.selectTransport(type) }, label = { Text(type.displayName()) }) } } }
         item { ToggleSetting("เชื่อมต่ออะแดปเตอร์ล่าสุดอัตโนมัติ", "เหมาะสำหรับ ELM327 ที่ใช้กับรถคันเดิมเป็นประจำ", preferences.autoConnectLastAdapter, viewModel::setAutoConnectLastAdapter) }
@@ -329,14 +373,14 @@ fun SettingsScreen(viewModel: MainViewModel) {
         if (dashboards.isEmpty()) item { Text("ยังไม่มีโปรไฟล์ สร้างได้จากหน้า “หน้าปัด”") } else item { ChoiceChips { dashboards.forEach { dashboard -> FilterChip(selected = preferences.selectedDashboardId == dashboard.id, onClick = { viewModel.selectDashboard(dashboard.id) }, label = { Text(dashboard.name) }) } } }
         item { ToggleSetting("แสดงค่าต่ำสุด–สูงสุด", "ใช้ Min/Max ของ session ปัจจุบัน โดยไม่มี Peak ซ้ำซ้อน", preferences.showMinMax, viewModel::setShowMinMax) }
         item { Button(onClick = viewModel::resetReadingStats, modifier = Modifier.fillMaxWidth()) { Text("เริ่มนับค่าต่ำสุด–สูงสุดใหม่") } }
-        item { ToggleSetting("ลดการเคลื่อนไหว", "ลดแอนิเมชันของเข็มและใช้ทรัพยากรน้อยลง", preferences.reduceMotion, viewModel::setReduceMotion) }
+        item { ToggleSetting("ลดการเคลื่อนไหว", "ปิดการเลื่อนหน้า การขยายการ์ด และลดแอนิเมชันเข็ม", preferences.reduceMotion, viewModel::setReduceMotion) }
         item { ToggleSetting("เปิดหน้าจอค้างขณะเชื่อมต่อ", "เหมาะเมื่อวางโทรศัพท์เป็นหน้าปัดในรถ", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
         item { SettingsSection("การตรวจปัญหา", "รายงานจะรวม latency, success rate, VIN และ recovery count") }
         item { ToggleSetting("เก็บบันทึกระบบ", "เปิดเมื่อกำลังตรวจปัญหา ELM327 หรือการหลุดของข้อมูลสด", preferences.diagnosticLogging, viewModel::setDiagnosticLogging) }
         item { Button(onClick = viewModel::runAdapterSelfTest, modifier = Modifier.fillMaxWidth()) { Text("ทดสอบความเข้ากันได้ของ ELM327") } }
         item { Button(onClick = { shareText(context, "NowTuneUp diagnostic report", viewModel.exportDiagnosticLogs()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงานระบบปัจจุบัน") } }
         item { OutlinedButton(onClick = { shareText(context, "NowTuneUp last session report", viewModel.exportLastSessionReport()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงาน Session ล่าสุด") } }
-        item { Text("NowTuneUp 1.13.0 • Android 8+ • Bluetooth Classic + USB", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(vertical = 16.dp)) }
+        item { Text("NowTuneUp ${BuildConfig.VERSION_NAME} • Android 8+ • Bluetooth Classic + USB", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(vertical = 16.dp)) }
     }
 }
 
@@ -345,11 +389,27 @@ private fun shareText(context: android.content.Context, subject: String, text: S
 }
 
 @Composable
-private fun ScreenIntro(title: String, detail: String) { Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(detail, style = MaterialTheme.typography.bodyMedium) } }
+private fun ScreenIntro(title: String, detail: String) { NtuScreenHeader(title, detail) }
 @Composable
-private fun SettingsSection(title: String, detail: String) { Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(detail, style = MaterialTheme.typography.bodySmall) } }
+private fun SettingsSection(title: String, detail: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
 @Composable
-private fun ToggleSetting(title: String, detail: String, value: Boolean, onChange: (Boolean) -> Unit) { ListItem(headlineContent = { Text(title) }, supportingContent = { Text(detail) }, trailingContent = { Switch(checked = value, onCheckedChange = onChange) }) }
+private fun ToggleSetting(title: String, detail: String, value: Boolean, onChange: (Boolean) -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().toggleable(value = value, role = Role.Switch, onValueChange = onChange).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = value, onCheckedChange = null)
+        }
+    }
+}
 @Composable
 private fun ChoiceChips(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) { Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = content) }
 @Composable
