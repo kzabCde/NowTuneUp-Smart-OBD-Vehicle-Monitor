@@ -1,5 +1,8 @@
 package com.nowtuneup.app.ui.dashboard
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -236,22 +239,23 @@ private fun DashboardHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(
                 config.name,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "${config.mode.name.lowercase().replaceFirstChar { it.uppercase() }} · ${deviceLayout.label()} · $columns columns",
+                "${deviceLayout.label()} · $columns คอลัมน์",
                 style = MaterialTheme.typography.labelMedium,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onEnterFocus) { Text("Focus") }
+            TextButton(onClick = onEnterFocus) { Text("โฟกัส") }
             if (!drivingMode) {
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit dashboard")
+                    Icon(Icons.Default.Edit, contentDescription = "แก้ไขหน้าปัด")
                 }
             }
         }
@@ -272,12 +276,12 @@ private fun FocusControls(
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onToggleTouchLock) { Text(if (touchLocked) "Unlock" else "Lock") }
-            TextButton(onClick = onResetStats) { Text("Reset peak") }
-            TextButton(onClick = onExitFocus) { Text("Exit") }
+            TextButton(onClick = onToggleTouchLock) { Text(if (touchLocked) "ปลดล็อก" else "ล็อก", color = Color.White) }
+            TextButton(onClick = onResetStats) { Text("รีเซ็ต Min/Max", color = Color.White) }
+            TextButton(onClick = onExitFocus) { Text("ออก", color = Color.White) }
         }
     }
 }
@@ -366,22 +370,22 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
         ConnectionState.INITIALIZING,
     )
     val title = when (state) {
-        ConnectionState.DISCONNECTED -> "Connect your vehicle"
-        ConnectionState.DEVICE_DETECTED -> "USB adapter detected"
-        ConnectionState.REQUESTING_PERMISSION -> "Allow USB access"
-        ConnectionState.CONNECTING -> "Opening ELM327 connection"
-        ConnectionState.INITIALIZING -> "Detecting OBD-II protocol"
-        ConnectionState.CONNECTED -> "Vehicle connected"
-        ConnectionState.ERROR -> "Connection needs attention"
+        ConnectionState.DISCONNECTED -> "เชื่อมต่อรถของคุณ"
+        ConnectionState.DEVICE_DETECTED -> "พบอะแดปเตอร์แล้ว"
+        ConnectionState.REQUESTING_PERMISSION -> "อนุญาตการเข้าถึงอุปกรณ์"
+        ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ ELM327"
+        ConnectionState.INITIALIZING -> "กำลังเตรียมข้อมูลรถ"
+        ConnectionState.CONNECTED -> "เชื่อมต่อรถแล้ว"
+        ConnectionState.ERROR -> "ตรวจสอบการเชื่อมต่อ"
     }
     val detail = when (state) {
-        ConnectionState.DISCONNECTED -> "Plug in USB OBD-II, turn the ignition on, then tap Connect."
-        ConnectionState.DEVICE_DETECTED -> "A compatible USB device was found."
-        ConnectionState.REQUESTING_PERMISSION -> "Approve the Android USB permission dialog."
-        ConnectionState.CONNECTING -> "Opening the serial connection to ELM327."
-        ConnectionState.INITIALIZING -> "Initializing the adapter and ECU protocol."
-        ConnectionState.CONNECTED -> "Live vehicle data is available."
-        ConnectionState.ERROR -> "Check USB OTG, adapter power and ignition, then retry."
+        ConnectionState.DISCONNECTED -> "เปิดสวิตช์กุญแจ เลือก Bluetooth หรือ USB แล้วกดเชื่อมต่อ"
+        ConnectionState.DEVICE_DETECTED -> "พบอุปกรณ์ที่พร้อมให้เชื่อมต่อ"
+        ConnectionState.REQUESTING_PERMISSION -> "อนุญาตการเข้าถึงอุปกรณ์ในหน้าต่างของ Android"
+        ConnectionState.CONNECTING -> "กำลังเปิดการเชื่อมต่อกับอะแดปเตอร์"
+        ConnectionState.INITIALIZING -> "กำลังเตรียมอะแดปเตอร์และตรวจสอบ ECU"
+        ConnectionState.CONNECTED -> "พร้อมอ่านข้อมูลสดที่รถรองรับ"
+        ConnectionState.ERROR -> "ตรวจสอบอะแดปเตอร์ Bluetooth หรือ USB และสวิตช์กุญแจ แล้วลองอีกครั้ง"
     }
     val accent = when (state) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -411,7 +415,7 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
                 }
                 if (!busy) {
                     Button(onClick = onAction) {
-                        Text(if (connected) "Disconnect" else if (state == ConnectionState.ERROR) "Retry" else "Connect")
+                        Text(if (connected) "ตัดการเชื่อมต่อ" else if (state == ConnectionState.ERROR) "ลองอีกครั้ง" else "เชื่อมต่อ")
                     }
                 }
             }
@@ -450,8 +454,7 @@ private fun ConnectionSteps(state: ConnectionState) {
                     Text(
                         if (completed) "✓" else "${index + 1}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (completed || active) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = when { completed -> MaterialTheme.colorScheme.onPrimary; active -> MaterialTheme.colorScheme.onSecondary; else -> MaterialTheme.colorScheme.onSurfaceVariant },
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -462,9 +465,9 @@ private fun ConnectionSteps(state: ConnectionState) {
 }
 
 private fun ResolvedDeviceLayout.label(): String = when (this) {
-    ResolvedDeviceLayout.PHONE -> "Phone"
-    ResolvedDeviceLayout.TABLET -> "Tablet"
-    ResolvedDeviceLayout.HEAD_UNIT -> "Head unit"
+    ResolvedDeviceLayout.PHONE -> "มือถือ"
+    ResolvedDeviceLayout.TABLET -> "แท็บเล็ต"
+    ResolvedDeviceLayout.HEAD_UNIT -> "จอรถ"
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {

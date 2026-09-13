@@ -2,7 +2,7 @@ package com.nowtuneup.app.feature.timeslip
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import com.nowtuneup.app.ui.motion.ntuAnimateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -24,13 +24,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.nowtuneup.app.ui.components.NtuScreenHeader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -240,10 +241,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("Time Slip", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                    Text("${activeVehicle?.displayName ?: "No active vehicle"} • OBD timing uses real telemetry timestamps", style = MaterialTheme.typography.bodySmall)
-                }
+                NtuScreenHeader("Time Slip", activeVehicle?.displayName ?: "เลือกรถก่อนเริ่มทดสอบ", modifier = Modifier.weight(1f), eyebrow = "PERFORMANCE")
                 TextButton(onClick = { showHistory = !showHistory }) { Text(if (showHistory) "ทดสอบ" else "ประวัติ") }
             }
         }
@@ -389,7 +387,7 @@ private fun ActiveTimeSlip(
 
 @Composable
 private fun ReadinessCard(connected: Boolean, speedKmh: Double?, latencyMillis: Long?, readinessText: String, sampleRateHz: Double) {
-    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+    Card(modifier = Modifier.fillMaxWidth().ntuAnimateContentSize()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(if (connected) "OBD พร้อมตรวจ" else "ยังไม่เชื่อมต่อ", fontWeight = FontWeight.Bold)
@@ -403,7 +401,7 @@ private fun ReadinessCard(connected: Boolean, speedKmh: Double?, latencyMillis: 
 
 @Composable
 private fun ResultCard(record: TimeSlipRecord, isPersonalBest: Boolean, onShare: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
+    Card(modifier = Modifier.fillMaxWidth().ntuAnimateContentSize()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("ผลล่าสุด", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

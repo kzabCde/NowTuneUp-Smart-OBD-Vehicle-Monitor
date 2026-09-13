@@ -6,6 +6,20 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import com.nowtuneup.app.ui.components.NtuEmptyState
+import com.nowtuneup.app.ui.motion.NowTuneUpLogoMark
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -39,7 +53,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -121,7 +135,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             Destination("ตั้งค่า", Icons.Default.Settings),
         )
     }
-    var selectedDestination by remember { mutableIntStateOf(0) }
+    var selectedDestination by rememberSaveable { mutableIntStateOf(0) }
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
@@ -129,7 +143,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     val vehicleProfiles by vehicleRepository.profiles.collectAsState()
     val activeVehicle = vehicleProfiles.firstOrNull { it.isActive }
     var showVehicleProfiles by remember { mutableStateOf(vehicleProfiles.isEmpty() || activeVehicle == null) }
-    var splashVisible by remember { mutableStateOf(true) }
+    var splashVisible by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
     val view = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -142,7 +156,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     )
     val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
     val chromeHidden = selectedDestination == 0 && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
-    val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE
+    val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE || configuration.screenWidthDp > configuration.screenHeightDp
     val activity = context as? Activity
 
     LaunchedEffect(preferences.reduceMotion) {
@@ -223,7 +237,21 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         }
     }
 
-    NtuTheme(preferences.theme) {
+    BackHandler(enabled = !splashVisible && activeVehicle != null && (showVehicleProfiles || selectedDestination != 0)) {
+        if (showVehicleProfiles) showVehicleProfiles = false else selectedDestination = 0
+    }
+
+    NtuTheme(preferences.theme, reduceMotion = preferences.reduceMotion) {
+        val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        DisposableEffect(lightBars) {
+            activity?.window?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = lightBars
+                    isAppearanceLightNavigationBars = lightBars
+                }
+            }
+            onDispose { }
+        }
         when {
             splashVisible -> NowTuneUpSplash(reduceMotion = preferences.reduceMotion)
 
@@ -238,46 +266,46 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 topBar = {
                     if (!chromeHidden) {
                         TopAppBar(
+                            navigationIcon = {
+                                NowTuneUpLogoMark(Modifier.padding(start = 12.dp, end = 6.dp).size(36.dp),
+                                    foreground = MaterialTheme.colorScheme.onSurface,
+                                    accent = MaterialTheme.colorScheme.primary,
+                                    background = MaterialTheme.colorScheme.surface)
+                            },
                             title = {
                                 Column {
-                                    Text(activeVehicle.displayName, fontWeight = FontWeight.Black)
-                                    Text(
-                                        when (deviceLayout) {
-                                            ResolvedDeviceLayout.PHONE -> "NOWTUNEUP • ตัวช่วยดูข้อมูลรถ"
-                                            ResolvedDeviceLayout.TABLET -> "NOWTUNEUP • หน้าปัดสำหรับแท็บเล็ต"
-                                            ResolvedDeviceLayout.HEAD_UNIT -> "NOWTUNEUP • หน้าปัดสำหรับจอรถ"
-                                        },
-                                        fontSize = 11.sp,
-                                    )
+                                    Text(activeVehicle.displayName, style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(connectionState.shortLabel(), style = MaterialTheme.typography.labelSmall,
+                                        color = if (connectionState == ConnectionState.ERROR) MaterialTheme.colorScheme.error
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             },
                             actions = {
-                                IconButton(onClick = { showVehicleProfiles = true }) {
-                                    Icon(Icons.Default.DirectionsCar, contentDescription = "Vehicle profiles")
+                                IconButton(onClick = { selectedDestination = 1 }) {
+                                    Icon(if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
+                                        contentDescription = "การเชื่อมต่อ: ${connectionState.shortLabel()}",
+                                        tint = if (connectionState == ConnectionState.CONNECTED) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                AssistChip(
-                                    onClick = { selectedDestination = 1 },
-                                    label = { Text(connectionState.shortLabel()) },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
-                                            contentDescription = "เปิดหน้าการเชื่อมต่อ OBD-II",
-                                        )
-                                    },
-                                )
+                                IconButton(onClick = { showVehicleProfiles = true }) {
+                                    Icon(Icons.Default.DirectionsCar, contentDescription = "จัดการโปรไฟล์รถ")
+                                }
                             },
                         )
                     }
                 },
                 bottomBar = {
                     if (!chromeHidden && !useNavigationRail) {
-                        NavigationBar {
+                        NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                             destinations.forEachIndexed { index, destination ->
                                 NavigationBarItem(
                                     selected = selectedDestination == index,
                                     onClick = { selectedDestination = index },
-                                    icon = { Icon(destination.icon, contentDescription = destination.title) },
-                                    label = { Text(destination.title, fontSize = 9.sp) },
+                                    icon = { NtuDestinationIcon(destination, selectedDestination == index, preferences.reduceMotion) },
+                                    label = { Text(destination.title, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    alwaysShowLabel = false,
                                 )
                             }
                         }
@@ -286,12 +314,12 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             ) { innerPadding ->
                 Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                     if (!chromeHidden && useNavigationRail) {
-                        NavigationRail {
+                        NavigationRail(modifier = Modifier.verticalScroll(rememberScrollState()), containerColor = MaterialTheme.colorScheme.surface) {
                             destinations.forEachIndexed { index, destination ->
                                 NavigationRailItem(
                                     selected = selectedDestination == index,
                                     onClick = { selectedDestination = index },
-                                    icon = { Icon(destination.icon, contentDescription = destination.title) },
+                                    icon = { NtuDestinationIcon(destination, selectedDestination == index, preferences.reduceMotion) },
                                     label = { Text(destination.title, fontSize = 10.sp) },
                                 )
                             }
@@ -304,7 +332,11 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                                 if (preferences.reduceMotion) {
                                     fadeIn(tween(0)) togetherWith fadeOut(tween(0))
                                 } else {
-                                    fadeIn(tween(NtuMotion.Standard)) togetherWith fadeOut(tween(NtuMotion.Quick))
+                                    (fadeIn(tween(NtuMotion.Standard)) + slideInHorizontally(tween(NtuMotion.Standard)) {
+                                        if (targetState > initialState) it / 24 else -it / 24
+                                    }) togetherWith (fadeOut(tween(NtuMotion.Quick)) + slideOutHorizontally(tween(NtuMotion.Quick)) {
+                                        if (targetState > initialState) -it / 32 else it / 32
+                                    })
                                 }
                             },
                             label = "NowTuneUp destination",
@@ -451,26 +483,21 @@ private fun DashboardProfilesPager(
 
 @Composable
 private fun DashboardProfileEmptyState(onCreate: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(Icons.Default.Speed, contentDescription = null)
-                Text("ยังไม่มีโปรไฟล์หน้าปัด", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(
-                    "สร้างหน้าปัดในแบบของคุณเอง แล้วเลือกข้อมูล รูปแบบ สี และตำแหน่งที่ต้องการ แอปจะบันทึกไว้ใช้ครั้งต่อไป",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Text("  สร้างโปรไฟล์แรก")
-                }
-            }
-        }
+    Box(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
+        NtuEmptyState(
+            title = "หน้าปัดในแบบของคุณ",
+            detail = "เริ่มจากหน้าปัดว่าง เลือกค่าที่อยากดู แล้วจัดวางเกจ สี และขนาดให้เหมาะกับรถของคุณ",
+            icon = Icons.Default.Speed, action = "สร้างโปรไฟล์หน้าปัดแรก", onAction = onCreate,
+        )
     }
+}
+
+@Composable
+private fun NtuDestinationIcon(destination: Destination, selected: Boolean, reduceMotion: Boolean) {
+    val scale by animateFloatAsState(if (selected) 1.08f else 1f,
+        tween(if (reduceMotion) 0 else NtuMotion.Quick), label = "navigation selection")
+    Icon(destination.icon, contentDescription = destination.title,
+        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {

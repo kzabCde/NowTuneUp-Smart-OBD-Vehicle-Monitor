@@ -82,6 +82,7 @@ fun DrivingDashboardWidget(
                 ) {
                     Text(
                         "ต่ำสุด ${stats.minimum.short()}  สูงสุด ${stats.maximum.short()}",
+                        color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }

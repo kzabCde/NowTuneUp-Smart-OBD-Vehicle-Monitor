@@ -296,19 +296,19 @@ data class DashboardConfig(
 )
 
 data class ThemeConfig(
-    val name: String = "Dark OEM",
-    val primary: Long = 0xFF00E5FF,
-    val secondary: Long = 0xFFFFB300,
-    val accent: Long = 0xFF00E5FF,
-    val background: Long = 0xFF070A0E,
-    val card: Long = 0xFF10161D,
-    val text: Long = 0xFFEAF7FA,
-    val gaugeNeedle: Long = 0xFF00E5FF,
+    val name: String = "Graphite",
+    val primary: Long = 0xFF52FF8A,
+    val secondary: Long = 0xFFFFC66D,
+    val accent: Long = 0xFF52FF8A,
+    val background: Long = 0xFF080B0E,
+    val card: Long = 0xFF12191E,
+    val text: Long = 0xFFF1F6F4,
+    val gaugeNeedle: Long = 0xFF52FF8A,
     val gaugeTick: Long = 0xFF90A4AE,
     val warning: Long = 0xFFFFB300,
     val critical: Long = 0xFFFF5252,
     val success: Long = 0xFF4CAF50,
-    val border: Long = 0xFF2A3540,
+    val border: Long = 0xFF334139,
 )
 
 data class ReadingStats(

@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.nowtuneup.app.ui.components.NtuScreenHeader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -113,8 +114,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("การเชื่อมต่อ OBD-II", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Adaptive Connection v2 จะจดจำสุขภาพของ adapter และแนะนำ FAST / BALANCED / STABLE ให้อัตโนมัติ")
+            NtuScreenHeader("เชื่อมต่อรถของคุณ", "เลือก Bluetooth หรือ USB แล้วให้ NowTuneUp จัดความเร็วการอ่านที่เหมาะกับอะแดปเตอร์", eyebrow = "CONNECTION")
         }
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -134,7 +134,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
                             leadingIcon = { Icon(Icons.Default.Bluetooth, null) },
                         )
                     }
-                    Text("BLE เตรียม interface ไว้แล้วแต่ยังปิดใช้งาน จนกว่าจะทราบ Service UUID และ Characteristic UUID ของอะแดปเตอร์จริง", style = MaterialTheme.typography.bodySmall)
+                    Text("รองรับ Bluetooth Classic และ USB OTG • ยังไม่รองรับอะแดปเตอร์ BLE", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

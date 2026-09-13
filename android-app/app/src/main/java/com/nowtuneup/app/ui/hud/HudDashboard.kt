@@ -1,5 +1,7 @@
 package com.nowtuneup.app.ui.hud
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -165,7 +167,7 @@ fun HudDashboard(
                 color = Color.Black.copy(alpha = 0.7f),
                 shape = CircleShape,
             ) {
-                Text("LOCKED · hold to unlock", color = hudColor, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                Text("ล็อกอยู่ · แตะค้างเพื่อปลดล็อก", color = hudColor, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
             }
         } else if (controlsVisible) {
             Surface(
@@ -173,10 +175,10 @@ fun HudDashboard(
                 color = Color(0xDD101010),
                 shape = CircleShape,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onToggleMirror) { Text(if (preferences.hudMirror) "Unmirror" else "Mirror") }
-                    TextButton(onClick = onToggleTouchLock) { Text("Lock") }
-                    TextButton(onClick = onExitHud) { Text("Exit HUD") }
+                Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onToggleMirror) { Text(if (preferences.hudMirror) "ภาพปกติ" else "กลับภาพ", color = hudColor) }
+                    TextButton(onClick = onToggleTouchLock) { Text("ล็อก", color = hudColor) }
+                    TextButton(onClick = onExitHud) { Text("ออกจาก HUD", color = hudColor) }
                 }
             }
         }
