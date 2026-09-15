@@ -39,7 +39,7 @@ export default function Home() {
 
       <section className="page-hero">
         <div className="shell grid gap-12 lg:grid-cols-[1.02fr_.98fr] lg:items-center">
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
               <span className="chip"><span className="status-dot" aria-hidden="true" /> Production {localRelease.version}</span>
               <span className="chip">Android 8+</span>
@@ -64,8 +64,8 @@ export default function Home() {
           </div>
 
           <div className="panel telemetry-grid overflow-hidden">
-            <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
+              <div className="min-w-0">
                 <p className="data-label">Live dashboard</p>
                 <p className="mt-1 text-sm font-bold">Vehicle session</p>
               </div>
@@ -73,9 +73,9 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-2 gap-px bg-white/8">
               {liveValues.map(([label, value, unit]) => (
-                <div key={label} className="bg-[#0b0d09]/95 p-5 md:p-6">
+                <div key={label} className="min-w-0 bg-[#0b0d09]/95 p-5 md:p-6">
                   <p className="data-label">{label}</p>
-                  <p className="mt-5 text-4xl font-black tracking-[-0.055em] tabular-nums">{value}</p>
+                  <p className="mt-5 break-words text-4xl font-black tracking-[-0.055em] tabular-nums">{value}</p>
                   <p className="mt-1 text-xs font-bold text-cyan-300">{unit}</p>
                 </div>
               ))}
@@ -83,12 +83,12 @@ export default function Home() {
             <div className="grid gap-3 border-t border-white/8 p-4 sm:grid-cols-2">
               <div className="technical-card p-4">
                 <p className="data-label">Adapter health</p>
-                <div className="mt-3 flex items-end justify-between gap-4"><strong className="text-xl">Stable</strong><span className="status-good text-sm font-bold">GOOD</span></div>
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-3"><strong className="text-xl">Stable</strong><span className="status-good text-sm font-bold">GOOD</span></div>
                 <div className="mt-4 h-1 overflow-hidden bg-white/8"><div className="h-full w-[82%] bg-cyan-300" /></div>
               </div>
               <div className="technical-card p-4">
                 <p className="data-label">Polling strategy</p>
-                <div className="mt-3 flex items-end justify-between gap-4"><strong className="text-xl">Balanced</strong><span className="text-cyan-300 text-sm font-bold">AUTO</span></div>
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-3"><strong className="text-xl">Balanced</strong><span className="text-cyan-300 text-sm font-bold">AUTO</span></div>
                 <p className="muted mt-3 text-xs">Demand-based · adaptive pacing</p>
               </div>
             </div>
@@ -122,7 +122,7 @@ export default function Home() {
       <section className="section-rule">
         <div className="shell section-space grid gap-5 lg:grid-cols-2">
           <article className="panel p-7 md:p-9">
-            <p className="eyebrow">Vehicle Profiles · v1.14.0</p>
+            <p className="eyebrow">Vehicle Profiles · v{localRelease.version}</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Start with zero vehicles. Add only yours.</h2>
             <p className="muted mt-5 leading-7">NowTuneUp no longer ships default, demo or automatically generated saved vehicles. Create, edit, duplicate, delete and select the active vehicle explicitly on-device.</p>
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
@@ -133,7 +133,7 @@ export default function Home() {
           <article className="panel telemetry-grid p-7 md:p-9">
             <p className="eyebrow">Premium motion</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">N + tachometer, from launcher to live state.</h2>
-            <p className="muted mt-5 leading-7">The v1.14.0 visual system adds the N + tachometer identity, animated splash, connection-state motion and restrained interaction transitions while keeping telemetry and timing calculations independent from presentation.</p>
+            <p className="muted mt-5 leading-7">The v{localRelease.version} visual system adds the N + tachometer identity, animated splash, connection-state motion and restrained interaction transitions while keeping telemetry and timing calculations independent from presentation.</p>
             <div className="mt-7 technical-card px-5">
               <div className="spec-row"><span className="spec-key">Motion</span><span className="spec-value">150–300 ms UI</span></div>
               <div className="spec-row"><span className="spec-key">Telemetry</span><span className="spec-value">Unmodified</span></div>
@@ -153,13 +153,13 @@ export default function Home() {
           </div>
 
           <div className="panel p-5 md:p-7">
-            <div className="flex items-center justify-between gap-4 border-b border-white/8 pb-5">
-              <div><p className="data-label">Diagnostic overview</p><p className="mt-1 font-bold">Vehicle health workspace</p></div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-5">
+              <div className="min-w-0"><p className="data-label">Diagnostic overview</p><p className="mt-1 font-bold">Vehicle health workspace</p></div>
               <span className="chip"><span className="status-dot" aria-hidden="true" /> Read-only</span>
             </div>
             <div className="mt-4 grid gap-3">
               {checks.map(([label, detail]) => (
-                <div key={label} className="status-panel"><div><p className="font-bold">{label}</p><p className="muted mt-1 text-sm">{detail}</p></div><span className="status-good text-sm font-black">READY</span></div>
+                <div key={label} className="status-panel"><div className="min-w-0"><p className="font-bold">{label}</p><p className="muted mt-1 break-words text-sm">{detail}</p></div><span className="status-good shrink-0 text-sm font-black">READY</span></div>
               ))}
             </div>
           </div>
@@ -177,10 +177,10 @@ export default function Home() {
                 <div className="mt-2 flex flex-wrap gap-2"><span className="chip">0–60 km/h</span><span className="chip">0–100 km/h</span><span className="chip">1/4 mile</span><span className="chip">1/2 mile</span><span className="chip">1 mile</span></div>
               </div>
               <div className="technical-card p-6 md:p-8">
-                <div className="flex justify-between gap-4"><span className="data-label">0–100 km/h</span><span className="data-label text-cyan-300">READY</span></div>
+                <div className="flex flex-wrap justify-between gap-3"><span className="data-label">0–100 km/h</span><span className="data-label text-cyan-300">READY</span></div>
                 <p className="metric mt-10">0.00<span className="ml-2 text-xl text-cyan-300">s</span></p>
                 <div className="mt-9 h-1 overflow-hidden bg-white/8"><div className="h-full w-[14%] bg-cyan-300" /></div>
-                <div className="mt-4 flex justify-between gap-4 text-xs"><span className="muted">Speed PID ready</span><span className="muted">Waiting for launch</span></div>
+                <div className="mt-4 flex flex-wrap justify-between gap-3 text-xs"><span className="muted">Speed PID ready</span><span className="muted">Waiting for launch</span></div>
               </div>
             </div>
           </div>
