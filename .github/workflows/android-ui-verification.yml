@@ -48,11 +48,12 @@ jobs:
             sleep 3
             mkdir -p app/build/review
             adb exec-out screencap -p > app/build/review/first-run.png
+            adb pull /sdcard/Android/data/com.nowtuneup.app.debug/files/review/. app/build/review/
       - name: Upload test reports and UI test APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.15.0-ui-verification
+          name: NowTuneUp-1.16.0-ui-verification
           path: |
             android-app/app/build/reports/
             android-app/app/build/outputs/apk/debug/

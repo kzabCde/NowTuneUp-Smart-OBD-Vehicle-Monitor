@@ -105,6 +105,11 @@ data class TimeSlipRecord(
     val maximumAccelerationMps2: Double = 0.0,
     val vehicleProfileId: String? = null,
     val rawSamples: List<TimeSlipTelemetrySample>? = emptyList(),
+    // Nullable for history written before 1.16; never infer a race start from wall-clock time.
+    val timingStartNanos: Long? = null,
+    val launchTimeNanos: Long? = null,
+    val completionTimeNanos: Long? = null,
+    val launchSpeedKmh: Double? = null,
 )
 
 data class TimeSlipSnapshot(

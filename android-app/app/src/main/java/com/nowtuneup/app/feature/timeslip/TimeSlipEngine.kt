@@ -347,6 +347,10 @@ class TimeSlipEngine {
             maximumAccelerationMps2 = maximumAccelerationMps2,
             vehicleProfileId = config.vehicleProfileId,
             rawSamples = rawSamples.toList(),
+            timingStartNanos = start,
+            launchTimeNanos = launchNanos,
+            completionTimeNanos = completionNanos,
+            launchSpeedKmh = if (config.mode == PerformanceMode.ROLLING_START) config.rollingStartKmh else 0.0,
         )
     }
 

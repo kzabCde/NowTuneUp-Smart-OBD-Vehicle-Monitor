@@ -1,6 +1,6 @@
 # NowTuneUp (NTU)
 
-Next Android release: **1.15.0 — Graphite UI & Motion**. See the [release notes](docs/releases/v1.15.0.md) for the interface refresh and upgrade behavior.
+Next Android release: **1.16.0 — Performance Insights**. See the [release notes](docs/releases/v1.16.0.md) for performance graphs, the minimal interface refresh and upgrade behavior.
 
 NowTuneUp is a local-first Android vehicle monitor and its official Next.js product/release website. The Android app reads standardized, read-only OBD-II data through an ELM327-compatible USB adapter. The website explains compatibility and installation, discovers signed APKs from GitHub Releases on the server, and redirects downloads only to trusted GitHub assets.
 

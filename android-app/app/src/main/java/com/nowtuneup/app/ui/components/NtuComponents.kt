@@ -34,7 +34,7 @@ fun NtuPanel(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f))
     if (onClick != null) {
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
@@ -56,23 +56,13 @@ fun NtuPanel(
 @Composable
 fun NtuScreenHeader(title: String, detail: String, modifier: Modifier = Modifier, eyebrow: String = "NOWTUNEUP") {
     val compact = LocalConfiguration.current.screenHeightDp < 480
-    NtuPanel(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.09f), Color.Transparent,
-            ))).padding(if (compact) 12.dp else 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                if (!compact) Text(eyebrow, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(title, style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
-                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (compact) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
-            }
-            NowTuneUpLogoMark(Modifier.size(48.dp), foreground = MaterialTheme.colorScheme.onSurface,
-                accent = MaterialTheme.colorScheme.primary, background = MaterialTheme.colorScheme.surface)
-        }
+    Column(modifier.fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!compact) Text(eyebrow, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium)
+        Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (compact) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
     }
 }
 
