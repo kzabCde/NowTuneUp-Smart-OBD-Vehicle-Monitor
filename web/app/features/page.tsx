@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { localRelease } from "@/lib/local-release";
 
 export const metadata: Metadata = {
   title: "Features",
-  description: "Explore NowTuneUp live telemetry, user-created vehicle profiles, Vehicle Intelligence, Time Slip, premium motion, adapter health and local-first OBD-II tools.",
+  description: "Explore NowTuneUp live telemetry, user-created vehicle profiles, Vehicle Intelligence, interactive Time Slip performance graphs, adapter health and local-first OBD-II tools.",
 };
 
 const pillars = [
@@ -26,10 +27,10 @@ const pillars = [
   {
     number: "03",
     eyebrow: "Measure",
-    title: "Give vehicle-speed data priority when the run starts.",
-    description: "Time Slip switches the scheduler into a speed-priority mode for OBD-based acceleration and distance timing, while presentation animation stays separate from measurement timestamps.",
-    chips: ["0–60 km/h", "0–100 km/h", "1/4 mile", "1/2 mile", "1 mile"],
-    rows: [["Source", "Vehicle speed PID"], ["Scheduler", "Speed priority"], ["Storage", "Active vehicle history"]],
+    title: "Turn each Time Slip run into data you can inspect and compare.",
+    description: "Time Slip keeps vehicle-speed sampling prioritized during the run, then v1.16.0 adds interactive speed, estimated acceleration and estimated distance graphs with sample inspection and previous-run comparison.",
+    chips: ["0–60 km/h", "0–100 km/h", "1/4 mile", "Speed graph", "Acceleration graph", "Distance graph"],
+    rows: [["Source", "Vehicle speed PID"], ["Graphs", "Interactive"], ["Compare", "Previous matching run"]],
   },
   {
     number: "04",
@@ -46,10 +47,10 @@ export default function Features() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v1.14.0</span><span className="chip">User-owned vehicles</span><span className="chip">Premium motion</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Interactive performance graphs</span><span className="chip">Pulse N identity</span></div>
           <p className="eyebrow mt-8">Product capabilities</p>
           <h1 className="page-title mt-4">Built around the four jobs that matter on the road.</h1>
-          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while vehicle profiles and motion now follow one consistent local-first product flow.</p>
+          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while vehicle profiles, performance history and motion follow one consistent local-first product flow.</p>
           <div className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((pillar) => (
               <div key={pillar.eyebrow} className="technical-card p-4">
@@ -93,7 +94,7 @@ export default function Features() {
       <section className="section-rule">
         <div className="shell section-space grid gap-5 lg:grid-cols-2">
           <article className="panel p-7 md:p-9">
-            <p className="eyebrow">Vehicle Profiles · v1.14.0</p>
+            <p className="eyebrow">Vehicle Profiles · v{localRelease.version}</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Every saved vehicle starts with you.</h2>
             <p className="muted mt-5 max-w-3xl leading-7">Fresh installations start with zero vehicle profiles and zero demo data. VIN detection can still support diagnostics, but it never silently creates a saved vehicle profile.</p>
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -104,11 +105,11 @@ export default function Features() {
           </article>
 
           <article className="panel telemetry-grid p-7 md:p-9">
-            <p className="eyebrow">Premium automotive motion</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Motion that explains state without changing the data.</h2>
-            <p className="muted mt-5 leading-7">The N + tachometer visual language now extends from the launcher and splash into connection, navigation and Time Slip presentation. Gauge smoothing remains presentation-only and never changes ECU values or run timing.</p>
+            <p className="eyebrow">Pulse N identity</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">A quieter visual system from launcher to live state.</h2>
+            <p className="muted mt-5 leading-7">The v{localRelease.version} Pulse N identity spans adaptive, round and Android 13 monochrome icons, the splash and in-app mark, while the interface uses subtler panels, smaller corner radii and restrained motion without changing telemetry or run timing.</p>
             <div className="mt-7 technical-card px-5">
-              <div className="spec-row"><span className="spec-key">UI transitions</span><span className="spec-value">150–300 ms</span></div>
+              <div className="spec-row"><span className="spec-key">Identity</span><span className="spec-value">Pulse N</span></div>
               <div className="spec-row"><span className="spec-key">Telemetry</span><span className="spec-value">Measurement unchanged</span></div>
               <div className="spec-row"><span className="spec-key">Accessibility</span><span className="spec-value">Reduce Motion aware</span></div>
             </div>
@@ -119,20 +120,20 @@ export default function Features() {
       <section className="section-rule">
         <div className="shell section-space grid gap-5 lg:grid-cols-[1.15fr_.85fr]">
           <article className="panel p-7 md:p-9">
-            <p className="eyebrow">Turbo Pressure v2</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Calculated boost only when the inputs deserve trust.</h2>
-            <p className="muted mt-5 max-w-3xl leading-7">Turbo Pressure combines MAP and barometric pressure, uses RPM for key-on/engine-off baseline logic and suppresses the result when source data is stale or low quality.</p>
+            <p className="eyebrow">Performance insights · v{localRelease.version}</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Inspect the run, not just the finish time.</h2>
+            <p className="muted mt-5 max-w-3xl leading-7">New Time Slip results preserve launch and finish boundaries so the graph can clip to the real run. A sample cursor exposes individual points, while matching previous runs can be overlaid for a direct elapsed-time comparison.</p>
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              <div className="technical-card p-5"><p className="data-label">Input 01</p><p className="data-value mt-3 text-xl">MAP</p></div>
-              <div className="technical-card p-5"><p className="data-label">Input 02</p><p className="data-value mt-3 text-xl">BARO</p></div>
-              <div className="technical-card p-5"><p className="data-label">Gate</p><p className="data-value mt-3 text-xl">RPM + freshness</p></div>
+              <div className="technical-card p-5"><p className="data-label">Graph 01</p><p className="data-value mt-3 text-xl">Speed</p></div>
+              <div className="technical-card p-5"><p className="data-label">Graph 02</p><p className="data-value mt-3 text-xl">Estimated g</p></div>
+              <div className="technical-card p-5"><p className="data-label">Graph 03</p><p className="data-value mt-3 text-xl">Distance</p></div>
             </div>
           </article>
 
           <article className="panel p-7 md:p-9">
             <p className="eyebrow">Local-first</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Core OBD use without an account.</h2>
-            <p className="muted mt-5 leading-7">Realtime monitoring, user-created vehicle profiles and diagnostic session reports are designed around local device storage rather than a required cloud backend.</p>
+            <p className="muted mt-5 leading-7">Realtime monitoring, user-created vehicle profiles, Time Slip history and diagnostic session reports are designed around local device storage rather than a required cloud backend.</p>
             <div className="mt-7 technical-card px-5">
               <div className="spec-row"><span className="spec-key">Account</span><span className="spec-value">Not required</span></div>
               <div className="spec-row"><span className="spec-key">Live telemetry</span><span className="spec-value">Local</span></div>
@@ -144,8 +145,8 @@ export default function Features() {
 
       <section className="shell section-space">
         <div className="panel flex flex-col justify-between gap-7 p-7 md:flex-row md:items-center md:p-9">
-          <div className="section-heading"><p className="eyebrow">Next step</p><h2 className="text-3xl font-black tracking-[-0.045em] md:text-4xl">Create your vehicle, then match the adapter path.</h2></div>
-          <div className="page-actions"><Link href="/supported-devices" className="button secondary">Compatibility</Link><Link href="/download" className="button">Download 1.14.0</Link></div>
+          <div className="section-heading"><p className="eyebrow">Next step</p><h2 className="text-3xl font-black tracking-[-0.045em] md:text-4xl">Create your vehicle, then inspect the data.</h2></div>
+          <div className="page-actions"><Link href="/supported-devices" className="button secondary">Compatibility</Link><Link href="/download" className="button">Download {localRelease.version}</Link></div>
         </div>
       </section>
     </>
