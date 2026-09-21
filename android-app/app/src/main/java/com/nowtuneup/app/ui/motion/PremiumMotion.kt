@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -117,17 +118,22 @@ fun NowTuneUpLogoMark(
         val origin = Offset((size.width - 108f * unit) / 2f, (size.height - 108f * unit) / 2f)
         fun point(x: Float, y: Float) = origin + Offset(x * unit, y * unit)
         val progress = sweepProgress.coerceIn(0f, 1f)
-        drawArc(foreground.copy(alpha = 0.20f), 135f, 270f, false,
-            point(24f, 24f), Size(60f * unit, 60f * unit), style = Stroke(4f * unit, cap = StrokeCap.Round))
-        drawArc(accent, 135f, 270f * progress, false,
-            point(24f, 24f), Size(60f * unit, 60f * unit), style = Stroke(4f * unit, cap = StrokeCap.Round))
-        // A legible N monogram with an ascending telemetry slash, without an overlapping needle.
-        drawLine(foreground, point(40f, 67f), point(40f, 41f), 6f * unit, StrokeCap.Square)
-        drawLine(foreground, point(40f, 41f), point(66f, 67f), 6f * unit, StrokeCap.Square)
-        drawLine(foreground, point(66f, 67f), point(66f, 41f), 6f * unit, StrokeCap.Square)
-        drawLine(background, point(51f, 57f), point(70f, 38f), 7f * unit, StrokeCap.Square)
-        drawLine(accent, point(51f, 57f), point(70f, 38f), 3.5f * unit, StrokeCap.Square)
-        drawLine(accent, point(48f, 80f), point(60f, 80f), 3f * unit, StrokeCap.Round)
+        // Pulse N: the same two filled paths as the adaptive / monochrome launcher assets.
+        val monogram = Path().apply {
+            moveTo(point(32f, 73f).x, point(32f, 73f).y)
+            listOf(40f to 35f, 48f to 35f, 63f to 59f, 69f to 35f,
+                78f to 35f, 69f to 73f, 60f to 73f, 45f to 49f, 40f to 73f).forEach { (x, y) ->
+                lineTo(point(x, y).x, point(x, y).y)
+            }
+            close()
+        }
+        drawPath(monogram, foreground)
+        val risingEdge = Path().apply {
+            moveTo(point(60f, 73f).x, point(60f, 73f).y)
+            listOf(69f to 35f, 78f to 35f, 69f to 73f).forEach { (x, y) -> lineTo(point(x, y).x, point(x, y).y) }
+            close()
+        }
+        drawPath(risingEdge, accent.copy(alpha = progress))
     }
 }
 

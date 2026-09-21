@@ -47,7 +47,7 @@ class TimeSlipRepository(context: Context) {
 }
 
 fun TimeSlipRecord.asShareText(): String = buildString {
-    appendLine("NTU PERFORMANCE TIME SLIP • 1.9.0")
+    appendLine("NTU PERFORMANCE TIME SLIP • ${com.nowtuneup.app.BuildConfig.VERSION_NAME}")
     appendLine(if (mode == PerformanceMode.STANDING_START) "Standing start" else "Rolling start")
     speedMilestones.forEach { appendLine("${it.label}: ${formatSeconds(it.elapsedMillis)} s") }
     distanceSplits.forEach {
