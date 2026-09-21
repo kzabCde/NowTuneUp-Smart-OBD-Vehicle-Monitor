@@ -73,9 +73,14 @@ class PerformanceChartsUiTest {
     }
 
     private fun screenshot(name: String) {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = context.getExternalFilesDir("review")!!
-        directory.mkdirs()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val additionalOutputDir = instrumentation.arguments.getString("additionalTestOutputDir")
+        val directory = additionalOutputDir
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?: instrumentation.targetContext.getExternalFilesDir("review")
+            ?: error("No writable screenshot directory is available")
+        check(directory.exists() || directory.mkdirs()) { "Unable to create screenshot directory: $directory" }
         File(directory, name).outputStream().use {
             compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
         }
