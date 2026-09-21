@@ -47,7 +47,7 @@ jobs:
           disable-animations: true
           working-directory: android-app
           script: |
-            ./gradlew connectedDebugAndroidTest --stacktrace --no-daemon
+            ./gradlew connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace --no-daemon
             adb shell am start -n com.nowtuneup.app.debug/com.nowtuneup.app.MainActivity
             sleep 3
             mkdir -p app/build/review
