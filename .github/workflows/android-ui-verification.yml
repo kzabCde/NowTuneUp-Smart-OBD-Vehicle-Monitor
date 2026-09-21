@@ -52,7 +52,6 @@ jobs:
             sleep 3
             mkdir -p app/build/review
             adb exec-out screencap -p > app/build/review/first-run.png
-            adb pull /sdcard/Android/data/com.nowtuneup.app.debug/files/review/. app/build/review/
       - name: Upload test reports and UI test APK
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,5 +61,6 @@ jobs:
             android-app/app/build/reports/
             android-app/app/build/outputs/apk/debug/
             android-app/app/build/outputs/androidTest-results/
+            android-app/app/build/outputs/connected_android_test_additional_output/
             android-app/app/build/review/
           if-no-files-found: ignore
