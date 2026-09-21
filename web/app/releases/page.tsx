@@ -10,6 +10,18 @@ export const metadata: Metadata = {
 
 const history = [
   {
+    version: "1.15.0",
+    label: "Graphite & Daylight interface",
+    date: "September 13, 2026",
+    description: "Introduced the unified Graphite and Daylight interface, adaptive launcher and notification icons, reduced-motion support, clearer Thai-friendly screens and an empty first-run experience where users create their own vehicle profiles and dashboards.",
+  },
+  {
+    version: "1.14.0",
+    label: "User-owned vehicle profiles",
+    date: "September 2026",
+    description: "Removed bundled demo vehicle profiles and aligned the product around explicit user-created vehicles, while refining the Android interface, motion and connection workflow.",
+  },
+  {
     version: "1.13.0",
     label: "Vehicle intelligence consolidation",
     date: "September 7, 2026",
@@ -40,7 +52,7 @@ export default function Releases() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span><span className="chip">Performance Insights</span></div>
           <p className="eyebrow mt-8">Release history</p>
           <h1 className="page-title mt-4">Production first. History second.</h1>
           <p className="page-lede mt-7">The current signed APK stays visually dominant. Earlier milestones remain available so stability changes and product direction are easy to trace without turning this page into a raw changelog.</p>
@@ -49,7 +61,7 @@ export default function Releases() {
 
       <section className="section-rule">
         <div className="shell section-space">
-          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">The build to install now.</h2></div>
+          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">NowTuneUp {localRelease.version} · Performance Insights.</h2><p className="section-copy">Interactive Time Slip graphs, matching-run comparison, refined history, a quieter interface and the Pulse N identity are now part of the production build.</p></div>
           <ReleaseCard release={localRelease} />
         </div>
       </section>
