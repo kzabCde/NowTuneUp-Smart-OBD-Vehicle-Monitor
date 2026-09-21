@@ -18,6 +18,10 @@ jobs:
       RELEASE_VERSION: 1.16.0
       RELEASE_NOTES: docs/releases/v1.16.0.md
       TARGET_SHA: c4f5cfcc6a5df652b34c5eee742257fea6188024
+      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
+      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,34 +40,24 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
 
-      - name: Validate release version
+      - name: Validate release and signing prerequisites
         working-directory: android-app
         run: |
           set -euo pipefail
           grep -Fq "versionName = \"$RELEASE_VERSION\"" app/build.gradle.kts
           test -f "../$RELEASE_NOTES"
+          test -s "$NTU_KEYSTORE_FILE"
+          test -n "$NTU_KEYSTORE_PASSWORD"
+          test -n "$NTU_KEY_ALIAS"
+          test -n "$NTU_KEY_PASSWORD"
           chmod +x gradlew
 
       - name: Test and lint
         working-directory: android-app
         run: ./gradlew test lint --stacktrace --no-daemon
 
-      - name: Restore signing key
-        working-directory: android-app
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          test -n "$KEYSTORE_B64"
-          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/nowtuneup.jks"
-
       - name: Build signed release APK
         working-directory: android-app
-        env:
-          NTU_KEYSTORE_FILE: ${{ runner.temp }}/nowtuneup.jks
-          NTU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          NTU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          NTU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Name, checksum and verify artifact
