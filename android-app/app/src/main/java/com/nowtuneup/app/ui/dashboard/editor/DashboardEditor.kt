@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -238,7 +239,7 @@ fun DashboardEditor(
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier.padding(padding).fillMaxSize().testTag("hud-editor-list"),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
