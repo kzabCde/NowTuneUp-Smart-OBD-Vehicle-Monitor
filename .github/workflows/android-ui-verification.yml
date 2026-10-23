@@ -56,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NowTuneUp-1.16.0-ui-verification
+          name: NowTuneUp-1.17.0-custom-hud-ui-verification
           path: |
             android-app/app/build/reports/
             android-app/app/build/outputs/apk/debug/
