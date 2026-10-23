@@ -384,8 +384,8 @@ private fun HudCanvasEditor(
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val density = LocalDensity.current
-            val cellWidth = maxWidth / layout.columns
-            val cellHeight = maxHeight / layout.rows
+            val cellWidth = maxWidth / layout.columns.toFloat()
+            val cellHeight = maxHeight / layout.rows.toFloat()
             val cellWidthPx = with(density) { cellWidth.toPx() }.coerceAtLeast(1f)
             val cellHeightPx = with(density) { cellHeight.toPx() }.coerceAtLeast(1f)
 
@@ -419,8 +419,8 @@ private fun HudCanvasEditor(
 
                 Box(
                     modifier = Modifier
-                        .offset(x = cellWidth * widget.canvasX, y = cellHeight * widget.canvasY)
-                        .size(width = cellWidth * width, height = cellHeight * height)
+                        .offset(x = cellWidth * widget.canvasX.toFloat(), y = cellHeight * widget.canvasY.toFloat())
+                        .size(width = cellWidth * width.toFloat(), height = cellHeight * height.toFloat())
                         .padding(2.dp)
                         .zIndex(widget.zIndex.toFloat())
                         .border(
