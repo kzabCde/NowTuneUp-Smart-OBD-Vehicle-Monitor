@@ -61,6 +61,7 @@ class DashboardUiTest {
         }
 
         compose.onNodeWithText("Custom HUD Studio").assertIsDisplayed()
+        compose.onNodeWithTag("hud-editor-list").performScrollToIndex(4)
         compose.onNodeWithText("+ เพิ่ม Widget").performClick()
         compose.onNodeWithText("Widget Library").assertIsDisplayed()
         compose.onNodeWithText("รอบเครื่อง").performClick()
