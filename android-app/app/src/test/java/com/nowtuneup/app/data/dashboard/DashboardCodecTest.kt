@@ -13,6 +13,9 @@ import com.nowtuneup.app.domain.model.DigitalRingConfig
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeSmoothing
 import com.nowtuneup.app.domain.model.GaugeStyle
+import com.nowtuneup.app.domain.model.HUD_CANVAS_COLUMNS
+import com.nowtuneup.app.domain.model.HUD_CANVAS_ROWS
+import com.nowtuneup.app.domain.model.HUD_SCHEMA_VERSION
 import com.nowtuneup.app.domain.model.WarningThreshold
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,14 +24,19 @@ import org.junit.Test
 
 class DashboardCodecTest {
     @Test
-    fun releaseVersionUses1150Base() {
-        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.16.0"))
+    fun releaseVersionUses1170Base() {
+        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.17.0"))
     }
 
     @Test
-    fun newProfileStartsEmptyWithoutBundledDashboard() {
+    fun newProfileStartsWithEmptyFreeformCanvases() {
         val profile = DashboardDefaults.newProfile(id = "test-profile")
         assertFalse(profile.isDefault)
+        assertEquals(HUD_SCHEMA_VERSION, profile.schemaVersion)
+        assertEquals(HUD_CANVAS_COLUMNS, profile.portrait.columns)
+        assertEquals(HUD_CANVAS_ROWS, profile.portrait.rows)
+        assertEquals(HUD_CANVAS_COLUMNS, profile.landscape.columns)
+        assertEquals(HUD_CANVAS_ROWS, profile.landscape.rows)
         assertTrue(profile.portrait.widgets.isEmpty())
         assertTrue(profile.landscape.widgets.isEmpty())
         assertTrue(DashboardDefaults.widgetCatalog.isNotEmpty())
@@ -45,60 +53,110 @@ class DashboardCodecTest {
     }
 
     @Test
-    fun roundTripPreservesIndependentResponsiveLayouts() {
+    fun roundTripPreservesIndependentFreeformLayouts() {
         val portraitWidget = DashboardWidgetConfig(
-            id = "speed", pid = 0x0D, type = DashboardWidgetType.DIGITAL,
-            title = "Speed", unit = DisplayUnit.KMH, columnSpan = 2,
-            scaleMinimum = 20.0, scaleMaximum = 240.0,
+            id = "speed",
+            pid = 0x0D,
+            type = DashboardWidgetType.DIGITAL,
+            title = "Speed",
+            unit = DisplayUnit.KMH,
+            canvasX = 1,
+            canvasY = 2,
+            canvasWidth = 5,
+            canvasHeight = 4,
+            zIndex = 3,
+            scaleMinimum = 20.0,
+            scaleMaximum = 240.0,
         )
         val landscapeWidget = portraitWidget.copy(
-            type = DashboardWidgetType.DIGITAL_RING,
-            columnSpan = 1,
-            rowSpan = 2,
-            digitalRing = DigitalRingConfig(preset = DigitalRingColorPreset.CYAN, segmentCount = 48),
+            type = DashboardWidgetType.LINE_CHART,
+            canvasX = 6,
+            canvasY = 1,
+            canvasWidth = 6,
+            canvasHeight = 5,
+            zIndex = 7,
         )
         val config = DashboardConfig(
-            id = "responsive", name = "Responsive dashboard", mode = DashboardMode.HYBRID,
-            portrait = DashboardLayout(columns = 2, widgets = listOf(portraitWidget)),
-            landscape = DashboardLayout(columns = 4, widgets = listOf(landscapeWidget)),
+            id = "responsive",
+            name = "Responsive HUD",
+            mode = DashboardMode.HYBRID,
+            portrait = DashboardLayout(widgets = listOf(portraitWidget)),
+            landscape = DashboardLayout(widgets = listOf(landscapeWidget)),
         )
+
         val imported = DashboardCodec.import(DashboardCodec.export(config)).getOrThrow()
-        assertEquals(2, imported.portrait.columns)
-        assertEquals(4, imported.landscape.columns)
+        assertEquals(HUD_CANVAS_COLUMNS, imported.portrait.columns)
+        assertEquals(HUD_CANVAS_COLUMNS, imported.landscape.columns)
+        assertEquals(1, imported.portrait.widgets.single().canvasX)
+        assertEquals(5, imported.portrait.widgets.single().canvasWidth)
         assertEquals(DashboardWidgetType.DIGITAL, imported.portrait.widgets.single().type)
-        assertEquals(20.0, imported.portrait.widgets.single().scaleMinimum)
-        assertEquals(240.0, imported.portrait.widgets.single().scaleMaximum)
-        assertEquals(DashboardWidgetType.DIGITAL_RING, imported.landscape.widgets.single().type)
-        assertEquals(48, imported.landscape.widgets.single().digitalRing?.segmentCount)
+        assertEquals(DashboardWidgetType.LINE_CHART, imported.landscape.widgets.single().type)
+        assertEquals(6, imported.landscape.widgets.single().canvasX)
+        assertEquals(7, imported.landscape.widgets.single().zIndex)
     }
 
     @Test
     fun roundTripPreservesPremiumEditorConfigurationAndChosenColors() {
         val widget = DashboardWidgetConfig(
-            id = "rpm", pid = 0x0C, type = DashboardWidgetType.ANALOG,
-            title = "Engine RPM", unit = DisplayUnit.RPM, decimals = 0, valueSize = 46,
-            columnSpan = 2, rowSpan = 3, gaugeStyle = GaugeStyle.CUSTOM,
-            bezelFinish = BezelFinish.BLACK_CHROME, gaugeSmoothing = GaugeSmoothing.FAST,
+            id = "rpm",
+            pid = 0x0C,
+            type = DashboardWidgetType.ANALOG,
+            title = "Engine RPM",
+            unit = DisplayUnit.RPM,
+            decimals = 0,
+            valueSize = 46,
+            canvasX = 0,
+            canvasY = 0,
+            canvasWidth = 6,
+            canvasHeight = 8,
+            gaugeStyle = GaugeStyle.CUSTOM,
+            bezelFinish = BezelFinish.BLACK_CHROME,
+            gaugeSmoothing = GaugeSmoothing.FAST,
             showPeakMarker = true,
             colors = ColorConfig(
-                value = 0xFF35E6FF, label = 0xFFFFFFFF, background = 0xFF111827,
-                border = 0xFFB0BEC5, warning = 0xFFFFB300, critical = 0xFFFF1744,
-                face = 0xFF111827, bezel = 0xFFB0BEC5, tick = 0xFF35E6FF,
-                needle = 0xFFFF1744, needleHighlight = 0xFFFFFFFF, glow = 0x8835E6FF,
+                value = 0xFF35E6FF,
+                label = 0xFFFFFFFF,
+                background = 0xFF111827,
+                border = 0xFFB0BEC5,
+                warning = 0xFFFFB300,
+                critical = 0xFFFF1744,
+                face = 0xFF111827,
+                bezel = 0xFFB0BEC5,
+                tick = 0xFF35E6FF,
+                needle = 0xFFFF1744,
+                needleHighlight = 0xFFFFFFFF,
+                glow = 0x8835E6FF,
             ),
             threshold = WarningThreshold(warningHigh = 5_500.0, criticalHigh = 6_500.0),
         )
         val config = DashboardConfig(
-            id = "track", name = "Track dashboard", mode = DashboardMode.ANALOG,
-            portrait = DashboardLayout(columns = 3, widgets = listOf(widget)),
+            id = "track",
+            name = "Track HUD",
+            mode = DashboardMode.ANALOG,
+            portrait = DashboardLayout(widgets = listOf(widget)),
         )
         val imported = DashboardCodec.import(DashboardCodec.export(config)).getOrThrow()
+
         assertEquals(config, imported)
         assertEquals(GaugeStyle.CUSTOM, imported.portrait.widgets.single().gaugeStyle)
         assertEquals(BezelFinish.BLACK_CHROME, imported.portrait.widgets.single().bezelFinish)
         assertEquals(0xFFFF1744, imported.portrait.widgets.single().colors.needle)
-        assertEquals(0xFF35E6FF, imported.portrait.widgets.single().colors.value)
         assertEquals(6_500.0, imported.portrait.widgets.single().threshold.criticalHigh)
+    }
+
+    @Test
+    fun legacyOrderedGridMigratesToFreeformCanvasWithoutDroppingWidgets() {
+        val imported = DashboardCodec.import(legacyDashboardJson("SPORT")).getOrThrow()
+        val widget = imported.portrait.widgets.single()
+
+        assertEquals(HUD_SCHEMA_VERSION, imported.schemaVersion)
+        assertEquals(HUD_CANVAS_COLUMNS, imported.portrait.columns)
+        assertEquals(HUD_CANVAS_ROWS, imported.portrait.rows)
+        assertEquals(GaugeStyle.SPORT_RED, widget.gaugeStyle)
+        assertTrue(widget.canvasWidth > 0)
+        assertTrue(widget.canvasHeight > 0)
+        assertTrue(widget.canvasX + widget.canvasWidth <= imported.portrait.columns)
+        assertTrue(widget.canvasY + widget.canvasHeight <= imported.portrait.rows)
     }
 
     @Test
@@ -140,10 +198,15 @@ class DashboardCodecTest {
     }
 
     @Test
-    fun importRejectsInvalidWidgetHeight() {
-        val invalidWidget = DashboardDefaults.widgetCatalog.first().copy(rowSpan = 9)
-        val invalid = DashboardDefaults.newProfile(id = "invalid-height").copy(
-            portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
+    fun importRejectsWidgetOutsideCanvas() {
+        val invalidWidget = DashboardDefaults.widgetCatalog.first().copy(
+            canvasX = 10,
+            canvasY = 0,
+            canvasWidth = 4,
+            canvasHeight = 4,
+        )
+        val invalid = DashboardDefaults.newProfile(id = "invalid-geometry").copy(
+            portrait = DashboardLayout(widgets = listOf(invalidWidget)),
         )
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }
@@ -152,10 +215,10 @@ class DashboardCodecTest {
     fun importRejectsIncompleteOrReversedWidgetScale() {
         val base = DashboardDefaults.widgetCatalog.first()
         val incomplete = DashboardDefaults.newProfile(id = "invalid-scale-incomplete").copy(
-            portrait = DashboardLayout(columns = 2, widgets = listOf(base.copy(scaleMinimum = 0.0, scaleMaximum = null))),
+            portrait = DashboardLayout(widgets = listOf(base.copy(scaleMinimum = 0.0, scaleMaximum = null))),
         )
         val reversed = DashboardDefaults.newProfile(id = "invalid-scale-reversed").copy(
-            portrait = DashboardLayout(columns = 2, widgets = listOf(base.copy(scaleMinimum = 200.0, scaleMaximum = 0.0))),
+            portrait = DashboardLayout(widgets = listOf(base.copy(scaleMinimum = 200.0, scaleMaximum = 0.0))),
         )
         assertTrue(DashboardCodec.import(DashboardCodec.export(incomplete)).isFailure)
         assertTrue(DashboardCodec.import(DashboardCodec.export(reversed)).isFailure)
@@ -168,7 +231,7 @@ class DashboardCodecTest {
             digitalRing = DigitalRingConfig(segmentCount = 100),
         )
         val invalid = DashboardDefaults.newProfile(id = "invalid-ring").copy(
-            portrait = DashboardLayout(columns = 2, widgets = listOf(invalidWidget)),
+            portrait = DashboardLayout(widgets = listOf(invalidWidget)),
         )
         assertTrue(DashboardCodec.import(DashboardCodec.export(invalid)).isFailure)
     }

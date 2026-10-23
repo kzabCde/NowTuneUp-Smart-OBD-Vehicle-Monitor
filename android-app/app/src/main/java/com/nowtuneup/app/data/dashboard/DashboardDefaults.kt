@@ -10,6 +10,8 @@ import com.nowtuneup.app.domain.model.DashboardWidgetType
 import com.nowtuneup.app.domain.model.DigitalRingColorPreset
 import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.GaugeStyle
+import com.nowtuneup.app.domain.model.HUD_CANVAS_COLUMNS
+import com.nowtuneup.app.domain.model.HUD_CANVAS_ROWS
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.WarningThreshold
 import com.nowtuneup.app.domain.model.digitalRingPreset
@@ -62,6 +64,15 @@ object DashboardDefaults {
             unit == DisplayUnit.GALLON -> 0.0 to 30.0
             else -> null
         }
+        val canvasSize = when (type) {
+            DashboardWidgetType.ANALOG -> 5 to 7
+            DashboardWidgetType.MINI_GAUGE -> 4 to 5
+            DashboardWidgetType.DIGITAL_RING -> 6 to 7
+            DashboardWidgetType.PROGRESS -> 6 to 3
+            DashboardWidgetType.LINE_CHART -> 8 to 5
+            DashboardWidgetType.DTC_CARD -> 6 to 4
+            DashboardWidgetType.DIGITAL -> 4 to 4
+        }
         return DashboardWidgetConfig(
             id = id,
             pid = pid,
@@ -71,6 +82,8 @@ object DashboardDefaults {
             row = 0,
             columnSpan = columnSpan,
             rowSpan = rowSpan,
+            canvasWidth = canvasSize.first,
+            canvasHeight = canvasSize.second,
             valueSize = valueSize,
             gaugeStyle = gaugeStyle,
             bezelFinish = premium.bezelFinish,
@@ -207,8 +220,8 @@ object DashboardDefaults {
         id = id,
         name = name,
         mode = DashboardMode.HYBRID,
-        portrait = DashboardLayout(columns = 2, widgets = emptyList()),
-        landscape = DashboardLayout(columns = 4, widgets = emptyList()),
+        portrait = DashboardLayout(columns = HUD_CANVAS_COLUMNS, rows = HUD_CANVAS_ROWS, widgets = emptyList()),
+        landscape = DashboardLayout(columns = HUD_CANVAS_COLUMNS, rows = HUD_CANVAS_ROWS, widgets = emptyList()),
         isDefault = false,
     )
 

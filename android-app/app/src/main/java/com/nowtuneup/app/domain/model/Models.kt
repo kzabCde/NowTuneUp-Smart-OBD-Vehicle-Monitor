@@ -111,7 +111,7 @@ enum class WidgetSize { SMALL, MEDIUM, LARGE }
 data class DashboardProfile(val id: Long = 0, val name: String, val widgets: List<DashboardWidget>)
 
 enum class DashboardMode { DIGITAL, ANALOG, HYBRID }
-enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, DTC_CARD }
+enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, LINE_CHART, DTC_CARD }
 enum class GaugeStyle { CLASSIC_METAL, SPORT_RED, NEO_CYAN, RACING_AMBER, OEM_BLUE, HUD_GREEN, CUSTOM }
 enum class BezelFinish { BRUSHED_STEEL, BLACK_CHROME, TITANIUM_DARK }
 enum class GaugeSmoothing { FAST, BALANCED, SMOOTH }
@@ -121,7 +121,6 @@ enum class RefreshRate(val intervalMillis: Long) { LOW(1_000), BALANCED(500), FA
 enum class DataFreshness { LIVE, DELAYED, STALE, NO_DATA, UNSUPPORTED, RECONNECTING }
 enum class AlertSeverity { NORMAL, WARNING, CRITICAL }
 enum class AdaptiveLayoutProfile { AUTO, PHONE, TABLET, HEAD_UNIT }
-enum class HudColorPreset { GREEN, AMBER, CYAN, WHITE, RED }
 
 data class WarningThreshold(
     val warningLow: Double? = null,
@@ -261,6 +260,10 @@ fun digitalRingPreset(preset: DigitalRingColorPreset, segmentCount: Int = 36): D
     )
 }
 
+const val HUD_CANVAS_COLUMNS = 12
+const val HUD_CANVAS_ROWS = 24
+const val HUD_SCHEMA_VERSION = 2
+
 data class DashboardWidgetConfig(
     val id: String,
     val pid: Int,
@@ -269,10 +272,24 @@ data class DashboardWidgetConfig(
     val unit: DisplayUnit,
     val decimals: Int = 1,
     val valueSize: Int = 34,
+
+    // Legacy grid fields are kept for import compatibility only. The v2 HUD editor uses the
+    // canvas coordinates below, so saved profiles remain stable across phone resolutions.
     val column: Int = 0,
     val row: Int = 0,
     val columnSpan: Int = 1,
     val rowSpan: Int = 1,
+
+    val canvasX: Int = 0,
+    val canvasY: Int = 0,
+    val canvasWidth: Int = 4,
+    val canvasHeight: Int = 5,
+    val zIndex: Int = 0,
+    val locked: Boolean = false,
+    val showLabel: Boolean = true,
+    val showUnit: Boolean = true,
+    val opacity: Float = 1f,
+
     val gaugeStyle: GaugeStyle = GaugeStyle.CLASSIC_METAL,
     val bezelFinish: BezelFinish? = null,
     val gaugeSmoothing: GaugeSmoothing? = null,
@@ -284,15 +301,22 @@ data class DashboardWidgetConfig(
     val digitalRing: DigitalRingConfig? = null,
 )
 
-data class DashboardLayout(val columns: Int = 2, val widgets: List<DashboardWidgetConfig> = emptyList())
+data class DashboardLayout(
+    val columns: Int = HUD_CANVAS_COLUMNS,
+    val rows: Int = HUD_CANVAS_ROWS,
+    val snapToGrid: Boolean = true,
+    val background: Long? = null,
+    val widgets: List<DashboardWidgetConfig> = emptyList(),
+)
 
 data class DashboardConfig(
     val id: String,
     val name: String,
     val mode: DashboardMode,
     val portrait: DashboardLayout,
-    val landscape: DashboardLayout = portrait.copy(columns = 3),
+    val landscape: DashboardLayout = portrait.copy(),
     val isDefault: Boolean = false,
+    val schemaVersion: Int = HUD_SCHEMA_VERSION,
 )
 
 data class ThemeConfig(
@@ -355,9 +379,7 @@ data class DashboardPreferences(
     val reconnectMaxDelaySeconds: Int = 30,
     val hudMode: Boolean = false,
     val hudMirror: Boolean = true,
-    val hudBurnInProtection: Boolean = true,
     val hudBrightnessPercent: Int = 100,
-    val hudColorPreset: HudColorPreset = HudColorPreset.GREEN,
     val adaptiveLayoutProfile: AdaptiveLayoutProfile = AdaptiveLayoutProfile.AUTO,
     val headUnitImmersive: Boolean = true,
     val preferredTransport: ObdTransportType = ObdTransportType.USB,
