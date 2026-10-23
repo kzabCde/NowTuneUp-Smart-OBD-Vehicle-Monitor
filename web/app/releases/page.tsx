@@ -10,6 +10,12 @@ export const metadata: Metadata = {
 
 const history = [
   {
+    version: "1.16.0",
+    label: "Performance insights & Pulse N",
+    date: "September 21, 2026",
+    description: "Added interactive Time Slip speed, estimated acceleration and distance graphs, matching previous-run comparison, richer history and the Pulse N visual identity.",
+  },
+  {
     version: "1.15.0",
     label: "Graphite & Daylight interface",
     date: "September 13, 2026",
@@ -52,7 +58,7 @@ export default function Releases() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span><span className="chip">Performance Insights</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span><span className="chip">Custom HUD Studio</span></div>
           <p className="eyebrow mt-8">Release history</p>
           <h1 className="page-title mt-4">Production first. History second.</h1>
           <p className="page-lede mt-7">The current signed APK stays visually dominant. Earlier milestones remain available so stability changes and product direction are easy to trace without turning this page into a raw changelog.</p>
@@ -61,7 +67,7 @@ export default function Releases() {
 
       <section className="section-rule">
         <div className="shell section-space">
-          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">NowTuneUp {localRelease.version} · Performance Insights.</h2><p className="section-copy">Interactive Time Slip graphs, matching-run comparison, refined history, a quieter interface and the Pulse N identity are now part of the production build.</p></div>
+          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">NowTuneUp {localRelease.version} · Custom HUD Studio.</h2><p className="section-copy">The fixed HUD has been replaced by a freeform 12×24 canvas with drag-and-resize widgets, independent portrait and landscape layouts, realtime charts, per-widget configuration, Undo/Redo and profile import/export.</p></div>
           <ReleaseCard release={localRelease} />
         </div>
       </section>
