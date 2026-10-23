@@ -211,8 +211,8 @@ private fun CustomHudCanvas(
             return@BoxWithConstraints
         }
 
-        val cellWidth = maxWidth / layout.columns.toFloat().coerceAtLeast(1).toFloat()
-        val cellHeight = maxHeight / layout.rows.toFloat().coerceAtLeast(1).toFloat()
+        val cellWidth = maxWidth / layout.columns.coerceAtLeast(1).toFloat()
+        val cellHeight = maxHeight / layout.rows.coerceAtLeast(1).toFloat()
 
         layout.widgets
             .sortedWith(compareBy({ it.zIndex }, { it.id }))
