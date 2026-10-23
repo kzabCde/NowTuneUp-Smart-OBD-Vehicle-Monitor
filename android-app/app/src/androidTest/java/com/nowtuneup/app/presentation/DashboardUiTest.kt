@@ -64,7 +64,7 @@ class DashboardUiTest {
         compose.onNodeWithText("Widget Library").assertIsDisplayed()
         compose.onNodeWithText("รอบเครื่อง").performClick()
         compose.onNodeWithText("Widget Properties").assertIsDisplayed()
-        compose.onNodeWithText("ใช้การตั้งค่า").performClick()
+        compose.onNodeWithText("ใช้การตั้งค่า").performScrollTo().performClick()
         compose.onNodeWithText("บันทึก").performClick()
         compose.waitForIdle()
 
