@@ -616,7 +616,12 @@ private fun WidgetPropertiesSheet(
 
             SheetTitle("รูปแบบ")
             ScrollableChips {
-                DashboardWidgetType.entries.forEach { candidate ->
+                val compatibleTypes = if (draft.pid < 0) {
+                    listOf(DashboardWidgetType.DTC_CARD)
+                } else {
+                    DashboardWidgetType.entries.filter { it != DashboardWidgetType.DTC_CARD }
+                }
+                compatibleTypes.forEach { candidate ->
                     FilterChip(
                         selected = draft.type == candidate,
                         onClick = { draft = draft.copy(type = candidate) },
