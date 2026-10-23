@@ -135,7 +135,7 @@ class MainViewModel @Inject constructor(
             combine(dashboards, dashboardPreferences) { profiles, preferences ->
                 val selected = profiles.firstOrNull { it.id == preferences.selectedDashboardId }
                 selected?.let { profile ->
-                    (profile.portrait.widgets + profile.landscape.widgets).map { it.pid }.toSet()
+                    (profile.portrait.widgets + profile.landscape.widgets).map { it.pid }.filter { it >= 0 }.toSet()
                 }.orEmpty()
             }.collect { pids ->
                 dashboardDemandPids = pids
