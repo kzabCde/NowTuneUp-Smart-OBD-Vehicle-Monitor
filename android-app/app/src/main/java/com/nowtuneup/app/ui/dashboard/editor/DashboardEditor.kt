@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -371,6 +372,9 @@ private fun HudCanvasEditor(
     onMove: (String, Int, Int) -> Unit,
     onResize: (String, Int, Int) -> Unit,
 ) {
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentOnMove by rememberUpdatedState(onMove)
+    val currentOnResize by rememberUpdatedState(onResize)
     val aspect = if (orientation == EditorOrientation.PORTRAIT) 9f / 16f else 16f / 9f
     Surface(
         modifier = Modifier.fillMaxWidth().aspectRatio(aspect),
@@ -424,12 +428,12 @@ private fun HudCanvasEditor(
                             color = if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.18f),
                             shape = MaterialTheme.shapes.medium,
                         )
-                        .clickable { onSelect(widget.id) }
+                        .clickable { currentOnSelect(widget.id) }
                         .pointerInput(widget.id, widget.locked, cellWidthPx, cellHeightPx) {
                             if (!widget.locked) {
                                 detectDragGestures(
                                     onDragStart = {
-                                        onSelect(widget.id)
+                                        currentOnSelect(widget.id)
                                         dragRemainder = Offset.Zero
                                     },
                                     onDragEnd = { dragRemainder = Offset.Zero },
@@ -440,7 +444,7 @@ private fun HudCanvasEditor(
                                     val dx = (dragRemainder.x / cellWidthPx).roundToInt()
                                     val dy = (dragRemainder.y / cellHeightPx).roundToInt()
                                     if (dx != 0 || dy != 0) {
-                                        onMove(widget.id, dx, dy)
+                                        currentOnMove(widget.id, dx, dy)
                                         dragRemainder -= Offset(dx * cellWidthPx, dy * cellHeightPx)
                                     }
                                 }
@@ -484,7 +488,7 @@ private fun HudCanvasEditor(
                                             val dw = (resizeRemainder.x / cellWidthPx).roundToInt()
                                             val dh = (resizeRemainder.y / cellHeightPx).roundToInt()
                                             if (dw != 0 || dh != 0) {
-                                                onResize(widget.id, dw, dh)
+                                                currentOnResize(widget.id, dw, dh)
                                                 resizeRemainder -= Offset(dw * cellWidthPx, dh * cellHeightPx)
                                             }
                                         }
