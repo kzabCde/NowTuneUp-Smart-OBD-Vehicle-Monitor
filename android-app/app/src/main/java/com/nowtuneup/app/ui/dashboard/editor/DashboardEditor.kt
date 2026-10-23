@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -373,7 +374,7 @@ private fun HudCanvasEditor(
     val aspect = if (orientation == EditorOrientation.PORTRAIT) 9f / 16f else 16f / 9f
     Surface(
         modifier = Modifier.fillMaxWidth().aspectRatio(aspect),
-        color = layout.background?.let(::Color) ?: Color(0xFF050708),
+        color = layout.background?.let { Color(it) } ?: Color(0xFF050708),
         shape = MaterialTheme.shapes.large,
         tonalElevation = 0.dp,
     ) {
