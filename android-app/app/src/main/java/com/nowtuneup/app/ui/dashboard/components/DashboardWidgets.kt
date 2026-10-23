@@ -734,17 +734,6 @@ private fun StatusLabel(status: ReadingStatus, color: Color) {
     Text(status.label, color = color, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
 }
 
-private fun DashboardWidgetConfig.minimumHeight(): Dp = when (rowSpan.coerceIn(1, 4)) {
-    1 -> when (type) {
-        DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE -> 228.dp
-        DashboardWidgetType.DIGITAL_RING -> 230.dp
-        else -> 132.dp
-    }
-    2 -> 282.dp
-    3 -> 350.dp
-    else -> 430.dp
-}
-
 private fun DashboardWidgetConfig.readingStatus(value: Double?): ReadingStatus = when {
     value == null -> ReadingStatus.NO_DATA
     threshold.criticalLow?.let { value <= it } == true || threshold.criticalHigh?.let { value >= it } == true -> ReadingStatus.CRITICAL
