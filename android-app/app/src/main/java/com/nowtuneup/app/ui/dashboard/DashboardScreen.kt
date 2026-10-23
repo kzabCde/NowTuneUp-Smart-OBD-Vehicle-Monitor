@@ -1,33 +1,25 @@
 package com.nowtuneup.app.ui.dashboard
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,15 +35,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.nowtuneup.app.domain.model.AlertSeverity
 import com.nowtuneup.app.domain.model.ConnectionState
 import com.nowtuneup.app.domain.model.DashboardAlert
 import com.nowtuneup.app.domain.model.DashboardConfig
+import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.DataFreshness
 import com.nowtuneup.app.domain.model.ReadingStats
@@ -59,10 +56,15 @@ import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
 import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
 import com.nowtuneup.app.ui.dashboard.components.DrivingDashboardWidget
-import com.nowtuneup.app.ui.hud.HudDashboard
 import com.nowtuneup.app.util.DisplayReadingAdapter
 import kotlinx.coroutines.delay
 
+/**
+ * Runtime renderer for the v2 Custom HUD.
+ *
+ * There is no separate hard-coded HUD anymore. The same user-created profile is rendered in normal,
+ * focus and mirrored projection modes, so Speed/RPM/Turbo are never forced into a fixed layout.
+ */
 @Composable
 fun DashboardScreen(
     config: DashboardConfig,
@@ -85,19 +87,6 @@ fun DashboardScreen(
     onToggleTouchLock: () -> Unit,
     onResetStats: () -> Unit,
 ) {
-    if (preferences.hudMode) {
-        HudDashboard(
-            readings = readings,
-            preferences = preferences,
-            connectionState = connectionState,
-            activeAlerts = activeAlerts,
-            onExitHud = onExitHud,
-            onToggleMirror = onToggleHudMirror,
-            onToggleTouchLock = onToggleTouchLock,
-        )
-        return
-    }
-
     val device = LocalConfiguration.current
     val landscape = device.screenWidthDp > device.screenHeightDp
     val deviceLayout = AdaptiveLayoutResolver.resolve(
@@ -107,9 +96,8 @@ fun DashboardScreen(
         smallestWidthDp = device.smallestScreenWidthDp,
     )
     val layout = if (landscape) config.landscape else config.portrait
-    val columns = AdaptiveLayoutResolver.dashboardColumns(layout.columns, deviceLayout, landscape)
     val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
-    val immersiveDashboard = preferences.focusMode || headUnitImmersive
+    val immersive = preferences.focusMode || preferences.hudMode || headUnitImmersive
     val compact = landscape || deviceLayout != ResolvedDeviceLayout.PHONE
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -123,24 +111,26 @@ fun DashboardScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(preferences.focusMode, preferences.touchLock) {
+            .background(if (preferences.hudMode) Color.Black else MaterialTheme.colorScheme.background)
+            .pointerInput(preferences.focusMode, preferences.hudMode, preferences.touchLock) {
                 detectTapGestures(
                     onTap = {
-                        if (preferences.focusMode && !preferences.touchLock) onToggleControls()
+                        if ((preferences.focusMode || preferences.hudMode) && !preferences.touchLock) {
+                            onToggleControls()
+                        }
                     },
                     onLongPress = {
-                        if (preferences.focusMode) onToggleTouchLock()
+                        if (preferences.focusMode || preferences.hudMode) onToggleTouchLock()
                     },
                 )
             },
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (!immersiveDashboard) {
-                ConnectionSetupCard(connectionState, onConnectionAction, compact = compact)
+        Column(Modifier.fillMaxSize()) {
+            if (!immersive) {
+                ConnectionSetupCard(connectionState, onConnectionAction, compact)
                 DashboardHeader(
                     config = config,
                     landscape = landscape,
-                    columns = columns,
                     deviceLayout = deviceLayout,
                     drivingMode = preferences.drivingMode,
                     onEdit = onEdit,
@@ -149,60 +139,23 @@ fun DashboardScreen(
             }
 
             activeAlerts.firstOrNull()?.let { alert ->
-                AlertBanner(alert, compact = immersiveDashboard || compact)
+                AlertBanner(alert, compact = immersive || compact)
             }
 
-            if (layout.widgets.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("This orientation has no widgets. Open the editor or copy the other layout.")
-                }
-            } else {
-                val spacing = when (deviceLayout) {
-                    ResolvedDeviceLayout.PHONE -> if (immersiveDashboard || landscape) 6.dp else 10.dp
-                    ResolvedDeviceLayout.TABLET -> 10.dp
-                    ResolvedDeviceLayout.HEAD_UNIT -> 12.dp
-                }
-                val padding = when (deviceLayout) {
-                    ResolvedDeviceLayout.PHONE -> if (immersiveDashboard || landscape) 6.dp else 12.dp
-                    ResolvedDeviceLayout.TABLET -> 14.dp
-                    ResolvedDeviceLayout.HEAD_UNIT -> 16.dp
-                }
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(padding),
-                    horizontalArrangement = Arrangement.spacedBy(spacing),
-                    verticalArrangement = Arrangement.spacedBy(spacing),
-                ) {
-                    items(
-                        items = layout.widgets,
-                        key = { it.id },
-                        span = { widget -> GridItemSpan(widget.columnSpan.coerceIn(1, columns)) },
-                    ) { widget ->
-                        val nativeReading = readings.firstOrNull { it.pid == widget.pid }
-                        val displayReading = DisplayReadingAdapter.reading(nativeReading, widget.unit)
-                        val displayStats = DisplayReadingAdapter.stats(
-                            stats = readingStats[widget.pid],
-                            sourceUnit = nativeReading?.unit.orEmpty(),
-                            target = widget.unit,
-                        )
-                        DrivingDashboardWidget(
-                            config = widget,
-                            reading = displayReading,
-                            stats = displayStats,
-                            freshness = readingFreshness(nativeReading, connectionState, now, preferences),
-                            reduceMotion = preferences.reduceMotion || preferences.drivingMode,
-                            dtcCount = dtcCount,
-                            showPeakHold = preferences.showPeakHold,
-                            showMinMax = preferences.showMinMax,
-                        )
-                    }
-                }
-            }
+            CustomHudCanvas(
+                layout = layout,
+                readings = readings,
+                readingStats = readingStats,
+                preferences = preferences,
+                connectionState = connectionState,
+                dtcCount = dtcCount,
+                now = now,
+                modifier = Modifier.weight(1f),
+            )
         }
 
-        if (immersiveDashboard) {
-            CompactConnectionIndicator(
+        if (immersive) {
+            ConnectionBadge(
                 state = connectionState,
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
             )
@@ -212,12 +165,16 @@ fun DashboardScreen(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
             )
         }
-        if (preferences.focusMode && controlsVisible) {
-            FocusControls(
+
+        if ((preferences.focusMode || preferences.hudMode) && controlsVisible) {
+            ImmersiveControls(
+                projectionMode = preferences.hudMode,
+                mirrored = preferences.hudMirror,
                 touchLocked = preferences.touchLock,
+                onToggleMirror = onToggleHudMirror,
                 onToggleTouchLock = onToggleTouchLock,
                 onResetStats = onResetStats,
-                onExitFocus = onExitFocus,
+                onExit = if (preferences.hudMode) onExitHud else onExitFocus,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
             )
         }
@@ -225,10 +182,79 @@ fun DashboardScreen(
 }
 
 @Composable
+private fun CustomHudCanvas(
+    layout: DashboardLayout,
+    readings: List<VehicleReading>,
+    readingStats: Map<Int, ReadingStats>,
+    preferences: DashboardPreferences,
+    connectionState: ConnectionState,
+    dtcCount: Int,
+    now: Long,
+    modifier: Modifier = Modifier,
+) {
+    val background = layout.background?.let(::Color) ?: Color.Transparent
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .background(background)
+            .graphicsLayer { scaleX = if (preferences.hudMode && preferences.hudMirror) -1f else 1f },
+    ) {
+        if (layout.widgets.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Custom HUD ยังว่างอยู่ · เปิดตัวแก้ไขเพื่อเพิ่ม Widget",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return@BoxWithConstraints
+        }
+
+        val cellWidth = maxWidth / layout.columns.coerceAtLeast(1)
+        val cellHeight = maxHeight / layout.rows.coerceAtLeast(1)
+
+        layout.widgets
+            .sortedWith(compareBy({ it.zIndex }, { it.id }))
+            .forEach { widget ->
+                val x = widget.canvasX.coerceIn(0, (layout.columns - 1).coerceAtLeast(0))
+                val y = widget.canvasY.coerceIn(0, (layout.rows - 1).coerceAtLeast(0))
+                val width = widget.canvasWidth.coerceIn(1, (layout.columns - x).coerceAtLeast(1))
+                val height = widget.canvasHeight.coerceIn(1, (layout.rows - y).coerceAtLeast(1))
+
+                val nativeReading = readings.firstOrNull { it.pid == widget.pid }
+                val displayReading = DisplayReadingAdapter.reading(nativeReading, widget.unit)
+                val displayStats = DisplayReadingAdapter.stats(
+                    stats = readingStats[widget.pid],
+                    sourceUnit = nativeReading?.unit.orEmpty(),
+                    target = widget.unit,
+                )
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = cellWidth * x, y = cellHeight * y)
+                        .size(width = cellWidth * width, height = cellHeight * height)
+                        .padding(3.dp)
+                        .zIndex(widget.zIndex.toFloat()),
+                ) {
+                    DrivingDashboardWidget(
+                        config = widget,
+                        reading = displayReading,
+                        stats = displayStats,
+                        freshness = readingFreshness(nativeReading, connectionState, now, preferences),
+                        reduceMotion = preferences.reduceMotion || preferences.drivingMode,
+                        dtcCount = dtcCount,
+                        showPeakHold = preferences.showPeakHold,
+                        showMinMax = preferences.showMinMax,
+                    )
+                }
+            }
+    }
+}
+
+@Composable
 private fun DashboardHeader(
     config: DashboardConfig,
     landscape: Boolean,
-    columns: Int,
     deviceLayout: ResolvedDeviceLayout,
     drivingMode: Boolean,
     onEdit: () -> Unit,
@@ -242,20 +268,22 @@ private fun DashboardHeader(
         Column(Modifier.weight(1f)) {
             Text(
                 config.name,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "${deviceLayout.label()} · $columns คอลัมน์",
+                "Custom HUD · ${deviceLayout.label()} · 12×24 canvas",
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onEnterFocus) { Text("โฟกัส") }
+            TextButton(onClick = onEnterFocus) { Text("เต็มจอ") }
             if (!drivingMode) {
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "แก้ไขหน้าปัด")
+                    Icon(Icons.Default.Edit, contentDescription = "แก้ไข Custom HUD")
                 }
             }
         }
@@ -263,55 +291,66 @@ private fun DashboardHeader(
 }
 
 @Composable
-private fun FocusControls(
+private fun ImmersiveControls(
+    projectionMode: Boolean,
+    mirrored: Boolean,
     touchLocked: Boolean,
+    onToggleMirror: () -> Unit,
     onToggleTouchLock: () -> Unit,
     onResetStats: () -> Unit,
-    onExitFocus: () -> Unit,
+    onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.78f),
+        color = Color.Black.copy(alpha = 0.82f),
         shape = MaterialTheme.shapes.large,
     ) {
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onToggleTouchLock) { Text(if (touchLocked) "ปลดล็อก" else "ล็อก", color = Color.White) }
+            if (projectionMode) {
+                TextButton(onClick = onToggleMirror) {
+                    Text(if (mirrored) "ภาพปกติ" else "กลับภาพ", color = Color.White)
+                }
+            }
+            TextButton(onClick = onToggleTouchLock) {
+                Text(if (touchLocked) "ปลดล็อก" else "ล็อก", color = Color.White)
+            }
             TextButton(onClick = onResetStats) { Text("รีเซ็ต Min/Max", color = Color.White) }
-            TextButton(onClick = onExitFocus) { Text("ออก", color = Color.White) }
+            TextButton(onClick = onExit) { Text("ออก", color = Color.White) }
         }
     }
 }
 
 @Composable
-private fun CompactConnectionIndicator(state: ConnectionState, modifier: Modifier = Modifier) {
+private fun ConnectionBadge(state: ConnectionState, modifier: Modifier = Modifier) {
     val color = when (state) {
         ConnectionState.CONNECTED -> Color(0xFF4CAF50)
         ConnectionState.ERROR -> Color(0xFFFF5252)
         ConnectionState.DISCONNECTED -> Color(0xFF90A4AE)
         else -> Color(0xFFFFC107)
     }
-    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.62f), shape = CircleShape) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(8.dp).background(color, CircleShape))
-            Text("  ${state.shortLabel()}", style = MaterialTheme.typography.labelSmall)
-        }
+    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.68f), shape = MaterialTheme.shapes.large) {
+        Text(
+            state.shortLabel(),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
 @Composable
 private fun PageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
     if (pageCount <= 1) return
-    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.55f), shape = CircleShape) {
+    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.62f), shape = MaterialTheme.shapes.large) {
         Text(
-            text = "${pageIndex + 1} / $pageCount",
+            "${pageIndex + 1} / $pageCount",
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            color = Color.White,
             style = MaterialTheme.typography.labelSmall,
         )
     }
@@ -361,7 +400,11 @@ private fun readingFreshness(
 }
 
 @Composable
-private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, compact: Boolean) {
+private fun ConnectionSetupCard(
+    state: ConnectionState,
+    onAction: () -> Unit,
+    compact: Boolean,
+) {
     val connected = state == ConnectionState.CONNECTED
     val busy = state in setOf(
         ConnectionState.DEVICE_DETECTED,
@@ -370,22 +413,13 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
         ConnectionState.INITIALIZING,
     )
     val title = when (state) {
-        ConnectionState.DISCONNECTED -> "เชื่อมต่อรถของคุณ"
-        ConnectionState.DEVICE_DETECTED -> "พบอะแดปเตอร์แล้ว"
-        ConnectionState.REQUESTING_PERMISSION -> "อนุญาตการเข้าถึงอุปกรณ์"
-        ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ ELM327"
-        ConnectionState.INITIALIZING -> "กำลังเตรียมข้อมูลรถ"
-        ConnectionState.CONNECTED -> "เชื่อมต่อรถแล้ว"
-        ConnectionState.ERROR -> "ตรวจสอบการเชื่อมต่อ"
-    }
-    val detail = when (state) {
-        ConnectionState.DISCONNECTED -> "เปิดสวิตช์กุญแจ เลือก Bluetooth หรือ USB แล้วกดเชื่อมต่อ"
-        ConnectionState.DEVICE_DETECTED -> "พบอุปกรณ์ที่พร้อมให้เชื่อมต่อ"
-        ConnectionState.REQUESTING_PERMISSION -> "อนุญาตการเข้าถึงอุปกรณ์ในหน้าต่างของ Android"
-        ConnectionState.CONNECTING -> "กำลังเปิดการเชื่อมต่อกับอะแดปเตอร์"
-        ConnectionState.INITIALIZING -> "กำลังเตรียมอะแดปเตอร์และตรวจสอบ ECU"
-        ConnectionState.CONNECTED -> "พร้อมอ่านข้อมูลสดที่รถรองรับ"
-        ConnectionState.ERROR -> "ตรวจสอบอะแดปเตอร์ Bluetooth หรือ USB และสวิตช์กุญแจ แล้วลองอีกครั้ง"
+        ConnectionState.DISCONNECTED -> "เชื่อมต่อรถ"
+        ConnectionState.DEVICE_DETECTED -> "พบอะแดปเตอร์"
+        ConnectionState.REQUESTING_PERMISSION -> "รอสิทธิ์อุปกรณ์"
+        ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ"
+        ConnectionState.INITIALIZING -> "กำลังเตรียม ECU"
+        ConnectionState.CONNECTED -> "OBD เชื่อมต่อแล้ว"
+        ConnectionState.ERROR -> "การเชื่อมต่อมีปัญหา"
     }
     val accent = when (state) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -393,89 +427,44 @@ private fun ConnectionSetupCard(state: ConnectionState, onAction: () -> Unit, co
         else -> MaterialTheme.colorScheme.secondary
     }
 
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.large,
     ) {
-        Column(
-            modifier = Modifier.padding(if (compact) 10.dp else 16.dp),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 12.dp),
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = if (compact) 8.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    busy -> CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                    connected -> Icon(Icons.Default.CheckCircle, null, tint = accent)
-                    state == ConnectionState.ERROR -> Icon(Icons.Default.Warning, null, tint = accent)
-                    else -> Icon(Icons.Default.Usb, null, tint = accent)
-                }
-                Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (!compact || state != ConnectionState.CONNECTED) {
-                        Text(detail, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (!busy) {
-                    Button(onClick = onAction) {
-                        Text(if (connected) "ตัดการเชื่อมต่อ" else if (state == ConnectionState.ERROR) "ลองอีกครั้ง" else "เชื่อมต่อ")
-                    }
-                }
+            when {
+                busy -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
+                connected -> Icon(Icons.Default.CheckCircle, null, tint = accent)
+                state == ConnectionState.ERROR -> Icon(Icons.Default.Warning, null, tint = accent)
+                else -> Icon(Icons.Default.Usb, null, tint = accent)
             }
-            if (!compact) ConnectionSteps(state)
-        }
-    }
-}
-
-@Composable
-private fun ConnectionSteps(state: ConnectionState) {
-    val activeStep = when (state) {
-        ConnectionState.DISCONNECTED -> 0
-        ConnectionState.DEVICE_DETECTED, ConnectionState.REQUESTING_PERMISSION -> 1
-        ConnectionState.CONNECTING -> 2
-        ConnectionState.INITIALIZING -> 3
-        ConnectionState.CONNECTED -> 4
-        ConnectionState.ERROR -> 0
-    }
-    val labels = listOf("USB", "Permission", "Adapter", "ECU")
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        labels.forEachIndexed { index, label ->
-            val completed = activeStep > index
-            val active = activeStep == index && state !in setOf(ConnectionState.DISCONNECTED, ConnectionState.ERROR)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier.size(22.dp).background(
-                        color = when {
-                            completed -> MaterialTheme.colorScheme.primary
-                            active -> MaterialTheme.colorScheme.secondary
-                            else -> Color.Transparent
-                        },
-                        shape = CircleShape,
-                    ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (completed) "✓" else "${index + 1}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when { completed -> MaterialTheme.colorScheme.onPrimary; active -> MaterialTheme.colorScheme.onSecondary; else -> MaterialTheme.colorScheme.onSurfaceVariant },
-                    )
+            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+            if (!busy) {
+                Button(onClick = onAction) {
+                    Text(if (connected) "ตัด" else "เชื่อมต่อ")
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
 
 private fun ResolvedDeviceLayout.label(): String = when (this) {
-    ResolvedDeviceLayout.PHONE -> "มือถือ"
-    ResolvedDeviceLayout.TABLET -> "แท็บเล็ต"
-    ResolvedDeviceLayout.HEAD_UNIT -> "จอรถ"
+    ResolvedDeviceLayout.PHONE -> "Phone"
+    ResolvedDeviceLayout.TABLET -> "Tablet"
+    ResolvedDeviceLayout.HEAD_UNIT -> "Head unit"
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {
-    ConnectionState.DISCONNECTED -> "Disconnected"
-    ConnectionState.DEVICE_DETECTED -> "USB detected"
-    ConnectionState.REQUESTING_PERMISSION -> "Permission"
-    ConnectionState.CONNECTING -> "Connecting"
-    ConnectionState.INITIALIZING -> "Initializing"
-    ConnectionState.CONNECTED -> "Connected"
-    ConnectionState.ERROR -> "Error"
+    ConnectionState.DISCONNECTED -> "ยังไม่เชื่อมต่อ"
+    ConnectionState.DEVICE_DETECTED -> "พบอุปกรณ์"
+    ConnectionState.REQUESTING_PERMISSION -> "รออนุญาต"
+    ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ"
+    ConnectionState.INITIALIZING -> "กำลังเตรียมระบบ"
+    ConnectionState.CONNECTED -> "LIVE"
+    ConnectionState.ERROR -> "ERROR"
 }
