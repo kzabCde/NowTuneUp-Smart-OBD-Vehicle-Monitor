@@ -23,7 +23,6 @@ import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardPreferences
 import com.nowtuneup.app.domain.model.DiagnosticOverview
 import com.nowtuneup.app.domain.model.Dtc
-import com.nowtuneup.app.domain.model.HudColorPreset
 import com.nowtuneup.app.domain.model.ObdTransportType
 import com.nowtuneup.app.domain.model.ReadingStats
 import com.nowtuneup.app.domain.model.RefreshRate
@@ -338,9 +337,7 @@ class MainViewModel @Inject constructor(
         it.copy(hudMode = value, focusMode = if (value) true else it.focusMode, touchLock = false)
     }
     fun setHudMirror(value: Boolean) = updatePreferences { it.copy(hudMirror = value) }
-    fun setHudBurnInProtection(value: Boolean) = updatePreferences { it.copy(hudBurnInProtection = value) }
     fun setHudBrightnessPercent(value: Int) = updatePreferences { it.copy(hudBrightnessPercent = value) }
-    fun setHudColorPreset(value: HudColorPreset) = updatePreferences { it.copy(hudColorPreset = value) }
     fun setAdaptiveLayoutProfile(value: AdaptiveLayoutProfile) = updatePreferences { it.copy(adaptiveLayoutProfile = value) }
     fun setHeadUnitImmersive(value: Boolean) = updatePreferences { it.copy(headUnitImmersive = value) }
 
