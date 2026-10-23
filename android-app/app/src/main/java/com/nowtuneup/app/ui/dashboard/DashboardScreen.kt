@@ -211,8 +211,8 @@ private fun CustomHudCanvas(
             return@BoxWithConstraints
         }
 
-        val cellWidth = maxWidth / layout.columns.coerceAtLeast(1)
-        val cellHeight = maxHeight / layout.rows.coerceAtLeast(1)
+        val cellWidth = maxWidth / layout.columns.toFloat().coerceAtLeast(1).toFloat()
+        val cellHeight = maxHeight / layout.rows.toFloat().coerceAtLeast(1).toFloat()
 
         layout.widgets
             .sortedWith(compareBy({ it.zIndex }, { it.id }))
@@ -232,8 +232,8 @@ private fun CustomHudCanvas(
 
                 Box(
                     modifier = Modifier
-                        .offset(x = cellWidth * x, y = cellHeight * y)
-                        .size(width = cellWidth * width, height = cellHeight * height)
+                        .offset(x = cellWidth * x.toFloat(), y = cellHeight * y.toFloat())
+                        .size(width = cellWidth * width.toFloat(), height = cellHeight * height.toFloat())
                         .padding(3.dp)
                         .zIndex(widget.zIndex.toFloat()),
                 ) {
