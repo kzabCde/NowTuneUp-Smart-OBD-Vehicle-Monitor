@@ -391,7 +391,6 @@ private fun PremiumAnalogGauge(
     status: ReadingStatus,
     statusColor: Color,
     reduceMotion: Boolean,
-    minimumHeight: Dp,
 ) {
     val preset = config.resolvedGaugePreset()
     val scale = config.resolveScale(reading)
