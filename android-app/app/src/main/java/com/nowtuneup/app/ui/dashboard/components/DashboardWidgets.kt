@@ -130,20 +130,24 @@ private fun DigitalWidget(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
+            if (config.showLabel) {
+                Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
+            }
             StatusLabel(status, color)
         }
         Text(
             text = value?.let { "%.${config.decimals}f".format(it) } ?: "--",
             color = color,
-            fontSize = config.valueSize.coerceIn(20, 80).sp,
+            fontSize = config.valueSize.coerceIn(16, 96).sp,
             fontWeight = FontWeight.Black,
         )
-        Text(
-            if (value == null) "Waiting for ECU" else config.unit.label(),
-            style = MaterialTheme.typography.labelMedium,
-            color = Color(config.colors.label),
-        )
+        if (value == null || config.showUnit) {
+            Text(
+                if (value == null) "Waiting for ECU" else config.unit.label(),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(config.colors.label),
+            )
+        }
     }
 }
 
@@ -161,13 +165,17 @@ private fun ProgressWidget(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
+            if (config.showLabel) {
+                Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
+            }
             StatusLabel(status, color)
         }
         Text(
-            value?.let { "%.${config.decimals}f ${config.unit.label()}".format(it) }
-                ?: "-- · Waiting for ECU",
-            fontSize = 25.sp,
+            value?.let {
+                val unit = if (config.showUnit) " ${config.unit.label()}" else ""
+                "%.${config.decimals}f%s".format(it, unit)
+            } ?: "-- · Waiting for ECU",
+            fontSize = config.valueSize.coerceIn(16, 72).sp,
             color = color,
             fontWeight = FontWeight.Bold,
         )
@@ -289,24 +297,28 @@ private fun DigitalRingGauge(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(top = 18.dp),
         ) {
-            Text(
-                config.title.uppercase(),
-                color = Color(ring.titleColor),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            if (config.showLabel) {
+                Text(
+                    config.title.uppercase(),
+                    color = Color(ring.titleColor),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             Text(
                 value?.let { "%.${config.decimals}f".format(it) } ?: "--",
                 color = digitColor,
                 fontSize = config.valueSize.coerceIn(34, 80).sp,
                 fontWeight = FontWeight.Black,
             )
-            Text(
-                if (value == null) "WAITING" else config.unit.label().uppercase(),
-                color = Color(ring.scaleColor),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (value == null || config.showUnit) {
+                Text(
+                    if (value == null) "WAITING" else config.unit.label().uppercase(),
+                    color = Color(ring.scaleColor),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             StatusLabel(status, statusColor)
         }
     }
@@ -605,23 +617,27 @@ private fun PremiumAnalogGauge(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(top = 74.dp),
         ) {
-            Text(
-                config.title.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(preset.label),
-                fontWeight = FontWeight.Bold,
-            )
+            if (config.showLabel) {
+                Text(
+                    config.title.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(preset.label),
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             Text(
                 value?.let { "%.${config.decimals}f".format(it) } ?: "--",
                 fontSize = config.valueSize.coerceIn(24, 58).sp,
                 fontWeight = FontWeight.Black,
                 color = valueColor,
             )
-            Text(
-                if (value == null) "WAITING FOR ECU" else config.unit.label().uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(preset.label).copy(alpha = 0.82f),
-            )
+            if (value == null || config.showUnit) {
+                Text(
+                    if (value == null) "WAITING FOR ECU" else config.unit.label().uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(preset.label).copy(alpha = 0.82f),
+                )
+            }
             StatusLabel(status, statusColor)
         }
     }
