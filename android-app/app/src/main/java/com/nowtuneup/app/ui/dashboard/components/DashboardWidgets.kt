@@ -21,7 +21,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
@@ -80,12 +83,10 @@ fun DashboardWidgetView(
         ReadingStatus.WARNING -> Color(config.colors.warning)
         ReadingStatus.CRITICAL -> Color(config.colors.critical)
     }
-    val minimumHeight = config.minimumHeight()
-
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = minimumHeight)
+            .fillMaxSize()
+            .alpha(config.opacity.coerceIn(0.20f, 1f))
             .border(
                 width = 1.dp,
                 color = Color(config.colors.border).copy(alpha = 0.55f),
@@ -98,7 +99,7 @@ fun DashboardWidgetView(
         when (config.type) {
             DashboardWidgetType.ANALOG,
             DashboardWidgetType.MINI_GAUGE,
-            -> PremiumAnalogGauge(config, reading, stats, status, statusColor, reduceMotion, minimumHeight)
+            -> PremiumAnalogGauge(config, reading, stats, status, statusColor, reduceMotion)
 
             DashboardWidgetType.DIGITAL_RING -> DigitalRingGauge(
                 config = config,
@@ -106,10 +107,10 @@ fun DashboardWidgetView(
                 status = status,
                 statusColor = statusColor,
                 reduceMotion = reduceMotion,
-                minimumHeight = minimumHeight,
             )
 
             DashboardWidgetType.PROGRESS -> ProgressWidget(config, reading, status, statusColor)
+            DashboardWidgetType.LINE_CHART -> RealtimeLineChart(config, reading, statusColor)
             DashboardWidgetType.DTC_CARD -> DtcWidget(dtcCount)
             DashboardWidgetType.DIGITAL -> DigitalWidget(config, value, status, statusColor)
         }
@@ -186,7 +187,6 @@ private fun DigitalRingGauge(
     status: ReadingStatus,
     statusColor: Color,
     reduceMotion: Boolean,
-    minimumHeight: Dp,
 ) {
     val ring = config.digitalRing ?: digitalRingPreset(DigitalRingColorPreset.AMBER)
     val scale = config.resolveScale(reading)
@@ -213,7 +213,7 @@ private fun DigitalRingGauge(
     val activeSegments = ceil(progress * segmentCount).toInt().coerceIn(0, segmentCount)
 
     Box(
-        modifier = Modifier.fillMaxWidth().height(minimumHeight.coerceAtLeast(230.dp)).padding(8.dp),
+        modifier = Modifier.fillMaxSize().padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -313,6 +313,77 @@ private fun DigitalRingGauge(
 }
 
 @Composable
+private fun RealtimeLineChart(
+    config: DashboardWidgetConfig,
+    reading: VehicleReading?,
+    color: Color,
+) {
+    val samples = remember(config.id) { mutableStateListOf<Double>() }
+    val value = reading?.takeIf { it.supported }?.value
+
+    LaunchedEffect(reading?.updatedAt, value) {
+        value?.takeIf { it.isFinite() }?.let {
+            samples.add(it)
+            while (samples.size > 72) samples.removeAt(0)
+        }
+    }
+
+    val configuredMin = config.scaleMinimum
+    val configuredMax = config.scaleMaximum
+    val sampleMin = samples.minOrNull() ?: 0.0
+    val sampleMax = samples.maxOrNull() ?: 1.0
+    val minimum = configuredMin ?: sampleMin
+    val maximum = configuredMax ?: sampleMax.coerceAtLeast(minimum + 1.0)
+
+    Box(Modifier.fillMaxSize().padding(12.dp)) {
+        Canvas(Modifier.fillMaxSize().padding(top = 28.dp, bottom = 24.dp)) {
+            if (samples.size < 2 || maximum <= minimum) return@Canvas
+            val stepX = size.width / (samples.size - 1).coerceAtLeast(1)
+            val path = Path()
+            samples.forEachIndexed { index, sample ->
+                val fraction = ((sample - minimum) / (maximum - minimum)).toFloat().coerceIn(0f, 1f)
+                val point = Offset(index * stepX, size.height - (fraction * size.height))
+                if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+            }
+            drawLine(
+                color = Color(config.colors.border).copy(alpha = 0.45f),
+                start = Offset(0f, size.height),
+                end = Offset(size.width, size.height),
+                strokeWidth = 1.dp.toPx(),
+            )
+            drawPath(
+                path = path,
+                color = color,
+                style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
+
+        if (config.showLabel) {
+            Text(
+                config.title,
+                modifier = Modifier.align(Alignment.TopStart),
+                color = Color(config.colors.label),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            text = value?.let { "%.${config.decimals}f".format(it) } ?: "--",
+            modifier = Modifier.align(Alignment.TopEnd),
+            color = color,
+            fontWeight = FontWeight.Black,
+        )
+        if (config.showUnit) {
+            Text(
+                config.unit.label(),
+                modifier = Modifier.align(Alignment.BottomEnd),
+                color = Color(config.colors.label),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+@Composable
 private fun PremiumAnalogGauge(
     config: DashboardWidgetConfig,
     reading: VehicleReading?,
@@ -357,7 +428,7 @@ private fun PremiumAnalogGauge(
     }
 
     Box(
-        modifier = Modifier.fillMaxWidth().height(minimumHeight.coerceAtLeast(228.dp)).padding(6.dp),
+        modifier = Modifier.fillMaxSize().padding(6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
