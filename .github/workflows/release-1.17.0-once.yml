@@ -1,0 +1,92 @@
+name: Release NowTuneUp 1.17.0 once
+
+on:
+  push:
+    branches:
+      - automation/release-1.17.0
+    paths:
+      - .github/workflows/release-1.17.0-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      RELEASE_VERSION: 1.17.0
+      RELEASE_NOTES: docs/releases/v1.17.0.md
+      TARGET_SHA: 45fada15d6b022af5bab44e61b328fa09d9009bf
+      NTU_KEYSTORE_FILE: ${{ github.workspace }}/android-app/keystore/nowtuneup-web-release.jks
+      NTU_KEYSTORE_PASSWORD: ${{ secrets.NTU_KEYSTORE_PASSWORD }}
+      NTU_KEY_ALIAS: ${{ secrets.NTU_KEY_ALIAS }}
+      NTU_KEY_PASSWORD: ${{ secrets.NTU_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 45fada15d6b022af5bab44e61b328fa09d9009bf
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 13114758
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+
+      - name: Validate release and signing prerequisites
+        working-directory: android-app
+        run: |
+          set -euo pipefail
+          grep -Fq "versionName = \"$RELEASE_VERSION\"" app/build.gradle.kts
+          grep -Fq "versionCode = 27" app/build.gradle.kts
+          test -f "../$RELEASE_NOTES"
+          test -s "$NTU_KEYSTORE_FILE"
+          test -n "$NTU_KEYSTORE_PASSWORD"
+          test -n "$NTU_KEY_ALIAS"
+          test -n "$NTU_KEY_PASSWORD"
+          chmod +x gradlew
+
+      - name: Test and lint
+        working-directory: android-app
+        run: ./gradlew test lint --stacktrace --no-daemon
+
+      - name: Build signed release APK
+        working-directory: android-app
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
+
+      - name: Name, checksum and verify artifact
+        run: |
+          set -euo pipefail
+          scripts/rename-apk.sh "$RELEASE_VERSION"
+          scripts/calculate-checksum.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
+          scripts/verify-release.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
+
+      - name: Create release tag on merged commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${RELEASE_VERSION} already exists"
+          else
+            git tag -a "v${RELEASE_VERSION}" "$TARGET_SHA" -m "NowTuneUp v${RELEASE_VERSION}"
+            git push origin "refs/tags/v${RELEASE_VERSION}"
+          fi
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          name: NowTuneUp v${{ env.RELEASE_VERSION }}
+          body_path: ${{ env.RELEASE_NOTES }}
+          generate_release_notes: true
+          files: |
+            android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk
+            android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk.sha256
