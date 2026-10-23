@@ -20,6 +20,7 @@ import com.nowtuneup.app.ui.components.NtuScreenHeader
 import com.nowtuneup.app.ui.dashboard.editor.DashboardEditor
 import androidx.compose.material3.Text
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
