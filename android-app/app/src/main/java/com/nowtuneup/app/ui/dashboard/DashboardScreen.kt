@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -192,7 +193,7 @@ private fun CustomHudCanvas(
     now: Long,
     modifier: Modifier = Modifier,
 ) {
-    val background = layout.background?.let(::Color) ?: Color.Transparent
+    val background = layout.background?.let { Color(it) } ?: Color.Transparent
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
