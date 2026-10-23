@@ -121,7 +121,6 @@ enum class RefreshRate(val intervalMillis: Long) { LOW(1_000), BALANCED(500), FA
 enum class DataFreshness { LIVE, DELAYED, STALE, NO_DATA, UNSUPPORTED, RECONNECTING }
 enum class AlertSeverity { NORMAL, WARNING, CRITICAL }
 enum class AdaptiveLayoutProfile { AUTO, PHONE, TABLET, HEAD_UNIT }
-enum class HudColorPreset { GREEN, AMBER, CYAN, WHITE, RED }
 
 data class WarningThreshold(
     val warningLow: Double? = null,
@@ -380,9 +379,7 @@ data class DashboardPreferences(
     val reconnectMaxDelaySeconds: Int = 30,
     val hudMode: Boolean = false,
     val hudMirror: Boolean = true,
-    val hudBurnInProtection: Boolean = true,
     val hudBrightnessPercent: Int = 100,
-    val hudColorPreset: HudColorPreset = HudColorPreset.GREEN,
     val adaptiveLayoutProfile: AdaptiveLayoutProfile = AdaptiveLayoutProfile.AUTO,
     val headUnitImmersive: Boolean = true,
     val preferredTransport: ObdTransportType = ObdTransportType.USB,
