@@ -4,17 +4,17 @@ import { localRelease } from "@/lib/local-release";
 
 export const metadata: Metadata = {
   title: "Features",
-  description: "Explore NowTuneUp live telemetry, user-created vehicle profiles, Vehicle Intelligence, interactive Time Slip performance graphs, adapter health and local-first OBD-II tools.",
+  description: "Explore NowTuneUp Custom HUD Studio, live telemetry, user-created vehicle profiles, Vehicle Intelligence, Time Slip performance graphs, adapter health and local-first OBD-II tools.",
 };
 
 const pillars = [
   {
     number: "01",
     eyebrow: "Monitor",
-    title: "Realtime values, scheduled around what is visible.",
-    description: "Demand-based polling prioritizes the PIDs required by the current screen instead of continuously asking the adapter for everything it supports.",
-    chips: ["RPM", "Speed", "Coolant", "Voltage", "Engine load", "Throttle"],
-    rows: [["Dashboard demand", "Active"], ["Polling profile", "Adaptive"], ["Unsupported PID", "Unavailable"]],
+    title: "Build a live OBD dashboard around the data you actually want.",
+    description: "Custom HUD Studio lets each profile place, resize and restyle OBD widgets on a freeform canvas, while demand-based polling still requests each required PID only once even when the same value appears as a gauge, number and graph.",
+    chips: ["Drag & resize", "Analog", "Digital", "Realtime chart", "Portrait", "Landscape"],
+    rows: [["Canvas", "12 × 24"], ["PID demand", "Deduplicated"], ["Profiles", "Independent layouts"]],
   },
   {
     number: "02",
@@ -28,7 +28,7 @@ const pillars = [
     number: "03",
     eyebrow: "Measure",
     title: "Turn each Time Slip run into data you can inspect and compare.",
-    description: "Time Slip keeps vehicle-speed sampling prioritized during the run, then v1.16.0 adds interactive speed, estimated acceleration and estimated distance graphs with sample inspection and previous-run comparison.",
+    description: "Time Slip keeps vehicle-speed sampling prioritized during the run, then v1.16.0 added interactive speed, estimated acceleration and estimated distance graphs with sample inspection and previous-run comparison.",
     chips: ["0–60 km/h", "0–100 km/h", "1/4 mile", "Speed graph", "Acceleration graph", "Distance graph"],
     rows: [["Source", "Vehicle speed PID"], ["Graphs", "Interactive"], ["Compare", "Previous matching run"]],
   },
@@ -47,10 +47,10 @@ export default function Features() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Interactive performance graphs</span><span className="chip">Pulse N identity</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Custom HUD Studio</span><span className="chip">Freeform 12×24 canvas</span></div>
           <p className="eyebrow mt-8">Product capabilities</p>
           <h1 className="page-title mt-4">Built around the four jobs that matter on the road.</h1>
-          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while vehicle profiles, performance history and motion follow one consistent local-first product flow.</p>
+          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while v1.17.0 gives every user a freeform HUD canvas that can be saved as independent profiles for different vehicles and driving contexts.</p>
           <div className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((pillar) => (
               <div key={pillar.eyebrow} className="technical-card p-4">
@@ -105,13 +105,13 @@ export default function Features() {
           </article>
 
           <article className="panel telemetry-grid p-7 md:p-9">
-            <p className="eyebrow">Pulse N identity</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">A quieter visual system from launcher to live state.</h2>
-            <p className="muted mt-5 leading-7">The v{localRelease.version} Pulse N identity spans adaptive, round and Android 13 monochrome icons, the splash and in-app mark, while the interface uses subtler panels, smaller corner radii and restrained motion without changing telemetry or run timing.</p>
+            <p className="eyebrow">Custom HUD Studio · v{localRelease.version}</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em] md:text-5xl">Your vehicle data, arranged your way.</h2>
+            <p className="muted mt-5 leading-7">The fixed Speed / RPM / Turbo HUD is gone. Build separate portrait and landscape layouts, drag and resize widgets, layer them with z-order, lock finished positions, tune opacity and scales, then save or transfer the profile as JSON.</p>
             <div className="mt-7 technical-card px-5">
-              <div className="spec-row"><span className="spec-key">Identity</span><span className="spec-value">Pulse N</span></div>
-              <div className="spec-row"><span className="spec-key">Telemetry</span><span className="spec-value">Measurement unchanged</span></div>
-              <div className="spec-row"><span className="spec-key">Accessibility</span><span className="spec-value">Reduce Motion aware</span></div>
+              <div className="spec-row"><span className="spec-key">Canvas</span><span className="spec-value">12 × 24 freeform</span></div>
+              <div className="spec-row"><span className="spec-key">Widgets</span><span className="spec-value">Gauge · Digital · Chart · DTC</span></div>
+              <div className="spec-row"><span className="spec-key">Profile tools</span><span className="spec-value">Undo · Redo · Import · Export</span></div>
             </div>
           </article>
         </div>

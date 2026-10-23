@@ -12,7 +12,7 @@ const steps = [
   ["01", "Download", "Get the official signed APK from the current GitHub production release."],
   ["02", "Allow installation", "Android may ask your browser or file manager for permission to install apps."],
   ["03", "Install", "Open the APK and review Android's installation confirmation."],
-  ["04", "Create your vehicle", "Create and select your own vehicle profile before using vehicle-specific features."],
+  ["04", "Create your vehicle & HUD", "Create your vehicle profile, then build or import the Custom HUD layout you want to drive with."],
 ];
 
 export default function Download() {
@@ -21,10 +21,10 @@ export default function Download() {
       <section className="page-hero">
         <div className="shell grid gap-10 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
           <div>
-            <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Android 8+</span></div>
+            <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Custom HUD Studio</span><span className="chip">Android 8+</span></div>
             <p className="eyebrow mt-8">Official Android download</p>
             <h1 className="page-title mt-4">NowTuneUp {localRelease.version}</h1>
-            <p className="page-lede mt-7">Install the canonical production APK published with the official NowTuneUp release. Build facts and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
+            <p className="page-lede mt-7">Install the canonical production APK with the v1.17.0 Custom HUD Studio. Build facts, file size and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
           </div>
           <ReleaseCard release={localRelease} compact />
         </div>
