@@ -7,11 +7,16 @@ on:
       version:
         description: Semantic version to publish (without the v prefix)
         required: true
-        default: 1.0.0
+        default: 1.18.0
         type: string
-permissions: { contents: write }
+permissions: { contents: write, pull-requests: write }
+concurrency:
+  group: android-production-release
+  cancel-in-progress: false
 jobs:
   release:
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: android-app } }
     env:
@@ -27,6 +32,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - run: chmod +x gradlew
       - name: Validate release version
+        id: version
         run: |
           VERSION="${RELEASE_INPUT#v}"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid semantic version: $VERSION"; exit 1; }
@@ -35,9 +41,33 @@ jobs:
             exit 1
           }
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "RELEASE_NOTES=docs/releases/v${VERSION}.md" >> "$GITHUB_ENV"
           test -f "../docs/releases/v${VERSION}.md" || {
             echo "Release notes are missing for v$VERSION"
+            exit 1
+          }
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$RELEASE_VERSION" > "$RUNNER_TEMP/release-probe.json" 2> "$RUNNER_TEMP/release-probe.error"; then
+            echo "Release v$RELEASE_VERSION already exists; refusing to overwrite it." >&2
+            exit 1
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/release-probe.error"; then
+            cat "$RUNNER_TEMP/release-probe.error" >&2
+            exit 1
+          fi
+      - name: Require configured production signing credentials
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || {
+            echo 'Production signing secrets are required; no unsigned APK will be published.' >&2
             exit 1
           }
       - run: ./gradlew test lint
@@ -57,6 +87,11 @@ jobs:
           scripts/rename-apk.sh "$RELEASE_VERSION"
           scripts/calculate-checksum.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
           scripts/verify-release.sh "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk"
+      - name: Verify production signing identity and APK metadata
+        working-directory: .
+        run: |
+          python3 scripts/sync-website-release.py --verify-only --version "$RELEASE_VERSION" \
+            --apk "android-app/app/build/outputs/apk/release/NowTuneUp-v${RELEASE_VERSION}-release.apk" --sdk-root "$ANDROID_HOME"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
@@ -66,3 +101,10 @@ jobs:
           files: |
             android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk
             android-app/app/build/outputs/apk/release/NowTuneUp-v${{ env.RELEASE_VERSION }}-release.apk.sha256
+
+  website:
+    needs: release
+    uses: ./.github/workflows/build-bundled-apk.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit

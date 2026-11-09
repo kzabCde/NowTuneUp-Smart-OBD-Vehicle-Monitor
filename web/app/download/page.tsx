@@ -24,7 +24,7 @@ export default function Download() {
             <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Custom HUD Studio</span><span className="chip">Android 8+</span></div>
             <p className="eyebrow mt-8">Official Android download</p>
             <h1 className="page-title mt-4">NowTuneUp {localRelease.version}</h1>
-            <p className="page-lede mt-7">Install the canonical production APK with the v1.17.0 Custom HUD Studio. Build facts, file size and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
+            <p className="page-lede mt-7">Install the canonical production APK with the v{localRelease.version} Custom HUD Studio. Build facts, file size and SHA-256 verification stay visible so you can confirm exactly what you downloaded.</p>
           </div>
           <ReleaseCard release={localRelease} compact />
         </div>

@@ -50,7 +50,7 @@ export default function Features() {
           <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Custom HUD Studio</span><span className="chip">Freeform 12×24 canvas</span></div>
           <p className="eyebrow mt-8">Product capabilities</p>
           <h1 className="page-title mt-4">Built around the four jobs that matter on the road.</h1>
-          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while v1.17.0 gives every user a freeform HUD canvas that can be saved as independent profiles for different vehicles and driving contexts.</p>
+          <p className="page-lede mt-7">NowTuneUp keeps live data, diagnostics, performance timing and connection health separate enough to understand — while v{localRelease.version} gives every user a freeform HUD canvas that can be saved as independent profiles for different vehicles and driving contexts.</p>
           <div className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((pillar) => (
               <div key={pillar.eyebrow} className="technical-card p-4">
