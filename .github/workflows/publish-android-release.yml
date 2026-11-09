@@ -2,6 +2,7 @@ name: Publish Android release
 on:
   push:
     tags: ['v*']
+    branches: ['release/publish-v*']
   workflow_dispatch:
     inputs:
       version:
@@ -34,7 +35,8 @@ jobs:
       - name: Validate release version
         id: version
         run: |
-          VERSION="${RELEASE_INPUT#v}"
+          VERSION="${RELEASE_INPUT#release/publish-}"
+          VERSION="${VERSION#v}"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid semantic version: $VERSION"; exit 1; }
           grep -Fq "versionName = \"$VERSION\"" app/build.gradle.kts || {
             echo "Android versionName does not match release $VERSION"
@@ -62,24 +64,45 @@ jobs:
       - name: Require configured production signing credentials
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.NTU_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || secrets.NTU_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.NTU_KEY_PASSWORD }}
         run: |
-          test -n "$KEYSTORE" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || {
+          if test -n "$KEYSTORE" || test -s keystore/nowtuneup-web-release.jks; then
+            echo 'Production keystore: available'
+          else
+            echo 'Production keystore: missing' >&2
+            exit 1
+          fi
+          for binding in STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if test -n "${!binding}"; then echo "$binding: configured"; else echo "$binding: missing" >&2; fi
+          done
+          test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || {
             echo 'Production signing secrets are required; no unsigned APK will be published.' >&2
             exit 1
           }
+      - name: Build the immutable release tag source
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/tags/v$RELEASE_VERSION:refs/tags/v$RELEASE_VERSION"
+          git checkout --detach "refs/tags/v$RELEASE_VERSION"
       - run: ./gradlew test lint
       - name: Restore signing key
         env: { KEYSTORE_B64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
-        run: echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/nowtuneup.jks"
+        run: |
+          set -euo pipefail
+          if test -n "$KEYSTORE_B64"; then
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/nowtuneup.jks"
+          else
+            cp keystore/nowtuneup-web-release.jks "$RUNNER_TEMP/nowtuneup.jks"
+          fi
       - name: Build signed release APK
         env:
           NTU_KEYSTORE_FILE: ${{ runner.temp }}/nowtuneup.jks
-          NTU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          NTU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          NTU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          NTU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.NTU_KEYSTORE_PASSWORD }}
+          NTU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || secrets.NTU_KEY_ALIAS }}
+          NTU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.NTU_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
       - name: Name and checksum artifact
         working-directory: .
