@@ -46,3 +46,6 @@ android-app/local.properties
 android-app/app/schemas/
 # Gradle wrapper JAR is intentionally omitted because this repository must remain text-only.
 android-app/gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin incremental build state
+.kotlin/

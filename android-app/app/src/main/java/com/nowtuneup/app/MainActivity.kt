@@ -407,7 +407,8 @@ private fun DashboardProfilesPager(
     val readings by viewModel.readings.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
-    val dtcs by viewModel.dtcs.collectAsState()
+    val connectionUi by viewModel.connectionUiState.collectAsState()
+    val diagnosticOverview by viewModel.diagnosticOverview.collectAsState()
     val stats by viewModel.readingStats.collectAsState()
     val alerts by viewModel.activeAlerts.collectAsState()
     val initialPage = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
@@ -444,7 +445,7 @@ private fun DashboardProfilesPager(
                 readingStats = stats,
                 preferences = preferences,
                 connectionState = connectionState,
-                dtcCount = dtcs.size,
+                dtcCount = diagnosticOverview?.allDtcs?.size,
                 activeAlerts = alerts,
                 pageIndex = page,
                 pageCount = pages.size,
@@ -467,6 +468,7 @@ private fun DashboardProfilesPager(
                     viewModel.setTouchLock(!preferences.touchLock)
                 },
                 onResetStats = viewModel::resetReadingStats,
+                simulated = connectionUi.transportType == com.nowtuneup.app.domain.model.ObdTransportType.MOCK,
             )
         }
 

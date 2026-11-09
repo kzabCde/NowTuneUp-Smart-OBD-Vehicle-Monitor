@@ -203,7 +203,7 @@ fun DashboardEditor(
                         id = "${widget.id}-copy-${System.currentTimeMillis()}",
                         canvasX = (widget.canvasX + 1).coerceAtMost((activeLayout.columns - widget.canvasWidth).coerceAtLeast(0)),
                         canvasY = (widget.canvasY + 1).coerceAtMost((activeLayout.rows - widget.canvasHeight).coerceAtLeast(0)),
-                        zIndex = (activeLayout.widgets.maxOfOrNull { it.zIndex } ?: 0) + 1,
+                        zIndex = ((activeLayout.widgets.maxOfOrNull { it.zIndex } ?: 0) + 1).coerceAtMost(10_000),
                         locked = false,
                     )
                     commit(draft.withLayout(orientation, activeLayout.copy(widgets = activeLayout.widgets + duplicate)))
@@ -231,7 +231,11 @@ fun DashboardEditor(
                     TextButton(onClick = ::undo, enabled = undoStack.isNotEmpty()) { Text("ย้อนกลับ") }
                     TextButton(onClick = ::redo, enabled = redoStack.isNotEmpty()) { Text("ทำซ้ำ") }
                     TextButton(
-                        onClick = { onSave(draft.copy(isDefault = false)) },
+                        onClick = {
+                            runCatching { DashboardCodec.import(DashboardCodec.export(draft)).getOrThrow() }
+                                .onSuccess { onSave(it.copy(isDefault = false)) }
+                                .onFailure { transferMessage = "Invalid HUD: ${it.message}" }
+                        },
                         enabled = draft.name.isNotBlank(),
                     ) { Text("บันทึก") }
                 },
@@ -540,20 +544,15 @@ private fun WidgetLibrarySheet(
             Text("Widget Library", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Text("เลือกเครื่องมือก่อน แล้วเลือกข้อมูล OBD ที่ต้องการแสดง", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            ScrollableChips {
-                listOf(
-                    DashboardWidgetType.DIGITAL,
-                    DashboardWidgetType.ANALOG,
-                    DashboardWidgetType.MINI_GAUGE,
-                    DashboardWidgetType.DIGITAL_RING,
-                    DashboardWidgetType.PROGRESS,
-                    DashboardWidgetType.LINE_CHART,
-                ).forEach { candidate ->
-                    FilterChip(
-                        selected = type == candidate,
-                        onClick = { type = candidate },
-                        label = { Text(candidate.label()) },
-                    )
+            listOf(
+                "Digital" to listOf(DashboardWidgetType.DIGITAL, DashboardWidgetType.DIGITAL_RING),
+                "Analog" to listOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE),
+                "Performance / Telemetry" to listOf(DashboardWidgetType.PROGRESS, DashboardWidgetType.LINE_CHART),
+            ).forEach { (category, types) ->
+                Text(category, style = MaterialTheme.typography.labelLarge)
+                ScrollableChips {
+                    types.forEach { candidate -> FilterChip(selected = type == candidate,
+                        onClick = { type = candidate }, label = { Text(candidate.label()) }) }
                 }
             }
 
@@ -624,6 +623,18 @@ private fun WidgetPropertiesSheet(
                 singleLine = true,
             )
 
+            if (draft.pid >= 0 && draft.type != DashboardWidgetType.SHIFT_LIGHT) {
+                SheetTitle("Telemetry source")
+                ScrollableChips {
+                    DashboardDefaults.widgetCatalog.filter { it.pid >= 0 }.forEach { source ->
+                        FilterChip(selected = source.pid == draft.pid, onClick = {
+                            draft = draft.copy(pid = source.pid, unit = source.unit, shiftLight = null)
+                            scaleMin = source.scaleMinimum?.toString().orEmpty(); scaleMax = source.scaleMaximum?.toString().orEmpty()
+                            warningLow = ""; warningHigh = ""; criticalLow = ""; criticalHigh = ""
+                        }, label = { Text(source.title) })
+                    }
+                }
+            }
             SheetTitle("รูปแบบ")
             ScrollableChips {
                 val compatibleTypes = if (draft.pid < 0) {
@@ -684,19 +695,19 @@ private fun WidgetPropertiesSheet(
             Slider(
                 value = draft.canvasWidth.toFloat(),
                 onValueChange = {
-                    val max = (layout.columns - draft.canvasX).coerceAtLeast(2)
-                    draft = draft.copy(canvasWidth = it.roundToInt().coerceIn(2, max))
+                    val width = it.roundToInt().coerceIn(2, layout.columns)
+                    draft = draft.copy(canvasWidth = width, canvasX = draft.canvasX.coerceAtMost(layout.columns - width))
                 },
-                valueRange = 2f..(layout.columns - draft.canvasX).coerceAtLeast(2).toFloat(),
+                valueRange = 2f..layout.columns.toFloat(),
             )
             Text("สูง ${draft.canvasHeight} / ${layout.rows}")
             Slider(
                 value = draft.canvasHeight.toFloat(),
                 onValueChange = {
-                    val max = (layout.rows - draft.canvasY).coerceAtLeast(2)
-                    draft = draft.copy(canvasHeight = it.roundToInt().coerceIn(2, max))
+                    val height = it.roundToInt().coerceIn(2, layout.rows)
+                    draft = draft.copy(canvasHeight = height, canvasY = draft.canvasY.coerceAtMost(layout.rows - height))
                 },
-                valueRange = 2f..(layout.rows - draft.canvasY).coerceAtLeast(2).toFloat(),
+                valueRange = 2f..layout.rows.toFloat(),
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -737,10 +748,17 @@ private fun WidgetPropertiesSheet(
 
             SheetTitle("หน่วยและตัวเลข")
             ScrollableChips {
-                DisplayUnit.entries.forEach { unit ->
+                com.nowtuneup.app.util.UnitConverter.compatibleUnits(draft.unit).forEach { unit ->
                     FilterChip(
                         selected = draft.unit == unit,
-                        onClick = { draft = draft.copy(unit = unit) },
+                        onClick = {
+                            val from = draft.unit
+                            fun converted(text: String) = text.toDoubleOrNull()?.let { com.nowtuneup.app.util.UnitConverter.convert(it, from, unit).toString() }.orEmpty()
+                            scaleMin = converted(scaleMin); scaleMax = converted(scaleMax)
+                            warningLow = converted(warningLow); warningHigh = converted(warningHigh)
+                            criticalLow = converted(criticalLow); criticalHigh = converted(criticalHigh)
+                            draft = draft.copy(unit = unit)
+                        },
                         label = { Text(unit.label().ifBlank { "ไม่มี" }) },
                     )
                 }
@@ -877,7 +895,7 @@ private fun createWidgetFromSource(
         canvasY = position.second,
         canvasWidth = width,
         canvasHeight = height,
-        zIndex = topZ,
+        zIndex = topZ.coerceAtMost(10_000),
         locked = false,
     )
 }

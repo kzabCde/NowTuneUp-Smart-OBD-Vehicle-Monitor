@@ -73,7 +73,7 @@ fun DashboardScreen(
     readingStats: Map<Int, ReadingStats>,
     preferences: DashboardPreferences,
     connectionState: ConnectionState,
-    dtcCount: Int,
+    dtcCount: Int?,
     activeAlerts: List<DashboardAlert>,
     pageIndex: Int,
     pageCount: Int,
@@ -87,6 +87,7 @@ fun DashboardScreen(
     onToggleControls: () -> Unit,
     onToggleTouchLock: () -> Unit,
     onResetStats: () -> Unit,
+    simulated: Boolean = false,
 ) {
     val device = LocalConfiguration.current
     val landscape = device.screenWidthDp > device.screenHeightDp
@@ -130,6 +131,7 @@ fun DashboardScreen(
             },
     ) {
         Column(Modifier.fillMaxSize()) {
+            if (simulated) Text("SIMULATED SOURCE — not vehicle telemetry", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
             if (!immersive) {
                 ConnectionSetupCard(connectionState, onConnectionAction, compact)
                 DashboardHeader(
@@ -192,7 +194,7 @@ private fun CustomHudCanvas(
     readingStats: Map<Int, ReadingStats>,
     preferences: DashboardPreferences,
     connectionState: ConnectionState,
-    dtcCount: Int,
+    dtcCount: Int?,
     now: Long,
     modifier: Modifier = Modifier,
 ) {

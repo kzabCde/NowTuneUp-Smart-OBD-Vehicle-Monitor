@@ -89,3 +89,120 @@ identities and available split deltas. Results/shares identify vehicle, timestam
 source, rollout and estimated OBD timing limitations. RPM/throttle performance
 curves are not exposed: existing Time Slip recordings contain speed samples only;
 raw multi-signal telemetry is available separately in the telemetry recorder.
+
+## Integration and data models
+
+- Digital readings fit their actual canvas bounds and use monospace numerical
+  typography. Existing gauge styles and light theme remain available.
+- The editor groups implemented renderers, allows changing telemetry source and
+  restricts units to real conversions. Scale/warning fields convert when the unit
+  changes. Imported incompatible unit choices show unavailable rather than a
+  relabelled number. BAR/PSI conversions now work in both directions.
+- Dashboard sparklines use measured source times and break across gaps. MOCK
+  dashboards carry a simulation label; Time Slip cannot arm against a MOCK source.
+- Diagnostics templates include the last DTC scan. A missing scan is nullable and
+  says “Not scanned”; zero is used only for an actual empty scan.
+- `DashboardWidgetConfig.shiftLight` and `VehicleReading.sourceTimeNanos` are new
+  nullable fields. `ShiftLightConfig`, `TelemetrySample`, `TelemetryRecording`,
+  `SampleQuality`, and `HistorySort` are new models. Legacy `LiveSessionSummary`
+  gains optional recording identity and stop reason. Room schemas and DataStore
+  preferences are unchanged; no destructive migration is used.
+
+## Executed validation
+
+All commands run at the repository root unless noted. Current-instance tooling
+is outside the checkout under `/workspace/android-tools`.
+
+```sh
+source /workspace/android-tools/env.sh
+/workspace/android-tools/gradle-8.14.4/bin/gradle -p android-app \
+  -I /workspace/android-tools/local-usb.init.gradle \
+  testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest \
+  --no-daemon --max-workers=4
+```
+
+Result: **114 JVM unit tests passed, zero failed/skipped**; Android lint passed
+with existing warnings; debug application and instrumentation APKs assembled.
+The suite includes dashboard compatibility, unavailable/stale data, shift stages,
+raw buffer bounds, duplicate/delayed/invalid samples, JSON/CSV integrity, unit
+conversion, mph targets, history filtering and the existing Time Slip/OBD tests.
+A standalone Kotlin/JUnit run of 16 dashboard/codec tests also passed during
+initial toolchain setup.
+
+The standard build was attempted first and failed fetching the USB serial
+artifact because this environment blocks `jitpack.io`. The local init script
+supplies that one dependency built from the official GitHub `v3.9.0` source tag,
+commit `e1018ab31c118b7d2e15fc7c2e9c5b19f33eb1f1`. This is not a claim that its
+binary is byte-identical to the published JitPack AAR. No repository dependency
+or CI declaration was changed. A normal CI build using the declared artifact is
+still required. The user's authorized domain addition could not be saved because
+the environment draft reader could not verify the current draft; no unknown
+network list was replaced and no environment version was published.
+
+Initial Android home/cache and SDK setup errors were resolved. Initial lint
+findings in two multiline conditions were corrected without suppressions. An
+intermediate overlapping validation invocation produced a missing generated
+lint result; subsequent complete sequential runs passed.
+
+```sh
+/workspace/android-tools/gradle-8.14.4/bin/gradle -p android-app \
+  -I /workspace/android-tools/local-usb.init.gradle \
+  connectedDebugAndroidTest --no-daemon --max-workers=2
+```
+
+The software-only API 30 emulator booted, but adb property discovery repeatedly
+timed out. Gradle reported **Unknown API Level / no compatible device** and the
+connected test task failed before executing application tests. This is a runner
+failure, not a passing Compose run. Compose coverage was compiled, including
+cached-reading availability, template editing, graph themes/large text/comparison,
+legacy empty states and isolated telemetry persistence. Screenshots and device UI
+acceptance remain pending unless the direct adb fallback below succeeds.
+
+## Remaining release checks
+
+- Run the normal Gradle commands with access to `jitpack.io`, then connected tests
+  on an accelerated emulator or device. Capture the new HUD/telemetry screens.
+- Exercise long-duration real-adapter monitoring, memory/recomposition profiles,
+  sustained recording/CSV export, screen rotation, 320 dp and large font settings.
+- Verify vehicle/adapter compatibility and USB/Bluetooth disconnect/reconnect on
+  physical hardware. No physical vehicle measurements were performed here.
+- RPM/throttle Time Slip overlays are not implemented because Time Slip currently
+  records only speed. The new telemetry recorder supports those live signals in
+  separate recordings. Do not imply these curves exist in legacy performance runs.
+- Finish review before merge/release. No signing credentials, release tags,
+  production deployment or published APK are part of this change.
+
+## Files created or modified
+
+- `.gitignore`
+- `android-app/app/src/androidTest/java/com/nowtuneup/app/presentation/DashboardUiTest.kt`
+- `android-app/app/src/androidTest/java/com/nowtuneup/app/presentation/PerformanceChartsUiTest.kt`
+- `android-app/app/src/androidTest/java/com/nowtuneup/app/presentation/TelemetryPersistenceTest.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/MainActivity.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/data/dashboard/DashboardCodec.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/data/dashboard/DashboardDefaults.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/data/obd/session/ObdSessionManager.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/domain/model/Models.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/domain/model/ShiftLightConfig.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/live/LiveSessionRepository.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/live/TelemetryBuffer.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/live/TelemetryPanel.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/PerformanceHistory.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipAnalysis.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipCharts.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipRepository.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/TimeSlipScreen.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/presentation/dashboard/MainViewModel.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/DashboardScreen.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/components/DashboardWidgets.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/components/DrivingDashboardWidget.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/components/ShiftLightWidget.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/dashboard/editor/DashboardEditor.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/ui/screens/NtuScreens.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/util/DisplayReadingAdapter.kt`
+- `android-app/app/src/main/java/com/nowtuneup/app/util/UnitConverter.kt`
+- `android-app/app/src/test/java/com/nowtuneup/app/data/dashboard/MotorsportDashboardTest.kt`
+- `android-app/app/src/test/java/com/nowtuneup/app/feature/live/TelemetryBufferTest.kt`
+- `android-app/app/src/test/java/com/nowtuneup/app/feature/timeslip/PerformanceHistoryTest.kt`
+- `android-app/app/src/test/java/com/nowtuneup/app/util/DisplayUnitIntegrityTest.kt`
+- `docs/development/motorsport-suite.md`

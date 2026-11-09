@@ -4,6 +4,14 @@ import com.nowtuneup.app.domain.model.DisplayUnit
 import com.nowtuneup.app.domain.model.WarningThreshold
 
 object UnitConverter {
+    fun compatibleUnits(unit: DisplayUnit): List<DisplayUnit> = when (unit) {
+        DisplayUnit.KMH, DisplayUnit.MPH -> listOf(DisplayUnit.KMH, DisplayUnit.MPH)
+        DisplayUnit.CELSIUS, DisplayUnit.FAHRENHEIT -> listOf(DisplayUnit.CELSIUS, DisplayUnit.FAHRENHEIT)
+        DisplayUnit.KPA, DisplayUnit.BAR, DisplayUnit.PSI -> listOf(DisplayUnit.KPA, DisplayUnit.BAR, DisplayUnit.PSI)
+        DisplayUnit.LITER, DisplayUnit.GALLON -> listOf(DisplayUnit.LITER, DisplayUnit.GALLON)
+        else -> listOf(unit)
+    }
+
     fun convert(value: Double, from: DisplayUnit, to: DisplayUnit): Double = when (from to to) {
         DisplayUnit.KMH to DisplayUnit.MPH -> value * 0.621371192
         DisplayUnit.MPH to DisplayUnit.KMH -> value / 0.621371192
@@ -13,6 +21,8 @@ object UnitConverter {
         DisplayUnit.BAR to DisplayUnit.KPA -> value * 100
         DisplayUnit.KPA to DisplayUnit.PSI -> value * 0.145037738
         DisplayUnit.PSI to DisplayUnit.KPA -> value / 0.145037738
+        DisplayUnit.BAR to DisplayUnit.PSI -> value * 100 * 0.145037738
+        DisplayUnit.PSI to DisplayUnit.BAR -> value / 0.145037738 / 100
         DisplayUnit.LITER to DisplayUnit.GALLON -> value * 0.264172052
         DisplayUnit.GALLON to DisplayUnit.LITER -> value / 0.264172052
         else -> value

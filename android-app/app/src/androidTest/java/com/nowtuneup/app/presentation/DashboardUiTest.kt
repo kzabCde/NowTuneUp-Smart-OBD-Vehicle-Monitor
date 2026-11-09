@@ -61,10 +61,10 @@ class DashboardUiTest {
         }
 
         compose.onNodeWithText("Custom HUD Studio").assertIsDisplayed()
-        compose.onNodeWithTag("hud-editor-list").performScrollToIndex(4)
+        compose.onNodeWithTag("hud-editor-list").performScrollToNode(hasText("+ เพิ่ม Widget"))
         compose.onNodeWithText("+ เพิ่ม Widget").performClick()
         compose.onNodeWithText("Widget Library").assertIsDisplayed()
-        compose.onNodeWithText("รอบเครื่อง").performClick()
+        compose.onNodeWithText("รอบเครื่อง").performScrollTo().performClick()
         compose.onNodeWithText("Widget Properties").assertIsDisplayed()
         compose.onNodeWithText("ใช้การตั้งค่า").performScrollTo().performClick()
         compose.onNodeWithText("บันทึก").performClick()
@@ -77,6 +77,23 @@ class DashboardUiTest {
         assertTrue(widget.canvasHeight > 0)
         assertTrue(widget.canvasX + widget.canvasWidth <= result.portrait.columns)
         assertTrue(widget.canvasY + widget.canvasHeight <= result.portrait.rows)
+    }
+
+    @Test fun disconnectedCachedReadingIsUnavailableInTheInstrumentCluster() {
+        val widget = DashboardDefaults.widgetCatalog.first { it.pid == 0x0D }
+        compose.setContent {
+            NtuTheme(GraphiteTheme, reduceMotion = true) {
+                com.nowtuneup.app.ui.dashboard.components.DrivingDashboardWidget(
+                    config = widget,
+                    reading = com.nowtuneup.app.domain.model.VehicleReading(0x0D, "Speed", 123.4, "km/h"),
+                    stats = null,
+                    freshness = com.nowtuneup.app.domain.model.DataFreshness.NO_DATA,
+                    reduceMotion = true, dtcCount = null, showPeakHold = false, showMinMax = false,
+                )
+            }
+        }
+        compose.onNodeWithText("123.4").assertDoesNotExist()
+        compose.onNodeWithText("Unavailable").assertIsDisplayed()
     }
 
     @Test fun lightThemeHeaderRetainsReadableContent() {

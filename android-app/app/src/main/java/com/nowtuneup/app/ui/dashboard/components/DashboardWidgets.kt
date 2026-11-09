@@ -8,6 +8,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,7 +71,7 @@ fun DashboardWidgetView(
     config: DashboardWidgetConfig,
     reading: VehicleReading?,
     reduceMotion: Boolean,
-    dtcCount: Int,
+    dtcCount: Int?,
     stats: ReadingStats? = null,
 ) {
     val value = reading?.takeIf { it.supported }?.value
@@ -125,29 +129,19 @@ private fun DigitalWidget(
     status: ReadingStatus,
     color: Color,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            if (config.showLabel) {
-                Text(config.title, color = Color(config.colors.label), fontWeight = FontWeight.SemiBold)
-            }
-            StatusLabel(status, color)
-        }
-        Text(
-            text = value?.let { "%.${config.decimals}f".format(it) } ?: "--",
-            color = color,
-            fontSize = config.valueSize.coerceIn(16, 96).sp,
-            fontWeight = FontWeight.Black,
-        )
-        if (value == null || config.showUnit) {
-            Text(
-                if (value == null) "Waiting for ECU" else config.unit.label(),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(config.colors.label),
-            )
+    BoxWithConstraints(Modifier.fillMaxSize().padding(8.dp)) {
+        val fontScale = LocalDensity.current.fontScale
+        val text = value?.let { "%.${config.decimals}f".format(it) } ?: "--"
+        val fontSize = minOf(config.valueSize.toFloat(), maxHeight.value * 0.36f / fontScale,
+            maxWidth.value / (text.length.coerceAtLeast(2) * 0.65f) / fontScale).coerceAtLeast(12f)
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween) {
+            if (config.showLabel) Text(config.title, color = Color(config.colors.label),
+                style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text, color = color, fontSize = fontSize.sp, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold, maxLines = 1)
+            if (config.showUnit || value == null) Text(if (value == null) "Unavailable" else config.unit.label(),
+                style = MaterialTheme.typography.labelSmall, color = Color(config.colors.label), maxLines = 1)
         }
     }
 }
@@ -331,32 +325,35 @@ private fun RealtimeLineChart(
     reading: VehicleReading?,
     color: Color,
 ) {
-    val samples = remember(config.id) { mutableStateListOf<Double>() }
+    val samples = remember(config.id) { mutableStateListOf<Pair<Long, Double>>() }
     val value = reading?.takeIf { it.supported }?.value
 
-    LaunchedEffect(reading?.updatedAt, value) {
-        value?.takeIf { it.isFinite() }?.let {
-            samples.add(it)
+    LaunchedEffect(reading?.sourceTimeNanos, reading?.updatedAt, value) {
+        val time = reading?.sourceTimeNanos ?: reading?.updatedAt?.times(1_000_000L)
+        if (value == null || !value.isFinite() || time == null) samples.clear()
+        else if (time > (samples.lastOrNull()?.first ?: Long.MIN_VALUE)) {
+            samples.add(time to value)
             while (samples.size > 72) samples.removeAt(0)
         }
     }
 
     val configuredMin = config.scaleMinimum
     val configuredMax = config.scaleMaximum
-    val sampleMin = samples.minOrNull() ?: 0.0
-    val sampleMax = samples.maxOrNull() ?: 1.0
+    val sampleMin = samples.minOfOrNull { it.second } ?: 0.0
+    val sampleMax = samples.maxOfOrNull { it.second } ?: 1.0
     val minimum = configuredMin ?: sampleMin
     val maximum = configuredMax ?: sampleMax.coerceAtLeast(minimum + 1.0)
 
     Box(Modifier.fillMaxSize().padding(12.dp)) {
         Canvas(Modifier.fillMaxSize().padding(top = 28.dp, bottom = 24.dp)) {
             if (samples.size < 2 || maximum <= minimum) return@Canvas
-            val stepX = size.width / (samples.size - 1).coerceAtLeast(1)
+            val start = samples.first().first
+            val span = (samples.last().first - start).coerceAtLeast(1L)
             val path = Path()
-            samples.forEachIndexed { index, sample ->
+            samples.forEachIndexed { index, (time, sample) ->
                 val fraction = ((sample - minimum) / (maximum - minimum)).toFloat().coerceIn(0f, 1f)
-                val point = Offset(index * stepX, size.height - (fraction * size.height))
-                if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                val point = Offset(((time - start).toDouble() / span * size.width).toFloat(), size.height - (fraction * size.height))
+                if (index == 0 || time - samples[index - 1].first > 1_500_000_000L) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }
             drawLine(
                 color = Color(config.colors.border).copy(alpha = 0.45f),
@@ -734,15 +731,15 @@ private fun bezelBrush(finish: BezelFinish, base: Color, size: Size): Brush = wh
 }
 
 @Composable
-private fun DtcWidget(dtcCount: Int) {
-    val detail = if (dtcCount == 0) "No stored codes found" else "$dtcCount stored code(s)"
+private fun DtcWidget(dtcCount: Int?) {
+    val detail = when (dtcCount) { null -> "Not scanned"; 0 -> "No codes in last scan"; else -> "$dtcCount code(s) in last scan" }
     Column(
         modifier = Modifier.fillMaxSize().padding(18.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text("DTC status", fontWeight = FontWeight.Bold)
         Text(detail, style = MaterialTheme.typography.titleMedium)
-        Text("Read-only result", style = MaterialTheme.typography.labelMedium)
+        Text("Last read-only scan · not live", style = MaterialTheme.typography.labelMedium)
     }
 }
 

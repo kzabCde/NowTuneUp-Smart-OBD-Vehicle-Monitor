@@ -28,7 +28,7 @@ fun DrivingDashboardWidget(
     stats: ReadingStats?,
     freshness: DataFreshness,
     reduceMotion: Boolean,
-    dtcCount: Int,
+    dtcCount: Int?,
     showPeakHold: Boolean,
     showMinMax: Boolean,
 ) {

@@ -246,6 +246,8 @@ object DashboardDefaults {
                 canvasX = 0, canvasY = 0, canvasWidth = 12, canvasHeight = 2,
                 shiftLight = com.nowtuneup.app.domain.model.ShiftLightConfig(),
             )
+            if (!racing && pids.size == 6) widgets += widgetCatalog.first { it.type == DashboardWidgetType.DTC_CARD }.copy(
+                id = "diagnostic-summary", title = "Last DTC scan", canvasX = 0, canvasY = 20, canvasWidth = 12, canvasHeight = 4)
             return DashboardLayout(widgets = widgets)
         }
         return listOf(
