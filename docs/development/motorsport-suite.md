@@ -72,3 +72,20 @@ Each selected signal has its own labelled amplitude scale; gaps/invalid events
 break the curve. The cursor selects measured samples, not interpolated values.
 History supports reopen, SAF CSV export and confirmed individual deletion.
 MOCK sources are explicitly labelled simulated, including reopened recordings.
+
+## Phase 3 implementation
+
+The timing engine and its existing recorded samples/calculations are preserved.
+A 0–60 mph preset uses exactly 96.56064 km/h internally; it is never interchangeable
+with 0–60 km/h. Local history now searches mode, target, vehicle, quality and date,
+filters standing/rolling starts, groups by target and sorts by newest or valid
+elapsed time. Legacy unassigned records remain visible but cannot be compared to
+records of an unidentified vehicle.
+
+Historical results support choosing any compatible comparison (previous run is
+the default). The chart itself also checks compatibility, so callers cannot draw
+an incompatible overlay. Curves retain solid/dashed distinctions, recorded-run
+identities and available split deltas. Results/shares identify vehicle, timestamp,
+source, rollout and estimated OBD timing limitations. RPM/throttle performance
+curves are not exposed: existing Time Slip recordings contain speed samples only;
+raw multi-signal telemetry is available separately in the telemetry recorder.

@@ -75,7 +75,7 @@ object TimeSlipAnalysis {
     fun comparable(left: TimeSlipRecord, right: TimeSlipRecord): Boolean =
         left.status == TimeSlipStatus.COMPLETED && right.status == TimeSlipStatus.COMPLETED &&
             left.measurementQuality != MeasurementQuality.INVALID && right.measurementQuality != MeasurementQuality.INVALID &&
-            left.vehicleProfileId == right.vehicleProfileId && left.mode == right.mode &&
+            !left.vehicleProfileId.isNullOrBlank() && left.vehicleProfileId == right.vehicleProfileId && left.mode == right.mode &&
             left.oneFootRolloutEnabled == right.oneFootRolloutEnabled &&
             left.selectedDistanceTarget == right.selectedDistanceTarget &&
             (left.selectedDistanceTarget != null ||

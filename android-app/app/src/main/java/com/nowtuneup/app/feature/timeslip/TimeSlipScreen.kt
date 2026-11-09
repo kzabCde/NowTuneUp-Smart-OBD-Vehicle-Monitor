@@ -11,6 +11,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +80,7 @@ private data class SimplePreset(val label: String, val config: TimeSlipConfig)
 
 private val simplePresets = listOf(
     SimplePreset("0–60 km/h", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 60.0, enabledMilestonesKmh = listOf(60.0), useSensorFusion = false, oneFootRollout = false)),
+    SimplePreset("0–60 mph", sixtyMphConfig()),
     SimplePreset("0–100 km/h", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 100.0, enabledMilestonesKmh = listOf(60.0, 100.0), useSensorFusion = false, oneFootRollout = false)),
     SimplePreset("60–100 km/h", TimeSlipConfig(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null, rollingStartKmh = 60.0, rollingTargetKmh = 100.0, enabledMilestonesKmh = listOf(100.0), useSensorFusion = false, oneFootRollout = false)),
     SimplePreset("1/4 mile", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = DistanceTarget.QUARTER_MILE, enabledMilestonesKmh = listOf(60.0, 100.0), useSensorFusion = false, oneFootRollout = false)),
@@ -89,6 +93,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
     val connection by viewModel.connection.collectAsState()
+    val connectionUi by viewModel.connectionUiState.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val vehicleRepository = rememberVehicleProfileRepository()
     val vehicleProfiles by vehicleRepository.profiles.collectAsState()
@@ -101,9 +106,13 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     val repository = remember { TimeSlipRepository(context.applicationContext) }
     val engine = remember { TimeSlipEngine() }
     val scope = rememberCoroutineScope()
-    var selectedPreset by remember { mutableStateOf(simplePresets[1]) }
+    var selectedPreset by remember { mutableStateOf(simplePresets.first { it.label == "0–100 km/h" }) }
     var snapshot by remember { mutableStateOf(engine.snapshot()) }
     var history by remember { mutableStateOf(repository.list()) }
+    var historyQuery by rememberSaveable { mutableStateOf("") }
+    var historyMode by remember { mutableStateOf<PerformanceMode?>(null) }
+    var historySort by remember { mutableStateOf(HistorySort.NEWEST) }
+    var comparisonId by remember { mutableStateOf<String?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var selectedRecordId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
@@ -118,10 +127,11 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         PerformanceMode.STANDING_START -> currentSpeed <= selectedPreset.config.stationaryThresholdKmh
         PerformanceMode.ROLLING_START -> currentSpeed < selectedPreset.config.rollingStartKmh
     }
-    val canArm = activeVehicle != null && connection == ConnectionState.CONNECTED && readiness.supported && readiness.hasValue && readiness.fresh && modeReady && countdownLabel == null
+    val simulated = connectionUi.transportType == com.nowtuneup.app.domain.model.ObdTransportType.MOCK
+    val canArm = !simulated && activeVehicle != null && connection == ConnectionState.CONNECTED && readiness.supported && readiness.hasValue && readiness.fresh && modeReady && countdownLabel == null
     val vehicleHistory = remember(history, activeVehicle?.id) {
         val id = activeVehicle?.id
-        if (id == null) emptyList() else history.filter { it.vehicleProfileId == id }
+        if (id == null) emptyList() else history.filter { it.vehicleProfileId == id || it.vehicleProfileId.isNullOrBlank() }
     }
 
     fun armNow() {
@@ -131,7 +141,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
             PerformanceMode.STANDING_START -> latest.speedKmh <= selectedPreset.config.stationaryThresholdKmh
             PerformanceMode.ROLLING_START -> latest.speedKmh < selectedPreset.config.rollingStartKmh
         }
-        if (!stillReady || connection != ConnectionState.CONNECTED) return
+        if (!stillReady || connection != ConnectionState.CONNECTED || simulated) return
         session.setPerformanceSampling(true)
         snapshot = engine.arm(
             requestedConfig = selectedPreset.config.copy(
@@ -278,23 +288,44 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         if (selectedRecord != null) {
             item { ResultCard(selectedRecord, isPersonalBest(selectedRecord, vehicleHistory),
                 onShare = { TimeSlipShare.shareText(context, selectedRecord.asShareText()) }) }
-            item { TimeSlipCharts(selectedRecord, previousComparable(selectedRecord, vehicleHistory)) }
+            item {
+                val compatible = vehicleHistory.filter { it.id != selectedRecord.id && TimeSlipAnalysis.comparable(selectedRecord, it) }
+                val comparison = compatible.firstOrNull { it.id == comparisonId } ?: previousComparable(selectedRecord, vehicleHistory)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    compatible.forEach { other ->
+                        FilterChip(selected = other.id == comparison?.id, onClick = { comparisonId = other.id }, label = {
+                            Text("${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(other.startedAtEpochMillis))} · ${formatSeconds(other.elapsedMillis)} s")
+                        })
+                    }
+                }
+                TimeSlipCharts(selectedRecord, comparison)
+            }
         } else if (showHistory) {
-            if (vehicleHistory.isEmpty()) {
-                item { SimpleMessageCard("ยังไม่มีผลทดสอบ", "ผลที่สำเร็จของ ${activeVehicle?.displayName ?: "รถคันนี้"} จะถูกบันทึกไว้ในเครื่อง") }
-            } else {
-                items(vehicleHistory, key = { it.id }) { record ->
-                    HistoryCard(
-                        record,
-                        onOpen = { selectedRecordId = record.id },
+            item {
+                OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it },
+                    label = { Text("Search mode, vehicle, quality or date") }, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = historyMode == null, onClick = { historyMode = null }, label = { Text("All modes") })
+                    PerformanceMode.entries.forEach { mode -> FilterChip(selected = historyMode == mode, onClick = { historyMode = mode }, label = { Text(mode.name.replace('_', ' ')) }) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = historySort == HistorySort.NEWEST, onClick = { historySort = HistorySort.NEWEST }, label = { Text("Newest") })
+                    FilterChip(selected = historySort == HistorySort.VALID_ELAPSED, onClick = { historySort = HistorySort.VALID_ELAPSED }, label = { Text("Valid elapsed time") })
+                }
+            }
+            val filtered = performanceHistory(vehicleHistory, historyQuery, historyMode, historySort)
+            if (filtered.isEmpty()) item { SimpleMessageCard("No matching results", "Saved local records remain available when you clear the filters.") }
+            filtered.groupBy { performanceTitle(it) }.forEach { (title, records) ->
+                item { Text(title, style = MaterialTheme.typography.titleMedium) }
+                items(records, key = { it.id }) { record ->
+                    HistoryCard(record, onOpen = { selectedRecordId = record.id; comparisonId = null },
                         isPersonalBest = isPersonalBest(record, vehicleHistory),
                         onShare = { TimeSlipShare.shareText(context, record.asShareText()) },
-                        onDelete = { pendingDeleteId = record.id },
-                    )
+                        onDelete = { pendingDeleteId = record.id })
                 }
             }
         } else {
-            item { ReadinessCard(connection == ConnectionState.CONNECTED, speedSample?.speedKmh, speedSample?.transportLatencyMillis, readiness.reasonThai, readiness.sampleRateHz) }
+            item { ReadinessCard(connection == ConnectionState.CONNECTED, speedSample?.speedKmh.takeIf { readiness.fresh && connection == ConnectionState.CONNECTED }, speedSample?.transportLatencyMillis, if (simulated) "SIMULATED SOURCE · vehicle performance recording disabled" else readiness.reasonThai, readiness.sampleRateHz) }
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -445,6 +476,10 @@ private fun ResultCard(record: TimeSlipRecord, isPersonalBest: Boolean, onShare:
             Text("${formatSeconds(record.elapsedMillis)} s", fontSize = 42.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black)
             record.speedMilestones.forEach { Text("${it.label}: ${formatSeconds(it.elapsedMillis)} s") }
             record.distanceSplits.forEach { Text("${it.target.label}: ${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h") }
+            Text("Vehicle: ${record.vehicleProfileId?.takeIf { it.isNotBlank() } ?: "Legacy / unassigned"}", style = MaterialTheme.typography.bodySmall)
+            Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(record.startedAtEpochMillis)), style = MaterialTheme.typography.bodySmall)
+            Text("Source: ${record.dataSource} · rollout ${if (record.oneFootRolloutEnabled) "1 ft" else "off"}", style = MaterialTheme.typography.bodySmall)
+            Text("Distance and acceleration are estimated from OBD speed, not GPS-grade timing.", style = MaterialTheme.typography.bodySmall)
             HorizontalDivider()
             Text("Quality ${record.qualityScore}/100 • ${record.measurementQuality.name} • ${"%.1f".format(record.obdSampleRateHz)} Hz", fontWeight = FontWeight.Bold)
             TextButton(onClick = { showQuality = !showQuality }) { Text(if (showQuality) "ซ่อนคุณภาพสัญญาณ" else "ดูคุณภาพสัญญาณ") }
