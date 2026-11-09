@@ -68,6 +68,7 @@ object DashboardDefaults {
             DashboardWidgetType.ANALOG -> 5 to 7
             DashboardWidgetType.MINI_GAUGE -> 4 to 5
             DashboardWidgetType.DIGITAL_RING -> 6 to 7
+            DashboardWidgetType.SHIFT_LIGHT -> 12 to 2
             DashboardWidgetType.PROGRESS -> 6 to 3
             DashboardWidgetType.LINE_CHART -> 8 to 5
             DashboardWidgetType.DTC_CARD -> 6 to 4
@@ -224,6 +225,38 @@ object DashboardDefaults {
         landscape = DashboardLayout(columns = HUD_CANVAS_COLUMNS, rows = HUD_CANVAS_ROWS, widgets = emptyList()),
         isDefault = false,
     )
+
+    /** Optional factory templates; selecting one creates an editable copy, never mutates the factory. */
+    fun presets(): List<DashboardConfig> {
+        fun layout(pids: List<Int>, racing: Boolean, landscape: Boolean): DashboardLayout {
+            val widgets = pids.mapIndexed { index, pid ->
+                widgetCatalog.first { it.pid == pid }.copy(
+                    id = "preset-$index", type = DashboardWidgetType.DIGITAL,
+                    title = when(pid) { 0x0D -> "Speed"; 0x0C -> "RPM"; 0x05 -> "Coolant"; 0x04 -> "Load"; 0x11 -> "Throttle"; 0x42 -> "Voltage"; else -> "Intake" },
+                    canvasX = if (landscape) (index % 3) * 4 else (index % 2) * 6,
+                    canvasY = 2 + (index / if (landscape) 3 else 2) * 6,
+                    canvasWidth = if (landscape) 4 else 6, canvasHeight = 6,
+                    valueSize = if (pid == 0x0D || pid == 0x0C) 42 else 28,
+                    gaugeStyle = GaugeStyle.CUSTOM,
+                    colors = ColorConfig(value = 0xFFFFFFFF, background = 0xFF101214, border = 0xFF303438),
+                )
+            }.toMutableList()
+            if (racing) widgets += widgetCatalog.first { it.pid == 0x0C }.copy(
+                id = "shift", type = DashboardWidgetType.SHIFT_LIGHT, title = "Shift lights",
+                canvasX = 0, canvasY = 0, canvasWidth = 12, canvasHeight = 2,
+                shiftLight = com.nowtuneup.app.domain.model.ShiftLightConfig(),
+            )
+            return DashboardLayout(widgets = widgets)
+        }
+        return listOf(
+            Triple("Daily Drive", listOf(0x0D, 0x0C, 0x05, 0x04), false),
+            Triple("Performance", listOf(0x0C, 0x0D, 0x11, 0x05), true),
+            Triple("Diagnostics", listOf(0x05, 0x0F, 0x42, 0x04, 0x0B, 0x11), false),
+        ).map { (name, pids, racing) ->
+            DashboardConfig("template-$name", name, DashboardMode.HYBRID,
+                layout(pids, racing, false), layout(pids, racing, true), isDefault = true)
+        }
+    }
 
     val themes = listOf(
         ThemeConfig(name = "ดำเรียบง่าย"),

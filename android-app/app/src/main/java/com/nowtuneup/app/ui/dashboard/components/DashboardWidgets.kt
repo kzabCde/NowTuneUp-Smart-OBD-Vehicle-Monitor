@@ -94,7 +94,7 @@ fun DashboardWidgetView(
             ),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = Color(config.colors.background)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         when (config.type) {
             DashboardWidgetType.ANALOG,
@@ -109,6 +109,7 @@ fun DashboardWidgetView(
                 reduceMotion = reduceMotion,
             )
 
+            DashboardWidgetType.SHIFT_LIGHT -> ShiftLightWidget(config, reading)
             DashboardWidgetType.PROGRESS -> ProgressWidget(config, reading, status, statusColor)
             DashboardWidgetType.LINE_CHART -> RealtimeLineChart(config, reading, statusColor)
             DashboardWidgetType.DTC_CARD -> DtcWidget(dtcCount)

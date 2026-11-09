@@ -415,7 +415,8 @@ class MainViewModel @Inject constructor(
         val next = _readingStats.value.toMutableMap()
         current.forEach { reading ->
             val value = reading.value ?: return@forEach
-            if (!reading.supported) return@forEach
+            if (!reading.supported || !value.isFinite() || connection.value != ConnectionState.CONNECTED ||
+                System.currentTimeMillis() - reading.updatedAt !in 0..dashboardPreferences.value.staleAfterMillis) return@forEach
             val previous = next[reading.pid]
             next[reading.pid] = ReadingStats(
                 minimum = previous?.minimum?.let { minOf(it, value) } ?: value,

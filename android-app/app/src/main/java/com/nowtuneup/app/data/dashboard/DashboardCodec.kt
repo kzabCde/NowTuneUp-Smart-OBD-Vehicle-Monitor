@@ -25,6 +25,7 @@ object DashboardCodec {
     fun import(json: String): Result<DashboardConfig> = runCatching {
         require(json.toByteArray().size <= MAX_JSON_BYTES) { "Configuration is too large" }
         val root = JsonParser.parseString(json).asJsonObject
+        require((root.intOrNull("schemaVersion") ?: 1) in 1..HUD_SCHEMA_VERSION) { "Unsupported HUD schema version" }
         migrateLegacyValues(root)
         migrateCanvas(root)
 
@@ -81,6 +82,8 @@ object DashboardCodec {
                 widget.opacity in 0.20f..1f &&
                 widget.zIndex in 0..10_000 &&
                 geometryIsValid &&
+                (widget.shiftLight?.let { widget.pid == 0x0C && it.valid() } ?: true) &&
+                (widget.type != com.nowtuneup.app.domain.model.DashboardWidgetType.SHIFT_LIGHT || widget.pid == 0x0C) &&
                 ringIsValid &&
                 scaleIsValid
         }) { "Invalid widget configuration" }
@@ -98,7 +101,7 @@ object DashboardCodec {
             val oldColumns = layout.intOrNull("columns")?.coerceIn(1, 6) ?: 2
             val widgets = layout.getAsJsonArray("widgets")
 
-            layout.addProperty("columns", HUD_CANVAS_COLUMNS)
+            if ((root.intOrNull("schemaVersion") ?: 1) < 2) layout.addProperty("columns", HUD_CANVAS_COLUMNS)
             if (!layout.has("rows")) layout.addProperty("rows", HUD_CANVAS_ROWS)
             if (!layout.has("snapToGrid")) layout.addProperty("snapToGrid", true)
 

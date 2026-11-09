@@ -251,6 +251,14 @@ fun DashboardEditor(
                 )
             }
 
+            if (draft.portrait.widgets.isEmpty() && draft.landscape.widgets.isEmpty()) item {
+                Text("Start from a factory template (editable copy)")
+                ScrollableChips {
+                    DashboardDefaults.presets().forEach { preset ->
+                        OutlinedButton(onClick = { commit(preset.copy(id = draft.id, isDefault = false)) }) { Text(preset.name) }
+                    }
+                }
+            }
             item {
                 OutlinedTextField(
                     value = draft.name,
@@ -566,6 +574,7 @@ private fun WidgetLibrarySheet(
                     }
                 }
 
+            OutlinedButton(onClick = { onAdd(DashboardDefaults.widgetCatalog.first { it.pid == 0x0C }, DashboardWidgetType.SHIFT_LIGHT) }) { Text("Performance · RPM shift lights") }
             HorizontalDivider()
             DashboardDefaults.widgetCatalog.firstOrNull { it.type == DashboardWidgetType.DTC_CARD }?.let { dtc ->
                 OutlinedButton(
@@ -620,7 +629,7 @@ private fun WidgetPropertiesSheet(
                 val compatibleTypes = if (draft.pid < 0) {
                     listOf(DashboardWidgetType.DTC_CARD)
                 } else {
-                    DashboardWidgetType.entries.filter { it != DashboardWidgetType.DTC_CARD }
+                    DashboardWidgetType.entries.filter { it != DashboardWidgetType.DTC_CARD && (it != DashboardWidgetType.SHIFT_LIGHT || draft.pid == 0x0C) }
                 }
                 compatibleTypes.forEach { candidate ->
                     FilterChip(
@@ -754,6 +763,21 @@ private fun WidgetPropertiesSheet(
             NumberField("ค่าต่ำสุด (ว่าง = Auto)", scaleMin) { scaleMin = it }
             NumberField("ค่าสูงสุด (ว่าง = Auto)", scaleMax) { scaleMax = it }
 
+            if (draft.pid == 0x0C) {
+                SheetTitle("Shift lights · driver-defined RPM only")
+                val settings = draft.shiftLight ?: com.nowtuneup.app.domain.model.ShiftLightConfig()
+                var thresholds by remember(widget.id) { mutableStateOf(settings.thresholdsRpm.joinToString(",")) }
+                var redline by remember(widget.id) { mutableStateOf(settings.redlineRpm?.toString().orEmpty()) }
+                OutlinedTextField(value = thresholds, onValueChange = { thresholds = it }, label = { Text("Increasing RPM stages, comma separated") })
+                NumberField("Optional redline RPM", redline) { redline = it }
+                val parsed = thresholds.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+                val candidate = settings.copy(enabled = true, thresholdsRpm = parsed, redlineRpm = redline.toDoubleOrNull())
+                val valid = candidate.valid() && parsed.size == thresholds.split(",").size && (redline.isBlank() || redline.toDoubleOrNull() != null)
+                OutlinedButton(enabled = valid, onClick = { draft = draft.copy(shiftLight = candidate) }) { Text("Enable configured stages") }
+                OutlinedButton(onClick = { draft = draft.copy(shiftLight = settings.copy(enabled = false)) }) { Text("Disable shift lights") }
+                Text("Brightness / intensity")
+                Slider(value = settings.intensity, onValueChange = { draft = draft.copy(shiftLight = settings.copy(intensity = it)) })
+            }
             SheetTitle("ช่วงเตือน")
             NumberField("Warning ต่ำกว่า", warningLow) { warningLow = it }
             NumberField("Warning สูงกว่า", warningHigh) { warningHigh = it }
@@ -777,9 +801,9 @@ private fun WidgetPropertiesSheet(
                         ),
                     )
                 },
-                enabled = draft.title.isNotBlank() && (
+                enabled = listOf(warningLow, warningHigh, criticalLow, criticalHigh).all { it.isBlank() || it.toDoubleOrNull()?.isFinite() == true } && draft.title.isNotBlank() && (
                     (scaleMin.isBlank() && scaleMax.isBlank()) ||
-                        (scaleMin.toDoubleOrNull() != null && scaleMax.toDoubleOrNull() != null &&
+                        (scaleMin.toDoubleOrNull()?.isFinite() == true && scaleMax.toDoubleOrNull()?.isFinite() == true &&
                             scaleMax.toDouble() > scaleMin.toDouble())
                     ),
                 modifier = Modifier.fillMaxWidth(),
@@ -836,6 +860,7 @@ private fun createWidgetFromSource(
         DashboardWidgetType.ANALOG -> 5 to 7
         DashboardWidgetType.MINI_GAUGE -> 4 to 5
         DashboardWidgetType.DIGITAL_RING -> 6 to 7
+        DashboardWidgetType.SHIFT_LIGHT -> 12 to 2
         DashboardWidgetType.PROGRESS -> 6 to 3
         DashboardWidgetType.LINE_CHART -> 8 to 5
         DashboardWidgetType.DTC_CARD -> 6 to 4
@@ -976,6 +1001,7 @@ private fun EditorOrientation.label(): String = when (this) {
 }
 
 private fun DashboardWidgetType.label(): String = when (this) {
+    DashboardWidgetType.SHIFT_LIGHT -> "Shift lights (RPM)"
     DashboardWidgetType.DIGITAL -> "ตัวเลข"
     DashboardWidgetType.DIGITAL_RING -> "วงแหวน"
     DashboardWidgetType.ANALOG -> "เข็ม Analog"

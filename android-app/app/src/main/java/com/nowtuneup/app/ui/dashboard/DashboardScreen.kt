@@ -1,5 +1,6 @@
 package com.nowtuneup.app.ui.dashboard
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -98,6 +99,9 @@ fun DashboardScreen(
     val layout = if (landscape) config.landscape else config.portrait
     val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
     val immersive = preferences.focusMode || preferences.hudMode || headUnitImmersive
+    BackHandler(enabled = preferences.focusMode || preferences.hudMode) {
+        if (preferences.hudMode) onExitHud() else onExitFocus()
+    }
     val compact = landscape || deviceLayout != ResolvedDeviceLayout.PHONE
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -390,7 +394,7 @@ private fun readingFreshness(
     }
     if (reading == null) return DataFreshness.NO_DATA
     if (!reading.supported) return DataFreshness.UNSUPPORTED
-    if (reading.value == null) return DataFreshness.NO_DATA
+    if (reading.value?.isFinite() != true || reading.updatedAt > now) return DataFreshness.NO_DATA
     val age = (now - reading.updatedAt).coerceAtLeast(0L)
     return when {
         age <= preferences.delayedAfterMillis -> DataFreshness.LIVE

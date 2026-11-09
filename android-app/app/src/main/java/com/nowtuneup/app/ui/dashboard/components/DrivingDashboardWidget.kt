@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.nowtuneup.app.domain.model.displayableReading
 import com.nowtuneup.app.domain.model.DataFreshness
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.ReadingStats
@@ -31,10 +32,8 @@ fun DrivingDashboardWidget(
     showPeakHold: Boolean,
     showMinMax: Boolean,
 ) {
-    val protectedReading = if (freshness in setOf(DataFreshness.STALE, DataFreshness.RECONNECTING)) {
-        reading?.copy(value = null)
-    } else {
-        reading
+    val protectedReading = displayableReading(reading, freshness)?.takeUnless {
+        config.type == com.nowtuneup.app.domain.model.DashboardWidgetType.SHIFT_LIGHT && freshness != DataFreshness.LIVE
     }
     val contentAlpha = when (freshness) {
         DataFreshness.STALE, DataFreshness.UNSUPPORTED -> 0.60f

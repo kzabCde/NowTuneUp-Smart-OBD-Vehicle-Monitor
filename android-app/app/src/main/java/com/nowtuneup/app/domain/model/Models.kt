@@ -111,7 +111,7 @@ enum class WidgetSize { SMALL, MEDIUM, LARGE }
 data class DashboardProfile(val id: Long = 0, val name: String, val widgets: List<DashboardWidget>)
 
 enum class DashboardMode { DIGITAL, ANALOG, HYBRID }
-enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, LINE_CHART, DTC_CARD }
+enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, LINE_CHART, DTC_CARD, SHIFT_LIGHT }
 enum class GaugeStyle { CLASSIC_METAL, SPORT_RED, NEO_CYAN, RACING_AMBER, OEM_BLUE, HUD_GREEN, CUSTOM }
 enum class BezelFinish { BRUSHED_STEEL, BLACK_CHROME, TITANIUM_DARK }
 enum class GaugeSmoothing { FAST, BALANCED, SMOOTH }
@@ -299,6 +299,7 @@ data class DashboardWidgetConfig(
     val colors: ColorConfig = ColorConfig(),
     val threshold: WarningThreshold = WarningThreshold(),
     val digitalRing: DigitalRingConfig? = null,
+    val shiftLight: ShiftLightConfig? = null,
 )
 
 data class DashboardLayout(
