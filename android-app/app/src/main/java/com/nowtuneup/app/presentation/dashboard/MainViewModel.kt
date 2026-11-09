@@ -50,6 +50,7 @@ class MainViewModel @Inject constructor(
     private val dashboardRepository: DashboardRepository,
     private val settingsRepository: SettingsRepository,
     private val logger: DiagnosticLogger,
+    private val liveSessions: com.nowtuneup.app.feature.live.LiveSessionRepository,
 ) : ViewModel() {
     val connection = session.connectionState
     val initialization = session.initialization
@@ -99,6 +100,7 @@ class MainViewModel @Inject constructor(
     private var dashboardDemandPids: Set<Int> = emptySet()
 
     init {
+        viewModelScope.launch { liveSessions.recording.collect { applyPollingDemand() } }
         viewModelScope.launch {
             dashboardPreferences.collect { preferences ->
                 session.setRefreshInterval(preferences.refreshRate.intervalMillis)
@@ -142,7 +144,8 @@ class MainViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            readings.collect { current ->
+            combine(readings, connection) { values, state -> values to state }.collect { (current, state) ->
+                liveSessions.ingest(current, state == ConnectionState.CONNECTED)
                 updateStats(current)
                 evaluateAlerts(current)
             }
@@ -164,7 +167,7 @@ class MainViewModel @Inject constructor(
     }
 
     private fun applyPollingDemand() {
-        session.setRequestedPids(if (liveDataVisible) null else dashboardDemandPids)
+        session.setRequestedPids(if (liveDataVisible || liveSessions.recording.value.active) null else dashboardDemandPids)
     }
 
     fun setLiveDataVisible(visible: Boolean) {
@@ -440,9 +443,12 @@ class MainViewModel @Inject constructor(
             val nativeReading = readingsByPid[widget.pid]
             val displayReading = DisplayReadingAdapter.reading(nativeReading, widget.unit)
             val value = displayReading?.value
-            val fresh = nativeReading != null && nativeReading.supported && value != null &&
-                now - nativeReading.updatedAt <= preferences.staleAfterMillis
-            if (!fresh || value == null) {
+            val fresh = (
+                connection.value == ConnectionState.CONNECTED && nativeReading != null &&
+                    nativeReading.supported && value?.isFinite() == true &&
+                    now - nativeReading.updatedAt in 0..preferences.staleAfterMillis
+                )
+            if (!fresh) {
                 previousAlertSeverity[widget.id] = AlertSeverity.NORMAL
                 return@forEach
             }
@@ -501,10 +507,8 @@ class MainViewModel @Inject constructor(
                 )
                 logger.info("Reconnect", "Attempt $attempt/${preferences.reconnectAttempts} in ${delaySeconds}s")
                 delay(delaySeconds * 1_000L)
-                if (
-                    manualDisconnect ||
-                    connection.value == ConnectionState.CONNECTED && initialization.value.ecuConnected
-                ) {
+                val recovered = connection.value == ConnectionState.CONNECTED && initialization.value.ecuConnected
+                if (manualDisconnect || recovered) {
                     reconnectAttempt.value = 0
                     return@launch
                 }
@@ -585,6 +589,7 @@ class MainViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        liveSessions.stop(reason = "Monitoring closed")
         reconnectJob?.cancel()
         session.close()
         super.onCleared()

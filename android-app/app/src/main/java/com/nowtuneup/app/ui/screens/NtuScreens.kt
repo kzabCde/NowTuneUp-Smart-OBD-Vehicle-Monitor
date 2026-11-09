@@ -92,16 +92,14 @@ fun LiveDataScreen(viewModel: MainViewModel) {
     val liveHistory by liveRepository.history.collectAsState()
     var query by remember { mutableStateOf("") }
 
-    LaunchedEffect(readings, recording.active) {
-        if (recording.active) liveRepository.ingest(readings)
-    }
     DisposableEffect(Unit) {
         viewModel.setLiveDataVisible(true)
         onDispose {
             viewModel.setLiveDataVisible(false)
-            if (liveRepository.recording.value.active) liveRepository.stop()
         }
     }
+
+    val telemetrySamples by liveRepository.samples.collectAsState()
 
     val visibleReadings = readings.asSequence()
         .filter { it.supported }
@@ -119,34 +117,7 @@ fun LiveDataScreen(viewModel: MainViewModel) {
             } else "เชื่อมต่อ ELM327 และเปิดสวิตช์กุญแจก่อน",
         )
         }
-        if (connectionState == ConnectionState.CONNECTED && connectionUi.initialization.ecuConnected) {
-            item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text(if (recording.active) "กำลังบันทึก Session" else "Session recorder", fontWeight = FontWeight.Bold)
-                            Text(
-                                if (recording.active) "${recording.readingFrames} frames • ${recording.trackedMetricCount} metrics"
-                                else "เก็บ Min / Max / Average ของค่าที่รถส่งมา",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        Button(onClick = { if (recording.active) liveRepository.stop() else liveRepository.start() }) {
-                            Text(if (recording.active) "หยุด" else "บันทึก")
-                        }
-                    }
-                    liveHistory.firstOrNull()?.let { session ->
-                        HorizontalDivider()
-                        Text("Session ล่าสุด • ${session.durationMillis / 1_000}s • ${session.metrics.size} metrics", style = MaterialTheme.typography.bodySmall)
-                        session.metrics.take(3).forEach { metric ->
-                            Text("${metric.name}: ${"%.1f".format(metric.minimum)}–${"%.1f".format(metric.maximum)} ${metric.unit} • avg ${"%.1f".format(metric.average)}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
-        }
-        }
+        item { com.nowtuneup.app.feature.live.TelemetryPanel(liveRepository, telemetrySamples, connectionState == ConnectionState.CONNECTED, connectionUi.transportType.name) }
         item {
         OutlinedTextField(
             value = query,

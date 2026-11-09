@@ -53,3 +53,22 @@ branch.
 - Back exits fullscreen even when controls are hidden or touch is locked.
 - Future-schema imports are rejected; modern non-default canvas columns survive.
 - Full validation commands/results are recorded in the delivery section below.
+
+## Phase 2 implementation
+
+`VehicleReading.sourceTimeNanos` carries the response's original monotonic clock
+from `ObdSessionManager.publish`. Old readings remain compatible (nullable field).
+`TelemetryBuffer` rejects duplicates, out-of-order, stale and future responses;
+invalid/disconnected events have no numerical value. Live memory retains at most
+1,200 source events. Raw recordings stop at 20,000 events or one hour and retain
+at most 20 saved sessions. The recorder runs in the ViewModel across navigation;
+UI drawing does not create samples or control recording cadence.
+
+`TelemetryRecording` and `TelemetrySample` persist source wall/monotonic times,
+parameter, unit, quality, session identity and source label. File writes, reads,
+CSV export and history commits run on IO dispatchers. Existing summary-only
+history is retained and explicitly identified as having no raw measurements.
+Each selected signal has its own labelled amplitude scale; gaps/invalid events
+break the curve. The cursor selects measured samples, not interpolated values.
+History supports reopen, SAF CSV export and confirmed individual deletion.
+MOCK sources are explicitly labelled simulated, including reopened recordings.

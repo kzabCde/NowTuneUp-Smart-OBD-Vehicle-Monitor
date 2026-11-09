@@ -88,6 +88,7 @@ data class VehicleReading(
     val updatedAt: Long = System.currentTimeMillis(),
     val minimum: Double? = null,
     val maximum: Double? = null,
+    val sourceTimeNanos: Long? = null,
 )
 
 data class Dtc(
