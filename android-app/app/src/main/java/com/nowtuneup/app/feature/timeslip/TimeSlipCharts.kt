@@ -34,6 +34,7 @@ private enum class ChartMetric(val title: String, val unit: String) {
 
 @Composable
 fun TimeSlipCharts(record: TimeSlipRecord, comparison: TimeSlipRecord? = null) {
+    AuxiliaryTimeSlipCharts(record, comparison?.takeIf { TimeSlipAnalysis.comparable(record, it) })
     val data = remember(record) { TimeSlipAnalysis.chart(record) }
     val previousData = remember(record, comparison) { comparison?.takeIf { TimeSlipAnalysis.comparable(record, it) }?.let(TimeSlipAnalysis::chart) }
     var metric by remember(record.id) { mutableStateOf(ChartMetric.SPEED) }

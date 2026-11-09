@@ -92,6 +92,7 @@ private val simplePresets = listOf(
 fun TimeSlipScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
+    val readings by viewModel.readings.collectAsState()
     val connection by viewModel.connection.collectAsState()
     val connectionUi by viewModel.connectionUiState.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
@@ -141,7 +142,8 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
             PerformanceMode.STANDING_START -> latest.speedKmh <= selectedPreset.config.stationaryThresholdKmh
             PerformanceMode.ROLLING_START -> latest.speedKmh < selectedPreset.config.rollingStartKmh
         }
-        if (!stillReady || connection != ConnectionState.CONNECTED || simulated) return
+        val speedReady = readiness.fresh && readiness.hasValue && readiness.supported
+        if (!stillReady || connection != ConnectionState.CONNECTED || simulated || !speedReady) return
         session.setPerformanceSampling(true)
         snapshot = engine.arm(
             requestedConfig = selectedPreset.config.copy(
@@ -187,6 +189,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     LaunchedEffect(speedSample?.responseReceivedAtNanos) {
         val sample = speedSample ?: return@LaunchedEffect
         if (!snapshot.active) return@LaunchedEffect
+        fun signal(pid: Int) = captureTimeSlipSignal(readings.firstOrNull { it.pid == pid }, sample.responseReceivedAtNanos)
         val next = engine.ingestTelemetry(
             TimeSlipTelemetrySample(
                 timeNanos = sample.responseReceivedAtNanos,
@@ -195,6 +198,8 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                 fusedSpeedKmh = sample.speedKmh,
                 transportLatencyMillis = sample.transportLatencyMillis,
                 source = MeasurementSource.OBD_ONLY,
+                rpmSample = signal(0x0C),
+                throttleSample = signal(0x11),
             ),
         )
         snapshot = next

@@ -41,6 +41,8 @@ data class TimeSlipConfig(
     val vehicleProfileId: String = "",
 )
 
+data class TimeSlipSignalSample(val sourceTimeNanos: Long, val value: Double)
+
 data class TimeSlipTelemetrySample(
     val timeNanos: Long,
     val wallClockMillis: Long,
@@ -53,6 +55,8 @@ data class TimeSlipTelemetrySample(
     val slopePercent: Double? = null,
     val transportLatencyMillis: Long = 0L,
     val source: MeasurementSource = MeasurementSource.OBD_ONLY,
+    val rpmSample: TimeSlipSignalSample? = null,
+    val throttleSample: TimeSlipSignalSample? = null,
 )
 
 data class SpeedMilestoneResult(

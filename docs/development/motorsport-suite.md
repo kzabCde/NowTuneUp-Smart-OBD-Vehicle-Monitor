@@ -86,9 +86,10 @@ Historical results support choosing any compatible comparison (previous run is
 the default). The chart itself also checks compatibility, so callers cannot draw
 an incompatible overlay. Curves retain solid/dashed distinctions, recorded-run
 identities and available split deltas. Results/shares identify vehicle, timestamp,
-source, rollout and estimated OBD timing limitations. RPM/throttle performance
-curves are not exposed: existing Time Slip recordings contain speed samples only;
-raw multi-signal telemetry is available separately in the telemetry recorder.
+source, rollout and estimated OBD timing limitations. New runs also retain available RPM/throttle observations with their original source
+timestamps. Optional per-signal performance curves select actual recorded samples,
+break at gaps and use compatible-run overlays. Repeated cached source observations
+are deduplicated. Legacy speed-only records never gain reconstructed auxiliary curves.
 
 ## Integration and data models
 
@@ -104,7 +105,8 @@ raw multi-signal telemetry is available separately in the telemetry recorder.
   says “Not scanned”; zero is used only for an actual empty scan.
 - `DashboardWidgetConfig.shiftLight` and `VehicleReading.sourceTimeNanos` are new
   nullable fields. `ShiftLightConfig`, `TelemetrySample`, `TelemetryRecording`,
-  `SampleQuality`, and `HistorySort` are new models. Legacy `LiveSessionSummary`
+  `SampleQuality`, `TimeSlipSignalSample`, and `HistorySort` are new models.
+  `TimeSlipTelemetrySample` gains nullable RPM/throttle source observations. Legacy `LiveSessionSummary`
   gains optional recording identity and stop reason. Room schemas and DataStore
   preferences are unchanged; no destructive migration is used.
 
@@ -121,7 +123,7 @@ source /workspace/android-tools/env.sh
   --no-daemon --max-workers=4
 ```
 
-Result: **114 JVM unit tests passed, zero failed/skipped**; Android lint passed
+Result: **116 JVM unit tests passed, zero failed/skipped**; Android lint passed
 with existing warnings; debug application and instrumentation APKs assembled.
 The suite includes dashboard compatibility, unavailable/stale data, shift stages,
 raw buffer bounds, duplicate/delayed/invalid samples, JSON/CSV integrity, unit
@@ -166,9 +168,9 @@ acceptance remain pending unless the direct adb fallback below succeeds.
   sustained recording/CSV export, screen rotation, 320 dp and large font settings.
 - Verify vehicle/adapter compatibility and USB/Bluetooth disconnect/reconnect on
   physical hardware. No physical vehicle measurements were performed here.
-- RPM/throttle Time Slip overlays are not implemented because Time Slip currently
-  records only speed. The new telemetry recorder supports those live signals in
-  separate recordings. Do not imply these curves exist in legacy performance runs.
+- Verify optional RPM/throttle capture with real adapter polling profiles. Missing
+  source readings leave those curves hidden; speed sampling priority is preserved.
+  Do not imply auxiliary curves exist in speed-only legacy performance records.
 - Finish review before merge/release. No signing credentials, release tags,
   production deployment or published APK are part of this change.
 
@@ -206,3 +208,34 @@ acceptance remain pending unless the direct adb fallback below succeeds.
 - `android-app/app/src/test/java/com/nowtuneup/app/feature/timeslip/PerformanceHistoryTest.kt`
 - `android-app/app/src/test/java/com/nowtuneup/app/util/DisplayUnitIntegrityTest.kt`
 - `docs/development/motorsport-suite.md`
+
+## Review branch and pull request
+
+Implementation commits are pushed to
+[`feat/motorsport-performance-suite`](https://github.com/kzabCde/NowTuneUp-Smart-OBD-Vehicle-Monitor/tree/feat/motorsport-performance-suite).
+`main` is unchanged. Draft PR creation was attempted with `gh pr create --draft`
+and failed with `Post "https://api.github.com/graphql": Forbidden`.
+No PR was created. The prepared description is retained locally at
+`/workspace/android-tools/draft-pr.md`; it can be submitted once API access works,
+or used when opening a draft PR from the branch on GitHub.
+
+## Direct adb fallback outcome
+
+Both the debug application and instrumentation APK installed successfully via
+`adb install -r -t`. Direct invocation of
+`adb shell am instrument -w -r com.nowtuneup.app.debug.test/androidx.test.runner.AndroidJUnitRunner`
+produced no application-test outcome. Emulator crash logs show Android system
+processes (SystemUI, phone, Bluetooth and network stack) failing with
+`DeadSystemException` before this app test attempt. The software-only emulator
+was stopped after the unresponsive instrumentation attempt; no Compose tests are
+claimed passed and no application UI screenshots were obtained. Use an
+accelerated API 26+ Android device/emulator to complete these release gates.
+
+The final readiness adjustment also rechecks supported/fresh speed after the
+countdown before arming; countdown presentation cannot arm a stale run.
+
+The direct runner discovered 9 application tests and began the first test, but no
+individual test completed before the unstable emulator was stopped. Its adb
+command exited 255; this is not counted as a passing test run.
+
+New auxiliary files: `android-app/app/src/main/java/com/nowtuneup/app/feature/timeslip/AuxiliaryTimeSlipCharts.kt` and `android-app/app/src/test/java/com/nowtuneup/app/feature/timeslip/AuxiliaryTimeSlipTest.kt`.
