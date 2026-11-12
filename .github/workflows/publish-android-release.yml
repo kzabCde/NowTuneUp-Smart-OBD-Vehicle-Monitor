@@ -8,7 +8,7 @@ on:
       version:
         description: Semantic version to publish (without the v prefix)
         required: true
-        default: 1.18.0
+        default: 1.19.0
         type: string
 permissions: { contents: write, pull-requests: write }
 concurrency:
@@ -87,7 +87,10 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "refs/tags/v$RELEASE_VERSION:refs/tags/v$RELEASE_VERSION"
           git checkout --detach "refs/tags/v$RELEASE_VERSION"
-      - run: ./gradlew test lint
+      - name: Compile and test all release sources
+        run: ./gradlew test assembleDebugAndroidTest --max-workers=2
+      - name: Lint compiled sources
+        run: ./gradlew lintDebug lintRelease --max-workers=2
       - name: Restore signing key
         env: { KEYSTORE_B64: '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' }
         run: |

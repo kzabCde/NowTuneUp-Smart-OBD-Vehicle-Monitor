@@ -64,7 +64,7 @@ export default function Releases() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span><span className="chip">Motorsport Performance Suite</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Current {localRelease.version}</span><span className="chip">Build {localRelease.versionCode}</span><span className="chip">Professional Automotive Dashboard</span></div>
           <p className="eyebrow mt-8">Release history</p>
           <h1 className="page-title mt-4">Production first. History second.</h1>
           <p className="page-lede mt-7">The current signed APK stays visually dominant. Earlier milestones remain available so stability changes and product direction are easy to trace without turning this page into a raw changelog.</p>
@@ -73,7 +73,7 @@ export default function Releases() {
 
       <section className="section-rule">
         <div className="shell section-space">
-          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">NowTuneUp {localRelease.version} · Motorsport Performance Suite.</h2><p className="section-copy">New optional Daily Drive, Performance and Diagnostics HUD templates, configurable RPM shift lights, local timestamped telemetry CSV export, exact 0–60 mph timing and searchable Time Slip comparisons with split deltas. Acceleration and distance remain OBD-speed estimates, not certified GPS measurements.</p></div>
+          <div className="section-heading mb-8"><p className="eyebrow">Current production</p><h2 className="section-title">NowTuneUp {localRelease.version} · Professional Automotive Dashboard.</h2><p className="section-copy">Five destinations, dial and digital gauges, persistent dashboard and widget management, Daily/Engine/Performance templates, and local PNG performance reports. Existing telemetry recording and Time Slip analysis are retained. Acceleration and distance remain OBD-speed estimates, not certified GPS measurements.</p></div>
           <ReleaseCard release={localRelease} />
         </div>
       </section>

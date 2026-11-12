@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.18.0: motorsport HUD, source telemetry and performance analysis.
+    // Release 1.19.0: professional dashboard workspace and performance reporting.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "1.18.0"
+        versionCode = 29
+        versionName = "1.19.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")

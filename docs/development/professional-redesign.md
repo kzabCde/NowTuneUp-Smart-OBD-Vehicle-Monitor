@@ -1,7 +1,8 @@
 # Professional Automotive Technology redesign
 
-This development branch redesigns the native Android interface. It does not tag,
-publish, sign for production or change the published website/release metadata.
+The native Android redesign is prepared for release 1.19.0. Release packaging and
+publication follow [the release process](../release-process.md), including production
+signature and website artifact verification.
 The supplied Dragy, social-navigation and activity-card images inform hierarchy,
 spacing and readability only; no third-party branding or image assets are copied.
 
@@ -234,5 +235,4 @@ Paths below are relative to `android-app/app/src` unless stated otherwise.
 
 The implementation uses the existing Compose, Room, DataStore and FileProvider
 dependencies. No new backend, social feature, account requirement, diagnostic
-command or dependency was introduced. The database version and published APK
-version are unchanged on this development branch.
+command or dependency was introduced. The database version is unchanged. Release 1.19.0 uses Android build code 29.
