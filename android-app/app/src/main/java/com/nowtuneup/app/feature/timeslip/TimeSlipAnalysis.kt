@@ -75,7 +75,7 @@ object TimeSlipAnalysis {
     fun comparable(left: TimeSlipRecord, right: TimeSlipRecord): Boolean =
         left.status == TimeSlipStatus.COMPLETED && right.status == TimeSlipStatus.COMPLETED &&
             left.measurementQuality != MeasurementQuality.INVALID && right.measurementQuality != MeasurementQuality.INVALID &&
-            left.vehicleProfileId == right.vehicleProfileId && left.mode == right.mode &&
+            !left.vehicleProfileId.isNullOrBlank() && left.vehicleProfileId == right.vehicleProfileId && left.mode == right.mode &&
             left.oneFootRolloutEnabled == right.oneFootRolloutEnabled &&
             left.selectedDistanceTarget == right.selectedDistanceTarget &&
             (left.selectedDistanceTarget != null ||
@@ -89,4 +89,28 @@ object TimeSlipAnalysis {
     fun finishMilestone(record: TimeSlipRecord): SpeedMilestoneResult? = record.speedMilestones
         .filter { it.elapsedMillis <= record.elapsedMillis }
         .maxByOrNull { it.elapsedMillis }
+}
+
+/** A measured auxiliary source observation, never aligned to a fabricated speed-sample timestamp. */
+data class AuxiliaryRunPoint(val seconds: Double, val value: Double, val breakBefore: Boolean)
+
+fun captureTimeSlipSignal(reading: com.nowtuneup.app.domain.model.VehicleReading?, speedTimeNanos: Long): TimeSlipSignalSample? {
+    reading ?: return null
+    val time = reading.sourceTimeNanos ?: return null
+    val value = reading.value ?: return null
+    if (!reading.supported || !value.isFinite() || speedTimeNanos - time !in 0L..1_500_000_000L) return null
+    return TimeSlipSignalSample(time, value)
+}
+
+fun auxiliaryRunSeries(record: TimeSlipRecord, pid: Int): List<AuxiliaryRunPoint> {
+    val start = record.timingStartNanos ?: return emptyList()
+    val finish = record.completionTimeNanos ?: return emptyList()
+    if (finish <= start) return emptyList()
+    val observations = record.rawSamples.orEmpty().mapNotNull { sample ->
+        when(pid) { 0x0C -> sample.rpmSample; 0x11 -> sample.throttleSample; else -> null }
+    }.filter { it.sourceTimeNanos in start..finish && it.value.isFinite() &&
+        if (pid == 0x0C) it.value in 0.0..16383.75 else it.value in 0.0..100.0 }
+        .distinctBy { it.sourceTimeNanos }.sortedBy { it.sourceTimeNanos }
+    return observations.mapIndexed { index, sample -> AuxiliaryRunPoint((sample.sourceTimeNanos-start)/1e9,
+        sample.value, index > 0 && sample.sourceTimeNanos-observations[index-1].sourceTimeNanos > 1_500_000_000L) }
 }

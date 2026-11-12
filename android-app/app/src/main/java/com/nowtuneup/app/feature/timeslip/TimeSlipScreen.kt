@@ -11,6 +11,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +85,7 @@ private data class SimplePreset(val label: String, val config: TimeSlipConfig)
 
 private val simplePresets = listOf(
     SimplePreset("0–60 km/h", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 60.0, enabledMilestonesKmh = listOf(60.0), useSensorFusion = false, oneFootRollout = false)),
+    SimplePreset("0–60 mph", sixtyMphConfig()),
     SimplePreset("0–100 km/h", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = null, speedOnlyTargetKmh = 100.0, enabledMilestonesKmh = listOf(60.0, 100.0), useSensorFusion = false, oneFootRollout = false)),
     SimplePreset("60–100 km/h", TimeSlipConfig(mode = PerformanceMode.ROLLING_START, selectedDistanceTarget = null, rollingStartKmh = 60.0, rollingTargetKmh = 100.0, enabledMilestonesKmh = listOf(100.0), useSensorFusion = false, oneFootRollout = false)),
     SimplePreset("1/4 mile", TimeSlipConfig(mode = PerformanceMode.STANDING_START, selectedDistanceTarget = DistanceTarget.QUARTER_MILE, enabledMilestonesKmh = listOf(60.0, 100.0), useSensorFusion = false, oneFootRollout = false)),
@@ -85,10 +94,12 @@ private val simplePresets = listOf(
 )
 
 @Composable
-fun TimeSlipScreen(viewModel: MainViewModel) {
+fun TimeSlipScreen(viewModel: MainViewModel, onOpenHistory: (() -> Unit)? = null, onSessionActiveChange: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val view = LocalView.current
+    val readings by viewModel.readings.collectAsState()
     val connection by viewModel.connection.collectAsState()
+    val connectionUi by viewModel.connectionUiState.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val vehicleRepository = rememberVehicleProfileRepository()
     val vehicleProfiles by vehicleRepository.profiles.collectAsState()
@@ -101,9 +112,13 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     val repository = remember { TimeSlipRepository(context.applicationContext) }
     val engine = remember { TimeSlipEngine() }
     val scope = rememberCoroutineScope()
-    var selectedPreset by remember { mutableStateOf(simplePresets[1]) }
+    var selectedPreset by remember { mutableStateOf(simplePresets.first { it.label == "0–100 km/h" }) }
     var snapshot by remember { mutableStateOf(engine.snapshot()) }
     var history by remember { mutableStateOf(repository.list()) }
+    var historyQuery by rememberSaveable { mutableStateOf("") }
+    var historyMode by remember { mutableStateOf<PerformanceMode?>(null) }
+    var historySort by remember { mutableStateOf(HistorySort.NEWEST) }
+    var comparisonId by remember { mutableStateOf<String?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var selectedRecordId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
@@ -112,16 +127,18 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     var lastSavedRecordId by remember { mutableStateOf<String?>(null) }
     var uiClockMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var countdownLabel by remember { mutableStateOf<String?>(null) }
+    var countdownJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val currentSpeed = speedSample?.speedKmh ?: 0.0
     val modeReady = when (selectedPreset.config.mode) {
         PerformanceMode.STANDING_START -> currentSpeed <= selectedPreset.config.stationaryThresholdKmh
         PerformanceMode.ROLLING_START -> currentSpeed < selectedPreset.config.rollingStartKmh
     }
-    val canArm = activeVehicle != null && connection == ConnectionState.CONNECTED && readiness.supported && readiness.hasValue && readiness.fresh && modeReady && countdownLabel == null
+    val simulated = connectionUi.transportType == com.nowtuneup.app.domain.model.ObdTransportType.MOCK
+    val canArm = !simulated && activeVehicle != null && connection == ConnectionState.CONNECTED && readiness.supported && readiness.hasValue && readiness.fresh && modeReady && countdownLabel == null
     val vehicleHistory = remember(history, activeVehicle?.id) {
         val id = activeVehicle?.id
-        if (id == null) emptyList() else history.filter { it.vehicleProfileId == id }
+        if (id == null) emptyList() else history.filter { it.vehicleProfileId == id || it.vehicleProfileId.isNullOrBlank() }
     }
 
     fun armNow() {
@@ -131,7 +148,8 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
             PerformanceMode.STANDING_START -> latest.speedKmh <= selectedPreset.config.stationaryThresholdKmh
             PerformanceMode.ROLLING_START -> latest.speedKmh < selectedPreset.config.rollingStartKmh
         }
-        if (!stillReady || connection != ConnectionState.CONNECTED) return
+        val speedReady = readiness.fresh && readiness.hasValue && readiness.supported
+        if (!stillReady || connection != ConnectionState.CONNECTED || simulated || !speedReady) return
         session.setPerformanceSampling(true)
         snapshot = engine.arm(
             requestedConfig = selectedPreset.config.copy(
@@ -147,7 +165,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
 
     fun beginCountdown() {
         if (!canArm) return
-        scope.launch {
+        countdownJob = scope.launch {
             if (preferences.reduceMotion) {
                 countdownLabel = "GO"
                 delay(120L)
@@ -177,6 +195,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
     LaunchedEffect(speedSample?.responseReceivedAtNanos) {
         val sample = speedSample ?: return@LaunchedEffect
         if (!snapshot.active) return@LaunchedEffect
+        fun signal(pid: Int) = captureTimeSlipSignal(readings.firstOrNull { it.pid == pid }, sample.responseReceivedAtNanos)
         val next = engine.ingestTelemetry(
             TimeSlipTelemetrySample(
                 timeNanos = sample.responseReceivedAtNanos,
@@ -185,6 +204,8 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                 fusedSpeedKmh = sample.speedKmh,
                 transportLatencyMillis = sample.transportLatencyMillis,
                 source = MeasurementSource.OBD_ONLY,
+                rpmSample = signal(0x0C),
+                throttleSample = signal(0x11),
             ),
         )
         snapshot = next
@@ -201,7 +222,8 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         if (snapshot.active) view.keepScreenOn = true
         onDispose { view.keepScreenOn = previous }
     }
-    DisposableEffect(Unit) { onDispose { session.setPerformanceSampling(false) } }
+    LaunchedEffect(snapshot.active, countdownLabel) { onSessionActiveChange(snapshot.active || countdownLabel != null) }
+    DisposableEffect(Unit) { onDispose { session.setPerformanceSampling(false); onSessionActiveChange(false) } }
 
     if (showSafetyDialog) {
         AlertDialog(
@@ -222,8 +244,13 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
         )
     }
 
+    BackHandler(enabled = countdownLabel != null || snapshot.active) {
+        if (countdownLabel != null) { countdownJob?.cancel(); countdownLabel = null }
+        else snapshot = engine.cancel()
+    }
     countdownLabel?.let { label ->
-        CountdownOverlay(label = label, reduceMotion = preferences.reduceMotion)
+        CountdownOverlay(label = label, reduceMotion = preferences.reduceMotion,
+            onCancel = { countdownJob?.cancel(); countdownLabel = null })
         return
     }
 
@@ -272,29 +299,50 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                 FilterChip(selected = !showHistory && selectedRecord == null,
                     onClick = { showHistory = false; selectedRecordId = null }, label = { Text("ทดสอบ") })
                 FilterChip(selected = showHistory || selectedRecord != null,
-                    onClick = { showHistory = true; selectedRecordId = null }, label = { Text("ประวัติ (${vehicleHistory.size})") })
+                    onClick = { if (onOpenHistory != null) onOpenHistory() else { showHistory = true; selectedRecordId = null } }, label = { Text("ประวัติ (${vehicleHistory.size})") })
             }
         }
         if (selectedRecord != null) {
             item { ResultCard(selectedRecord, isPersonalBest(selectedRecord, vehicleHistory),
-                onShare = { TimeSlipShare.shareText(context, selectedRecord.asShareText()) }) }
-            item { TimeSlipCharts(selectedRecord, previousComparable(selectedRecord, vehicleHistory)) }
+                onShare = { scope.launch { sharePerformanceReport(context, selectedRecord) } }) }
+            item {
+                val compatible = vehicleHistory.filter { it.id != selectedRecord.id && TimeSlipAnalysis.comparable(selectedRecord, it) }
+                val comparison = compatible.firstOrNull { it.id == comparisonId } ?: previousComparable(selectedRecord, vehicleHistory)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    compatible.forEach { other ->
+                        FilterChip(selected = other.id == comparison?.id, onClick = { comparisonId = other.id }, label = {
+                            Text("${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(other.startedAtEpochMillis))} · ${formatSeconds(other.elapsedMillis)} s")
+                        })
+                    }
+                }
+                TimeSlipCharts(selectedRecord, comparison)
+            }
         } else if (showHistory) {
-            if (vehicleHistory.isEmpty()) {
-                item { SimpleMessageCard("ยังไม่มีผลทดสอบ", "ผลที่สำเร็จของ ${activeVehicle?.displayName ?: "รถคันนี้"} จะถูกบันทึกไว้ในเครื่อง") }
-            } else {
-                items(vehicleHistory, key = { it.id }) { record ->
-                    HistoryCard(
-                        record,
-                        onOpen = { selectedRecordId = record.id },
+            item {
+                OutlinedTextField(value = historyQuery, onValueChange = { historyQuery = it },
+                    label = { Text("Search mode, vehicle, quality or date") }, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = historyMode == null, onClick = { historyMode = null }, label = { Text("All modes") })
+                    PerformanceMode.entries.forEach { mode -> FilterChip(selected = historyMode == mode, onClick = { historyMode = mode }, label = { Text(mode.name.replace('_', ' ')) }) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = historySort == HistorySort.NEWEST, onClick = { historySort = HistorySort.NEWEST }, label = { Text("Newest") })
+                    FilterChip(selected = historySort == HistorySort.VALID_ELAPSED, onClick = { historySort = HistorySort.VALID_ELAPSED }, label = { Text("Valid elapsed time") })
+                }
+            }
+            val filtered = performanceHistory(vehicleHistory, historyQuery, historyMode, historySort)
+            if (filtered.isEmpty()) item { SimpleMessageCard("No matching results", "Saved local records remain available when you clear the filters.") }
+            filtered.groupBy { performanceTitle(it) }.forEach { (title, records) ->
+                item { Text(title, style = MaterialTheme.typography.titleMedium) }
+                items(records, key = { it.id }) { record ->
+                    HistoryCard(record, onOpen = { selectedRecordId = record.id; comparisonId = null },
                         isPersonalBest = isPersonalBest(record, vehicleHistory),
-                        onShare = { TimeSlipShare.shareText(context, record.asShareText()) },
-                        onDelete = { pendingDeleteId = record.id },
-                    )
+                        onShare = { scope.launch { sharePerformanceReport(context, record) } },
+                        onDelete = { pendingDeleteId = record.id })
                 }
             }
         } else {
-            item { ReadinessCard(connection == ConnectionState.CONNECTED, speedSample?.speedKmh, speedSample?.transportLatencyMillis, readiness.reasonThai, readiness.sampleRateHz) }
+            item { ReadinessCard(connection == ConnectionState.CONNECTED, speedSample?.speedKmh.takeIf { readiness.fresh && connection == ConnectionState.CONNECTED }, speedSample?.transportLatencyMillis, if (simulated) "SIMULATED SOURCE · vehicle performance recording disabled" else readiness.reasonThai, readiness.sampleRateHz) }
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -323,7 +371,7 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
                         ResultCard(
                             record = record,
                             isPersonalBest = isPersonalBest(record, vehicleHistory),
-                            onShare = { TimeSlipShare.shareText(context, record.asShareText()) },
+                            onShare = { scope.launch { sharePerformanceReport(context, record) } },
                         )
                     }
                 }
@@ -355,23 +403,20 @@ fun TimeSlipScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun CountdownOverlay(label: String, reduceMotion: Boolean) {
-    Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-        AnimatedContent(
-            targetState = label,
-            transitionSpec = {
-                if (reduceMotion) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                else (fadeIn(tween(150)) + scaleIn(initialScale = 0.62f)) togetherWith (fadeOut(tween(120)) + scaleOut(targetScale = 1.18f))
-            },
-            label = "Time Slip countdown",
-        ) { value ->
-            Text(
-                value,
-                fontSize = if (value == "GO") 76.sp else 112.sp,
-                fontWeight = FontWeight.Black,
-                color = if (value == "GO") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
-            )
+private fun CountdownOverlay(label: String, reduceMotion: Boolean, onCancel: () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text("เตรียมการทดสอบ", style = MaterialTheme.typography.titleLarge)
+        AnimatedContent(targetState = label,
+            transitionSpec = { fadeIn(tween(if (reduceMotion) 0 else 120)) togetherWith fadeOut(tween(if (reduceMotion) 0 else 120)) },
+            label = "Time Slip countdown") { value ->
+            Text(value, modifier = Modifier.padding(vertical = 20.dp), fontSize = 64.sp,
+                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
+                color = if (value == "GO") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
         }
+        Text("เวลาจริงเริ่มจากข้อมูลความเร็วที่วัดได้ ไม่ใช่ภาพนับถอยหลัง", textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        OutlinedButton(onClick = onCancel, modifier = Modifier.padding(top = 20.dp)) { Text("ยกเลิก") }
     }
 }
 
@@ -396,13 +441,16 @@ private fun ActiveTimeSlip(
     val latestMilestone = snapshot.speedMilestones.lastOrNull()?.let { "${it.label} • ${formatSeconds(it.elapsedMillis)} s" }
         ?: snapshot.distanceSplits.lastOrNull()?.let { "${it.target.label} • ${formatSeconds(it.elapsedMillis)} s" }
 
-    Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+        val compact = maxHeight < 420.dp
+        Column(modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp)) {
             Text(if (snapshot.status == TimeSlipStatus.ARMED) "พร้อมออกตัว" else "กำลังทดสอบ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text(animatedSpeed.roundToInt().toString(), fontSize = 92.sp, fontWeight = FontWeight.Black)
+            Text(if (delayed) "—" else animatedSpeed.roundToInt().toString(), fontSize = if (compact) 56.sp else 80.sp,
+                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { contentDescription = if (delayed) "Speed unavailable: delayed OBD source" else "Measured speed ${speedKmh.roundToInt()} kilometres per hour" })
             Text("km/h", style = MaterialTheme.typography.titleMedium)
-            Text("${formatSeconds(displayedElapsed)} s", fontSize = 50.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-            Text("ระยะ ${"%.1f".format(snapshot.distanceMeters)} m")
+            Text("${formatSeconds(displayedElapsed)} s", fontSize = if (compact) 32.sp else 44.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text("ระยะโดยประมาณ ${"%.1f".format(snapshot.distanceMeters)} m", color = MaterialTheme.colorScheme.onSurfaceVariant)
             AnimatedContent(
                 targetState = latestMilestone,
                 transitionSpec = {
@@ -434,41 +482,49 @@ private fun ReadinessCard(connected: Boolean, speedKmh: Double?, latencyMillis: 
 }
 
 @Composable
-private fun ResultCard(record: TimeSlipRecord, isPersonalBest: Boolean, onShare: () -> Unit) {
+internal fun ResultCard(record: TimeSlipRecord, isPersonalBest: Boolean, onShare: () -> Unit) {
     var showQuality by rememberSaveable(record.id) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth().ntuAnimateContentSize()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(historyTitle(record), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (isPersonalBest) Text("PB", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                if (isPersonalBest) Text("Best local", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
             }
-            Text("${formatSeconds(record.elapsedMillis)} s", fontSize = 42.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black)
-            record.speedMilestones.forEach { Text("${it.label}: ${formatSeconds(it.elapsedMillis)} s") }
-            record.distanceSplits.forEach { Text("${it.target.label}: ${formatSeconds(it.elapsedMillis)} s • ${"%.1f".format(it.trapSpeedKmh)} km/h") }
+            Text(if (record.hasMeasuredElapsed()) "${formatSeconds(record.elapsedMillis)} s" else "Elapsed unavailable", style = MaterialTheme.typography.displaySmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+            record.speedMilestones.forEach { split ->
+                ReportValueRow(split.label, "${formatSeconds(split.elapsedMillis)} s")
+            }
+            record.distanceSplits.forEach { split ->
+                ReportValueRow(split.target.label, "${formatSeconds(split.elapsedMillis)} s")
+                Text("Trap speed ${"%.1f".format(split.trapSpeedKmh)} km/h", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("Vehicle: ${record.vehicleProfileId?.takeIf { it.isNotBlank() } ?: "Legacy / unassigned"}", style = MaterialTheme.typography.bodySmall)
+            Text(record.recordedDateLabel(), style = MaterialTheme.typography.bodySmall)
+            Text("Source: ${record.dataSource} · rollout ${if (record.oneFootRolloutEnabled) "1 ft" else "off"}", style = MaterialTheme.typography.bodySmall)
+            Text("Distance and acceleration are estimated from OBD speed, not GPS-grade timing.", style = MaterialTheme.typography.bodySmall)
             HorizontalDivider()
             Text("Quality ${record.qualityScore}/100 • ${record.measurementQuality.name} • ${"%.1f".format(record.obdSampleRateHz)} Hz", fontWeight = FontWeight.Bold)
             TextButton(onClick = { showQuality = !showQuality }) { Text(if (showQuality) "ซ่อนคุณภาพสัญญาณ" else "ดูคุณภาพสัญญาณ") }
             if (showQuality) {
                 Text("Latency เฉลี่ย ${record.averageTransportLatencyMillis} ms • dropped ${"%.1f".format(record.invalidSampleRatio * 100)}%", style = MaterialTheme.typography.bodySmall)
-                Text("เวลาโดยประมาณ ±${record.estimatedTimingErrorMillis} ms", style = MaterialTheme.typography.bodySmall)
+                Text("เวลาโดยประมาณ ${record.timingEstimateLabel()}", style = MaterialTheme.typography.bodySmall)
                 record.validityNotes.take(4).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
             }
-            TextButton(onClick = onShare) { Text("แชร์ผล") }
+            Button(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("แชร์รายงาน") }
         }
     }
 }
 
 @Composable
-private fun HistoryCard(record: TimeSlipRecord, onOpen: () -> Unit, isPersonalBest: Boolean, onShare: () -> Unit, onDelete: () -> Unit) {
+internal fun HistoryCard(record: TimeSlipRecord, onOpen: () -> Unit, isPersonalBest: Boolean, onShare: () -> Unit, onDelete: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(historyTitle(record), modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                if (isPersonalBest) Text("PB", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                if (isPersonalBest) Text("Best local", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
             }
-            Text("${formatSeconds(record.elapsedMillis)} s", fontSize = 28.sp, fontFamily = FontFamily.Monospace)
-            Text(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
-                .format(java.util.Date(record.startedAtEpochMillis)), style = MaterialTheme.typography.bodySmall,
+            Text(if (record.hasMeasuredElapsed()) "${formatSeconds(record.elapsedMillis)} s" else "Elapsed unavailable", fontSize = 28.sp, fontFamily = FontFamily.Monospace)
+            Text(record.recordedDateLabel(), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("คุณภาพ ${record.qualityScore}/100 • ${"%.1f".format(record.obdSampleRateHz)} Hz", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("ดูกราฟ / รายละเอียด") }
@@ -490,17 +546,17 @@ private fun SimpleMessageCard(title: String, detail: String) {
     }
 }
 
-private fun isPersonalBest(record: TimeSlipRecord, history: List<TimeSlipRecord>): Boolean {
-    if (record.status != TimeSlipStatus.COMPLETED || record.measurementQuality == MeasurementQuality.INVALID) return false
-    val comparable = history.filter { it.id != record.id && TimeSlipAnalysis.comparable(record, it) }
+internal fun isPersonalBest(record: TimeSlipRecord, history: List<TimeSlipRecord>): Boolean {
+    if (!record.hasMeasuredElapsed()) return false
+    val comparable = history.filter { it.id != record.id && it.hasMeasuredElapsed() && TimeSlipAnalysis.comparable(record, it) }
     return comparable.none { it.elapsedMillis <= record.elapsedMillis }
 }
 
-private fun previousComparable(record: TimeSlipRecord, history: List<TimeSlipRecord>): TimeSlipRecord? =
+internal fun previousComparable(record: TimeSlipRecord, history: List<TimeSlipRecord>): TimeSlipRecord? =
     history.filter { it.id != record.id && it.startedAtEpochMillis < record.startedAtEpochMillis && TimeSlipAnalysis.comparable(record, it) }
         .maxByOrNull { it.startedAtEpochMillis }
 
-private fun historyTitle(record: TimeSlipRecord): String = when {
+internal fun historyTitle(record: TimeSlipRecord): String = when {
     record.selectedDistanceTarget != null -> record.selectedDistanceTarget.label
     TimeSlipAnalysis.finishMilestone(record) != null -> TimeSlipAnalysis.finishMilestone(record)!!.label
     else -> "Time Slip"
@@ -515,3 +571,26 @@ private fun startHint(connected: Boolean, supported: Boolean, hasValue: Boolean,
     mode == PerformanceMode.ROLLING_START && speedKmh >= rollingStartKmh -> "ลดความเร็วให้ต่ำกว่า ${rollingStartKmh.toInt()} km/h ก่อน"
     else -> "พร้อมใช้งาน กดเตรียมทดสอบแล้วออกตัวหลังข้อความ GO โดยเวลาจริงจะเริ่มจาก telemetry ของรถ"
 }
+
+
+@Composable
+private fun ReportValueRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+internal suspend fun sharePerformanceReport(context: android.content.Context, record: TimeSlipRecord) {
+    try {
+        TimeSlipShare.shareReport(context, record)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        TimeSlipShare.shareText(context, TimeSlipShare.reportText(record))
+    }
+}
+
+internal fun TimeSlipRecord.recordedDateLabel(): String = if (startedAtEpochMillis > 0L)
+    java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+        .format(java.util.Date(startedAtEpochMillis)) else "Date unavailable · legacy record"

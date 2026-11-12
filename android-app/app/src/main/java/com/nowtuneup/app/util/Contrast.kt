@@ -15,4 +15,12 @@ object Contrast {
     }
 
     fun isReadable(text: Long, background: Long) = ratio(text, background) >= 4.5
+
+    fun readableColor(preferred: Long, background: Long, fallback: Long): Long {
+        if (isReadable(preferred, background)) return preferred
+        if (isReadable(fallback, background)) return fallback
+        val black = 0xFF000000L
+        val white = 0xFFFFFFFFL
+        return if (ratio(black, background) >= ratio(white, background)) black else white
+    }
 }

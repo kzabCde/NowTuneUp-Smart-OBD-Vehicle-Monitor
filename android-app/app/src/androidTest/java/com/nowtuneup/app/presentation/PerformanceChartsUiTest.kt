@@ -25,7 +25,9 @@ class PerformanceChartsUiTest {
     @get:Rule val compose = createComposeRule()
 
     private fun run() = TimeSlipRecord(
-        id = "ui-test", elapsedMillis = 5000, timingStartNanos = 0L, launchTimeNanos = 0L,
+        id = "ui-test", elapsedMillis = 5000, vehicleProfileId = "fixture-car",
+        measurementQuality = MeasurementQuality.HIGH,
+        speedMilestones = listOf(SpeedMilestoneResult("0–100 km/h", 0.0, 100.0, 5000, 80.0)), timingStartNanos = 0L, launchTimeNanos = 0L,
         completionTimeNanos = 5_000_000_000L, launchSpeedKmh = 0.0,
         rawSamples = (1..50).map { i -> TimeSlipTelemetrySample(i * 100_000_000L, i * 100L, i * 2.0) },
     )

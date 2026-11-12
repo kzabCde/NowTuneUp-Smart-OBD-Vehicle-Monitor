@@ -25,6 +25,8 @@ object DashboardCodec {
     fun import(json: String): Result<DashboardConfig> = runCatching {
         require(json.toByteArray().size <= MAX_JSON_BYTES) { "Configuration is too large" }
         val root = JsonParser.parseString(json).asJsonObject
+        require((root.intOrNull("schemaVersion") ?: 1) in 1..HUD_SCHEMA_VERSION) { "Unsupported HUD schema version" }
+        validateTelemetryKinds(root)
         migrateLegacyValues(root)
         migrateCanvas(root)
 
@@ -80,7 +82,10 @@ object DashboardCodec {
                 widget.opacity.isFinite() &&
                 widget.opacity in 0.20f..1f &&
                 widget.zIndex in 0..10_000 &&
+                listOf(widget.threshold.warningLow, widget.threshold.warningHigh, widget.threshold.criticalLow, widget.threshold.criticalHigh).all { it == null || it.isFinite() } &&
                 geometryIsValid &&
+                (widget.shiftLight?.let { widget.pid == 0x0C && it.valid() } ?: true) &&
+                (widget.type != com.nowtuneup.app.domain.model.DashboardWidgetType.SHIFT_LIGHT || widget.pid == 0x0C) &&
                 ringIsValid &&
                 scaleIsValid
         }) { "Invalid widget configuration" }
@@ -98,7 +103,7 @@ object DashboardCodec {
             val oldColumns = layout.intOrNull("columns")?.coerceIn(1, 6) ?: 2
             val widgets = layout.getAsJsonArray("widgets")
 
-            layout.addProperty("columns", HUD_CANVAS_COLUMNS)
+            if ((root.intOrNull("schemaVersion") ?: 1) < 2) layout.addProperty("columns", HUD_CANVAS_COLUMNS)
             if (!layout.has("rows")) layout.addProperty("rows", HUD_CANVAS_ROWS)
             if (!layout.has("snapToGrid")) layout.addProperty("snapToGrid", true)
 
@@ -156,6 +161,24 @@ object DashboardCodec {
             }
         }
         root.addProperty("schemaVersion", HUD_SCHEMA_VERSION)
+    }
+
+    /** Preserve known legacy gauge names, but do not let unknown enum/null fields reach rendering. */
+    private fun validateTelemetryKinds(root: JsonObject) {
+        val mode = root.stringOrNull("mode")
+        require(mode in com.nowtuneup.app.domain.model.DashboardMode.entries.map { it.name }) { "Unknown dashboard mode" }
+        listOf("portrait", "landscape").forEach { name ->
+            val widgets = root.getAsJsonObject(name)?.getAsJsonArray("widgets") ?: return@forEach
+            widgets.forEach { element ->
+                require(element.isJsonObject) { "Invalid widget record" }
+                val widget = element.asJsonObject
+                require(widget.stringOrNull("type") in com.nowtuneup.app.domain.model.DashboardWidgetType.entries.map { it.name }) { "Unknown widget presentation" }
+                require(widget.stringOrNull("unit") in com.nowtuneup.app.domain.model.DisplayUnit.entries.map { it.name }) { "Unknown telemetry unit" }
+                if (!widget.has("colors")) widget.add("colors", gson.toJsonTree(com.nowtuneup.app.domain.model.ColorConfig()))
+                if (!widget.has("threshold")) widget.add("threshold", gson.toJsonTree(com.nowtuneup.app.domain.model.WarningThreshold()))
+                require(widget.get("colors").isJsonObject && widget.get("threshold").isJsonObject) { "Invalid widget appearance or thresholds" }
+            }
+        }
     }
 
     private fun migrateLegacyValues(root: JsonObject) {

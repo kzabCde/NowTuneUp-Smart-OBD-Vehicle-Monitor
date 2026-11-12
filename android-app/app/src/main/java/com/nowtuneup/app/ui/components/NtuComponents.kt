@@ -34,14 +34,10 @@ fun NtuPanel(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f))
+    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     if (onClick != null) {
-        val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
-        val scale by animateFloatAsState(if (pressed) 0.985f else 1f,
-            tween(if (LocalNtuReduceMotion.current) 0 else NtuMotion.Quick), label = "panel press")
-        Card(onClick = onClick, modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
-            shape = shape, colors = colors, border = border, interactionSource = interaction, content = content)
+        Card(onClick = onClick, modifier = modifier,
+            shape = shape, colors = colors, border = border, content = content)
         return
     }
     Card(
@@ -56,7 +52,7 @@ fun NtuPanel(
 @Composable
 fun NtuScreenHeader(title: String, detail: String, modifier: Modifier = Modifier, eyebrow: String = "NOWTUNEUP") {
     val compact = LocalConfiguration.current.screenHeightDp < 480
-    Column(modifier.fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
+    Column(modifier.fillMaxWidth().padding(vertical = if (compact) 4.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!compact) Text(eyebrow, style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -69,7 +65,7 @@ fun NtuScreenHeader(title: String, detail: String, modifier: Modifier = Modifier
 @Composable
 fun NtuEmptyState(title: String, detail: String, icon: ImageVector, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
     NtuPanel(modifier.widthIn(max = 520.dp).fillMaxWidth()) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(icon, null, Modifier.padding(16.dp).size(32.dp), tint = MaterialTheme.colorScheme.primary)
             }

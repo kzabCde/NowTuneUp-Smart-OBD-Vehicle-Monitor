@@ -9,11 +9,12 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,7 +53,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -120,7 +120,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("ประเภทการเชื่อมต่อ", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = state.transportType == ObdTransportType.USB,
                             onClick = { viewModel.selectTransport(ObdTransportType.USB) },
@@ -220,6 +220,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             }
         }
 
+        item { ConnectionHealthPanel(health, state.phase == ConnectionPhase.CONNECTED) }
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -244,8 +245,8 @@ fun ConnectionScreen(viewModel: MainViewModel) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("Adapter Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Stability ${profile.stabilityScore}/100 • ${profile.latestGrade} • แนะนำ ${profile.recommendedMode}")
+                        Text("ประวัติอะแดปเตอร์", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("ผลจาก session ที่บันทึกไว้ · ${profile.latestGrade} · แนะนำ ${profile.recommendedMode}")
                         Text("Latency ${profile.averageLatencyMillis} ms • ${"%.1f".format(profile.successRate * 100)}% success • ${profile.supportedPidCount} PIDs")
                         Text("Health history ${profile.healthHistory.size} จุด • ระบบจะเรียนรู้ profile เฉพาะ adapter/รถคันนี้", style = MaterialTheme.typography.bodySmall)
                     }
@@ -292,7 +293,7 @@ fun ConnectionScreen(viewModel: MainViewModel) {
         item {
             HorizontalDivider()
             Text("คำเตือนเพื่อความปลอดภัย", style = MaterialTheme.typography.titleMedium)
-            Text("• ห้ามตั้งค่าหรือใช้งานแอประหว่างขับรถ\n• บันทึกรหัส DTC ก่อนลบ เพราะการลบอาจลบ Freeze-frame และสถานะ Emissions readiness\n• แอปเป็นเครื่องมือวินิจฉัยเบื้องต้น ไม่ทดแทนการตรวจรถโดยช่างผู้เชี่ยวชาญ\n• ค่าและฟังก์ชันบางรายการขึ้นอยู่กับ ECU ของรถ")
+            Text("• ห้ามตั้งค่าหรือใช้งานแอประหว่างขับรถ\n• แอปเป็นเครื่องมือวินิจฉัยเบื้องต้น ไม่ทดแทนการตรวจรถโดยช่างผู้เชี่ยวชาญ\n• ค่าและฟังก์ชันบางรายการขึ้นอยู่กับ ECU ของรถ")
         }
     }
 }
@@ -304,24 +305,6 @@ private fun ConnectionStatusCard(
     total: Int,
     reduceMotion: Boolean,
 ) {
-    val pulse = remember { Animatable(1f) }
-    val busy = phase in setOf(
-        ConnectionPhase.SCANNING,
-        ConnectionPhase.CONNECTING,
-        ConnectionPhase.INITIALIZING_ADAPTER,
-        ConnectionPhase.RECONNECTING,
-    )
-    LaunchedEffect(busy, reduceMotion) {
-        if (!busy || reduceMotion) {
-            pulse.snapTo(1f)
-        } else {
-            while (true) {
-                pulse.animateTo(0.68f, tween(520))
-                pulse.animateTo(1f, tween(520))
-            }
-        }
-    }
-
     val (title, detail) = when (phase) {
         ConnectionPhase.BLUETOOTH_UNAVAILABLE -> "Bluetooth unavailable" to "อุปกรณ์นี้ไม่มี Bluetooth"
         ConnectionPhase.BLUETOOTH_DISABLED -> "Bluetooth disabled" to "กรุณาเปิด Bluetooth"
@@ -384,12 +367,7 @@ private fun ConnectionStatusCard(
                     icon,
                     contentDescription = null,
                     tint = iconTint,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = pulse.value
-                        val scale = 0.92f + pulse.value * 0.08f
-                        scaleX = scale
-                        scaleY = scale
-                    },
+
                 )
             },
         )

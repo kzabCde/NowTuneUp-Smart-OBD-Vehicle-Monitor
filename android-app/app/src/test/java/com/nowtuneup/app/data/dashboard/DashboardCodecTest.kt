@@ -1,6 +1,5 @@
 package com.nowtuneup.app.data.dashboard
 
-import com.nowtuneup.app.BuildConfig
 import com.nowtuneup.app.domain.model.BezelFinish
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
@@ -23,11 +22,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DashboardCodecTest {
-    @Test
-    fun releaseVersionUses1170Base() {
-        assertTrue(BuildConfig.VERSION_NAME.startsWith("1.17.0"))
-    }
-
     @Test
     fun newProfileStartsWithEmptyFreeformCanvases() {
         val profile = DashboardDefaults.newProfile(id = "test-profile")

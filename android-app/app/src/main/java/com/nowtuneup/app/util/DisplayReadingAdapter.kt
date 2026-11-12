@@ -25,6 +25,7 @@ object DisplayReadingAdapter {
         reading ?: return null
         val source = nativeUnit(reading.unit)
         if (target == DisplayUnit.NONE || source == DisplayUnit.NONE || source == target) return reading
+        if (target !in UnitConverter.compatibleUnits(source)) return reading.copy(value = null, minimum = null, maximum = null)
         return reading.copy(
             value = reading.value?.let { UnitConverter.convert(it, source, target) },
             unit = target.label(),
@@ -37,6 +38,7 @@ object DisplayReadingAdapter {
         stats ?: return null
         val source = nativeUnit(sourceUnit)
         if (target == DisplayUnit.NONE || source == DisplayUnit.NONE || source == target) return stats
+        if (target !in UnitConverter.compatibleUnits(source)) return null
         return stats.copy(
             minimum = stats.minimum?.let { UnitConverter.convert(it, source, target) },
             maximum = stats.maximum?.let { UnitConverter.convert(it, source, target) },

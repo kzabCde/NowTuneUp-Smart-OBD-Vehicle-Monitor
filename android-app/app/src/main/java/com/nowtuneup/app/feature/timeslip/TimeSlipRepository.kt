@@ -48,6 +48,12 @@ class TimeSlipRepository(context: Context) {
 
 fun TimeSlipRecord.asShareText(): String = buildString {
     appendLine("NTU PERFORMANCE TIME SLIP • ${com.nowtuneup.app.BuildConfig.VERSION_NAME}")
+    appendLine("Vehicle: ${vehicleProfileId?.takeIf { it.isNotBlank() } ?: "Legacy / unassigned"}")
+    appendLine("Recorded: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(startedAtEpochMillis))}")
+    appendLine("Target: ${performanceTitle(this@asShareText)}")
+    appendLine("Elapsed: ${formatSeconds(elapsedMillis)} s")
+    appendLine("Source: $dataSource")
+    appendLine("One-foot rollout: $oneFootRolloutEnabled")
     appendLine(if (mode == PerformanceMode.STANDING_START) "Standing start" else "Rolling start")
     speedMilestones.forEach { appendLine("${it.label}: ${formatSeconds(it.elapsedMillis)} s") }
     distanceSplits.forEach {
@@ -57,6 +63,8 @@ fun TimeSlipRecord.asShareText(): String = buildString {
     appendLine("OBD sample rate: ${"%.1f".format(obdSampleRateHz)} Hz")
     appendLine("Measurement quality: ${measurementQuality.name}")
     appendLine("Estimated timing error: ±${estimatedTimingErrorMillis} ms")
+    validityNotes.forEach { appendLine("Warning: $it") }
+    appendLine("Acceleration is estimated from OBD speed, not measured by an accelerometer")
     if (distanceEstimated) appendLine("Distance is estimated from OBD speed; verify against track timing equipment")
 }
 

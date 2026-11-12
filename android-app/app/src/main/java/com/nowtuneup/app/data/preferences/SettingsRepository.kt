@@ -15,6 +15,12 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore("ntu_settings")
 
+/** Separate metadata avoids changing the serialized dashboard preference schema or Room tables. */
+data class DashboardWorkspacePreferences(
+    val orderedIds: List<String> = emptyList(),
+    val landingId: String? = null,
+)
+
 data class AppSettings(
     val imperial: Boolean = false,
     val fahrenheit: Boolean = false,
@@ -54,6 +60,39 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveDashboardPreferences(value: DashboardPreferences) = context.dataStore.edit {
         it[stringPreferencesKey("dashboard_preferences")] = gson.toJson(value.normalized())
+    }
+
+    /** Read-modify-write inside DataStore's transaction avoids losing unrelated preference updates. */
+    suspend fun updateDashboardPreferences(change: (DashboardPreferences) -> DashboardPreferences) = context.dataStore.edit { values ->
+        val key = stringPreferencesKey("dashboard_preferences")
+        val current = values[key]?.let { json -> runCatching { migrate(json) }.getOrNull() } ?: DashboardPreferences()
+        values[key] = gson.toJson(change(current).normalized())
+    }
+
+    val dashboardWorkspace = context.dataStore.data.map { values ->
+        val order = runCatching {
+            val json = values[WORKSPACE_ORDER] ?: "[]"
+            JsonParser.parseString(json).asJsonArray.mapNotNull { item ->
+                item.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            }.filter { it.isNotBlank() }.distinct()
+        }.getOrDefault(emptyList())
+        DashboardWorkspacePreferences(order, values[WORKSPACE_LANDING]?.takeIf { it.isNotBlank() })
+    }
+
+    suspend fun saveDashboardOrder(ids: List<String>) = context.dataStore.edit { values ->
+        values[WORKSPACE_ORDER] = gson.toJson(ids.filter { it.isNotBlank() }.distinct())
+    }
+
+    suspend fun setLandingDashboard(id: String?) = context.dataStore.edit { values ->
+        if (id.isNullOrBlank()) values.remove(WORKSPACE_LANDING) else values[WORKSPACE_LANDING] = id
+    }
+
+    suspend fun removeDashboardMetadata(id: String) = context.dataStore.edit { values ->
+        val order = runCatching {
+            JsonParser.parseString(values[WORKSPACE_ORDER] ?: "[]").asJsonArray.map { it.asString }
+        }.getOrDefault(emptyList())
+        values[WORKSPACE_ORDER] = gson.toJson(order.filterNot { it == id }.distinct())
+        if (values[WORKSPACE_LANDING] == id) values.remove(WORKSPACE_LANDING)
     }
 
     private fun migrate(json: String): DashboardPreferences {
@@ -104,6 +143,8 @@ class SettingsRepository @Inject constructor(
     }
 
     companion object {
+        private val WORKSPACE_ORDER = stringPreferencesKey("dashboard_workspace_order_v1")
+        private val WORKSPACE_LANDING = stringPreferencesKey("dashboard_workspace_landing_v1")
         private val MAC_ADDRESS = Regex("(?i)(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
     }
 }

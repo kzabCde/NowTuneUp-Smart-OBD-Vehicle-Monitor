@@ -1,4 +1,5 @@
 import "server-only";
+import { getLocalRelease, localRelease } from "@/lib/local-release";
 import { releaseRepository } from "@/lib/github/repository";
 import { normalizeRelease, ReleaseDataError, stableReleases } from "@/lib/releases/normalize";
 import type { ReleaseInfo } from "@/lib/validation/releases";
@@ -8,5 +9,6 @@ async function checksumFor(release:import("@/lib/validation/releases").GithubRel
  try{const response=await fetch(asset.browser_download_url,{next:{revalidate:900}});if(!response.ok)return null;const value=(await response.text()).trim().split(/\s+/)[0];return /^[a-fA-F0-9]{64}$/.test(value)?value.toLowerCase():null}catch{return null}
 }
 export async function getStableReleases():Promise<ReleaseInfo[]>{const results=await Promise.all(stableReleases(await requestReleases()).map(async release=>{try{const normalized=normalizeRelease(release);return {...normalized,sha256:await checksumFor(release,normalized.apkName)}}catch{return null}}));return results.filter((release):release is ReleaseInfo=>release!==null)}
-export async function getLatestRelease():Promise<ReleaseInfo>{const release=(await getStableReleases())[0];if(!release)throw new ReleaseDataError("No stable APK release is available",404);return release}
-export async function getRelease(version:string):Promise<ReleaseInfo>{const release=(await getStableReleases()).find(r=>r.version===version);if(!release)throw new ReleaseDataError("Release was not found",404);return release}
+// The verified bundled release keeps the API, download page and APK in sync.
+export async function getLatestRelease():Promise<ReleaseInfo>{return localRelease}
+export async function getRelease(version:string):Promise<ReleaseInfo>{const verified=getLocalRelease(version);if(verified)return verified;const release=(await getStableReleases()).find(r=>r.version===version);if(!release)throw new ReleaseDataError("Release was not found",404);return release}

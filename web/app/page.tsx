@@ -10,7 +10,7 @@ const liveValues = [
 ];
 
 const capabilities = [
-  ["01", "Monitor", "Motorsport HUD", "Optional Daily Drive, Performance and Diagnostics HUD templates, configurable RPM shift lights and reusable realtime widgets in independent portrait and landscape layouts."],
+  ["01", "Monitor", "Your dashboard workspace", "Daily, Engine and Performance templates, two gauge styles, persistent screen and widget management, and independent portrait and landscape layouts."],
   ["02", "Diagnose", "Vehicle Intelligence", "VIN, readiness, stored, pending and permanent DTCs, plus freeze-frame context where the ECU supports them."],
   ["03", "Measure", "Time Slip & telemetry", "Exact 0–60 mph targets, searchable performance history with split deltas, and local timestamped raw OBD recordings with CSV export."],
   ["04", "Understand", "Adapter health", "Rolling latency, success rate and recovery behavior help NowTuneUp adapt pacing to the connection you actually have."],
@@ -44,7 +44,7 @@ export default function Home() {
               <span className="chip"><span className="status-dot" aria-hidden="true" /> Production {localRelease.version}</span>
               <span className="chip">Android 8+</span>
               <span className="chip">Bluetooth + USB</span>
-              <span className="chip">Motorsport Suite v1.18</span>
+              <span className="chip">Professional Dashboard v{localRelease.version}</span>
             </div>
             <p className="eyebrow mt-8">OBD-II vehicle intelligence</p>
             <h1 className="page-title mt-4">Your car, translated into <span className="text-cyan-300">live signal.</span></h1>
@@ -131,7 +131,7 @@ export default function Home() {
             </div>
           </article>
           <article className="panel telemetry-grid p-7 md:p-9">
-            <p className="eyebrow">Motorsport Performance Suite · v{localRelease.version}</p>
+            <p className="eyebrow">Professional Automotive Dashboard · v{localRelease.version}</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Choose a cockpit. Customize every detail.</h2>
             <p className="muted mt-5 leading-7">Start from optional Daily Drive, Performance or Diagnostics HUD templates, or build from a blank 12×24 canvas. Position widgets, tune a multi-stage RPM shift light with driver-defined thresholds, and keep separate portrait and landscape layouts.</p>
             <div className="mt-7 technical-card px-5">

@@ -68,6 +68,7 @@ object DashboardDefaults {
             DashboardWidgetType.ANALOG -> 5 to 7
             DashboardWidgetType.MINI_GAUGE -> 4 to 5
             DashboardWidgetType.DIGITAL_RING -> 6 to 7
+            DashboardWidgetType.SHIFT_LIGHT -> 12 to 2
             DashboardWidgetType.PROGRESS -> 6 to 3
             DashboardWidgetType.LINE_CHART -> 8 to 5
             DashboardWidgetType.DTC_CARD -> 6 to 4
@@ -76,7 +77,11 @@ object DashboardDefaults {
         return DashboardWidgetConfig(
             id = id,
             pid = pid,
-            type = type,
+            type = when(type) {
+                DashboardWidgetType.MINI_GAUGE -> DashboardWidgetType.ANALOG
+                DashboardWidgetType.PROGRESS, DashboardWidgetType.DIGITAL_RING -> DashboardWidgetType.DIGITAL
+                else -> type
+            },
             title = title,
             unit = unit,
             row = 0,
@@ -214,7 +219,7 @@ object DashboardDefaults {
     )
 
     fun newProfile(
-        id: String = "profile-${System.currentTimeMillis()}",
+        id: String = "profile-${java.util.UUID.randomUUID()}",
         name: String = "โปรไฟล์ใหม่",
     ): DashboardConfig = DashboardConfig(
         id = id,
@@ -224,6 +229,49 @@ object DashboardDefaults {
         landscape = DashboardLayout(columns = HUD_CANVAS_COLUMNS, rows = HUD_CANVAS_ROWS, widgets = emptyList()),
         isDefault = false,
     )
+
+    /** Optional factory templates; selecting one creates an editable copy, never mutates the factory. */
+    fun presets(): List<DashboardConfig> {
+        fun layout(pids: List<Int>, racing: Boolean, landscape: Boolean): DashboardLayout {
+            val across = if (landscape) { if (pids.size == 4) 4 else 3 } else 2
+            val width = 12 / across
+            val height = when {
+                pids.size == 4 && landscape -> if (racing) 22 else 24
+                pids.size == 4 -> if (racing) 11 else 12
+                landscape -> 10
+                else -> 6
+            }
+            val top = if (racing) 2 else 0
+            val widgets = pids.mapIndexed { index, pid ->
+                widgetCatalog.first { it.pid == pid }.copy(
+                    id = "preset-$index", type = DashboardWidgetType.DIGITAL,
+                    title = when(pid) { 0x0D -> "Speed"; 0x0C -> "RPM"; 0x05 -> "Coolant"; 0x04 -> "Load"; 0x11 -> "Throttle"; 0x42 -> "Voltage"; else -> "Intake" },
+                    canvasX = (index % across) * width,
+                    canvasY = top + (index / across) * height,
+                    canvasWidth = width, canvasHeight = height,
+                    valueSize = if (pid == 0x0D || pid == 0x0C) 42 else 28,
+                    gaugeStyle = GaugeStyle.CUSTOM,
+                    colors = ColorConfig(value = 0xFFFFFFFF, background = 0xFF101214, border = 0xFF303438),
+                )
+            }.toMutableList()
+            if (racing) widgets += widgetCatalog.first { it.pid == 0x0C }.copy(
+                id = "shift", type = DashboardWidgetType.SHIFT_LIGHT, title = "Shift lights",
+                canvasX = 0, canvasY = 0, canvasWidth = 12, canvasHeight = 2,
+                shiftLight = com.nowtuneup.app.domain.model.ShiftLightConfig(),
+            )
+            if (!racing && pids.size == 6) widgets += widgetCatalog.first { it.type == DashboardWidgetType.DTC_CARD }.copy(
+                id = "diagnostic-summary", title = "Last DTC scan", canvasX = 0, canvasY = 20, canvasWidth = 12, canvasHeight = 4)
+            return DashboardLayout(widgets = widgets)
+        }
+        return listOf(
+            Triple("Daily", listOf(0x0D, 0x0C, 0x05, 0x04), false),
+            Triple("Engine", listOf(0x05, 0x0F, 0x42, 0x04, 0x0B, 0x11), false),
+            Triple("Performance", listOf(0x0C, 0x0D, 0x11, 0x05), true),
+        ).map { (name, pids, racing) ->
+            DashboardConfig("template-$name", name, DashboardMode.HYBRID,
+                layout(pids, racing, false), layout(pids, racing, true), isDefault = true)
+        }
+    }
 
     val themes = listOf(
         ThemeConfig(name = "ดำเรียบง่าย"),

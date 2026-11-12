@@ -118,5 +118,20 @@ class TimeSlipEngineTest {
         assertEquals(null, lost.record)
     }
 
+    @Test
+    fun connectionLossDuringAnActiveRunDoesNotSaveAPartialResult() {
+        val engine = TimeSlipEngine()
+        engine.arm(TimeSlipConfig(selectedDistanceTarget = null, speedOnlyTargetKmh = 100.0),
+            0.0, seconds(0.0), 1_000L)
+        engine.ingestSpeed(0.0, seconds(1.0))
+        val running = engine.ingestSpeed(10.0, seconds(1.1))
+        assertEquals(TimeSlipStatus.RUNNING, running.status)
+
+        val lost = engine.connectionLost()
+        assertEquals(TimeSlipStatus.CONNECTION_LOST, lost.status)
+        assertEquals(null, lost.record)
+        assertEquals(null, engine.ingestSpeed(100.0, seconds(5.0)).record)
+    }
+
     private fun seconds(value: Double): Long = (value * 1_000_000_000L).toLong()
 }

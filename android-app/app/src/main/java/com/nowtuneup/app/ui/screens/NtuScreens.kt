@@ -16,7 +16,6 @@ import com.nowtuneup.app.BuildConfig
 import com.nowtuneup.app.ui.components.NtuScreenHeader
 import com.nowtuneup.app.presentation.theme.GraphiteTheme
 import com.nowtuneup.app.presentation.theme.DaylightTheme
-import com.nowtuneup.app.data.dashboard.DashboardDefaults
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,6 +47,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
+import com.nowtuneup.app.ui.connection.ConnectionHealthPanel
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -88,23 +91,23 @@ fun LiveDataScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val tools = remember(context) { EntryPointAccessors.fromApplication(context.applicationContext, NtuToolsEntryPoint::class.java) }
     val liveRepository = remember(tools) { tools.liveSessionRepository() }
-    val recording by liveRepository.recording.collectAsState()
-    val liveHistory by liveRepository.history.collectAsState()
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    val preferences by viewModel.dashboardPreferences.collectAsState()
+    var showUnsupported by rememberSaveable { mutableStateOf(false) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { delay(1_000); nowMillis = System.currentTimeMillis() } }
 
-    LaunchedEffect(readings, recording.active) {
-        if (recording.active) liveRepository.ingest(readings)
-    }
     DisposableEffect(Unit) {
         viewModel.setLiveDataVisible(true)
         onDispose {
             viewModel.setLiveDataVisible(false)
-            if (liveRepository.recording.value.active) liveRepository.stop()
         }
     }
 
+    val telemetrySamples by liveRepository.samples.collectAsState()
+
     val visibleReadings = readings.asSequence()
-        .filter { it.supported }
+        .filter { it.supported || showUnsupported }
         .filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }
         .sortedWith(compareByDescending<com.nowtuneup.app.domain.model.VehicleReading> { it.value != null }.thenBy { it.name })
         .toList()
@@ -115,38 +118,11 @@ fun LiveDataScreen(viewModel: MainViewModel) {
             modifier = Modifier,
             title = "ข้อมูลสด",
             detail = if (connectionState == ConnectionState.CONNECTED && connectionUi.initialization.ecuConnected) {
-                "OBD ${health.thaiLabel} • ${health.averageLatencyMillis} ms • Live Data v2"
+                if (health.totalCommands > 0) "OBD ${health.thaiLabel} · ${health.averageLatencyMillis} ms · ค่าจาก ECU" else "เชื่อมต่อแล้ว · รอข้อมูลคำสั่งจริง"
             } else "เชื่อมต่อ ELM327 และเปิดสวิตช์กุญแจก่อน",
         )
         }
-        if (connectionState == ConnectionState.CONNECTED && connectionUi.initialization.ecuConnected) {
-            item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(Modifier.weight(1f)) {
-                            Text(if (recording.active) "กำลังบันทึก Session" else "Session recorder", fontWeight = FontWeight.Bold)
-                            Text(
-                                if (recording.active) "${recording.readingFrames} frames • ${recording.trackedMetricCount} metrics"
-                                else "เก็บ Min / Max / Average ของค่าที่รถส่งมา",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        Button(onClick = { if (recording.active) liveRepository.stop() else liveRepository.start() }) {
-                            Text(if (recording.active) "หยุด" else "บันทึก")
-                        }
-                    }
-                    liveHistory.firstOrNull()?.let { session ->
-                        HorizontalDivider()
-                        Text("Session ล่าสุด • ${session.durationMillis / 1_000}s • ${session.metrics.size} metrics", style = MaterialTheme.typography.bodySmall)
-                        session.metrics.take(3).forEach { metric ->
-                            Text("${metric.name}: ${"%.1f".format(metric.minimum)}–${"%.1f".format(metric.maximum)} ${metric.unit} • avg ${"%.1f".format(metric.average)}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
-        }
-        }
+        item { com.nowtuneup.app.feature.live.TelemetryPanel(liveRepository, telemetrySamples, connectionState == ConnectionState.CONNECTED, connectionUi.transportType.name) }
         item {
         OutlinedTextField(
             value = query,
@@ -157,6 +133,7 @@ fun LiveDataScreen(viewModel: MainViewModel) {
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
         )
         }
+        item { FilterChip(selected = showUnsupported, onClick = { showUnsupported = !showUnsupported }, label = { Text("แสดง PID ที่ไม่รองรับ") }) }
         when {
             connectionState != ConnectionState.CONNECTED || !connectionUi.initialization.ecuConnected -> item { MessageCard(
                 title = "ยังไม่ได้เชื่อมต่อ ECU",
@@ -170,7 +147,7 @@ fun LiveDataScreen(viewModel: MainViewModel) {
             ) }
             else -> {
                 items(visibleReadings, key = { it.pid }) { reading ->
-                    val ageMillis = (System.currentTimeMillis() - reading.updatedAt).coerceAtLeast(0L)
+                    val ageMillis = (nowMillis - reading.updatedAt).coerceAtLeast(0L)
                     val turboWaiting = reading.pid == DerivedPids.TURBO_PRESSURE && turboQuality != TurboDataQuality.GOOD
                     Card(Modifier.fillMaxWidth()) {
                     ListItem(
@@ -178,6 +155,7 @@ fun LiveDataScreen(viewModel: MainViewModel) {
                         headlineContent = { Text(reading.name, fontWeight = FontWeight.SemiBold) },
                         overlineContent = { Text(if (reading.pid == DerivedPids.TURBO_PRESSURE) "Turbo จาก MAP − BARO • ${turboQuality.name}" else "PID 01%02X".format(reading.pid)) },
                         supportingContent = { Text(when {
+                            !reading.supported -> "รถไม่รองรับ PID นี้"
                             turboWaiting -> "รอ MAP/BARO คู่ใหม่ที่เชื่อถือได้"
                             reading.value == null -> "รอข้อมูลล่าสุด"
                             ageMillis <= 1_500L -> "ข้อมูลสด"
@@ -186,7 +164,7 @@ fun LiveDataScreen(viewModel: MainViewModel) {
                         }) },
                         trailingContent = {
                             Column(horizontalAlignment = Alignment.End) {
-                                Text(reading.value?.let { "%.1f".format(it) } ?: "—", fontWeight = FontWeight.Bold,
+                                Text(reading.value?.takeIf { it.isFinite() && reading.supported && !turboWaiting && ageMillis <= preferences.staleAfterMillis }?.let { "%.1f".format(it) } ?: "—", fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace, color = if (reading.value != null && ageMillis <= 1_500L && !turboWaiting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(reading.unit, style = MaterialTheme.typography.labelSmall)
                             }
@@ -215,20 +193,9 @@ fun DiagnosticsScreen(viewModel: MainViewModel) {
     val scope = rememberCoroutineScope()
     var mode06 by remember { mutableStateOf<Mode06Summary?>(null) }
     var mode06Message by remember { mutableStateOf<String?>(null) }
-    var confirmClear by remember { mutableStateOf(false) }
 
     LaunchedEffect(overview?.readAtMillis, mode06?.readAtMillis) {
         overview?.let { historyRepository.save(it, mode06) }
-    }
-
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("ยืนยันการลบรหัสปัญหา") },
-            text = { Text("คำสั่ง Mode 04 อาจลบรหัส Stored และ Freeze-frame บางส่วน Pending/Permanent DTC อาจยังคงอยู่ตามเงื่อนไขของ ECU") },
-            confirmButton = { Button(onClick = { confirmClear = false; viewModel.clearDtcsConfirmed() }) { Text("ยืนยันลบรหัส") } },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("ยกเลิก") } },
-        )
     }
 
     LazyColumn(
@@ -244,7 +211,7 @@ fun DiagnosticsScreen(viewModel: MainViewModel) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("การเชื่อมต่อ OBD: ${health.thaiLabel}", fontWeight = FontWeight.Bold)
-                        Text("Latency ${health.averageLatencyMillis} ms • ${"%.1f".format(health.successRate * 100)}% success • ${health.recommendedMode.name}")
+                        if (health.totalCommands > 0) Text("Latency ${health.averageLatencyMillis} ms • ${"%.1f".format(health.successRate * 100)}% success • ${health.recommendedMode.name}") else Text("รอข้อมูลคุณภาพจากคำสั่งจริง")
                         Text("VIN: ${identity.vin ?: overview?.vin ?: "ยังอ่านไม่ได้"}")
                     }
                 }
@@ -330,13 +297,16 @@ fun DiagnosticsScreen(viewModel: MainViewModel) {
                     }
                 }
             }
-            item { TextButton(onClick = { confirmClear = true }, enabled = dtcs.any { it.status == "Stored" }) { Text("ลบ Stored DTC…") } }
         }
     }
 }
 
+private enum class SettingsGroup(val title: String) {
+    CONNECTION("การเชื่อมต่อ"), DISPLAY("การแสดงผล"), UNITS("หน่วย"), ALERTS("การเตือน"), STORAGE("ข้อมูลในอุปกรณ์"), ABOUT("เกี่ยวกับ")
+}
+
 @Composable
-fun SettingsScreen(viewModel: MainViewModel) {
+fun SettingsScreen(viewModel: MainViewModel, onManageDashboards: (() -> Unit)? = null) {
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val dashboards by viewModel.dashboards.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
@@ -344,43 +314,81 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val health by viewModel.adapterHealth.collectAsState()
     val identity by viewModel.vehicleIdentity.collectAsState()
     val context = LocalContext.current
-
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { ScreenIntro("การตั้งค่า", "ค่าขั้นสูงถูกปรับอัตโนมัติตามสุขภาพของ ELM327") }
-        item { SettingsSection("หน้าตาแอป", "เลือกโทนที่อ่านสบาย สีเกจที่คุณบันทึกไว้ปรับแยกได้ในหน้าจัดหน้าปัด") }
-        item {
-            ChoiceChips {
-                listOf(GraphiteTheme, DaylightTheme, DashboardDefaults.themes[2]).forEach { theme ->
-                    FilterChip(
-                        selected = preferences.theme == theme,
-                        onClick = { viewModel.selectTheme(theme) },
-                        label = { Text(when (theme.name) { "Graphite" -> "Graphite · เขียว"; "Light" -> "Daylight · สว่าง"; else -> theme.name }) },
-                    )
-                }
+    var group by rememberSaveable { mutableStateOf(SettingsGroup.CONNECTION) }
+    var confirmClearLogs by remember { mutableStateOf(false) }
+    if (confirmClearLogs) AlertDialog(
+        onDismissRequest = { confirmClearLogs = false }, title = { Text("ลบบันทึกการเชื่อมต่อ?") },
+        text = { Text("ลบเฉพาะบันทึกระบบปัจจุบัน ไม่ลบหน้าปัด รถ การบันทึก telemetry หรือประวัติการทดสอบ") },
+        confirmButton = { TextButton(onClick = { viewModel.clearDiagnosticLogs(); confirmClearLogs = false }) { Text("ลบบันทึกระบบ") } },
+        dismissButton = { TextButton(onClick = { confirmClearLogs = false }) { Text("เก็บไว้") } },
+    )
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { ScreenIntro("การตั้งค่า", "ปรับการเชื่อมต่อ การอ่าน และการแสดงผลให้เหมาะกับรถของคุณ") }
+        item { ChoiceChips { SettingsGroup.entries.forEach { option -> FilterChip(selected = group == option,
+            onClick = { group = option }, label = { Text(option.title) }) } } }
+        when (group) {
+            SettingsGroup.CONNECTION -> {
+                item { SettingsSection("การเชื่อมต่อ", "${connectionState.shortLabel()} · ${connectionUi.transportType.displayName()}") }
+                item { ChoiceChips { listOf(ObdTransportType.BLUETOOTH_CLASSIC, ObdTransportType.USB).forEach { type -> FilterChip(selected = preferences.preferredTransport == type,
+                    onClick = { viewModel.selectTransport(type) }, label = { Text(type.displayName()) }) } } }
+                item { ToggleSetting("เชื่อมต่ออะแดปเตอร์ล่าสุดอัตโนมัติ", "ใช้กับอะแดปเตอร์และรถคันเดิม", preferences.autoConnectLastAdapter, viewModel::setAutoConnectLastAdapter) }
+                item { ToggleSetting("เชื่อมต่อใหม่อัตโนมัติ", "พยายามกลับมาอ่านเมื่อการเชื่อมต่อสะดุด", preferences.autoReconnect, viewModel::setAutoReconnect) }
+                item { SettingsSection("จังหวะการอ่าน", "ระบบปรับภาระตามการตอบกลับจริงของ ELM327") }
+                item { ChoiceChips { RefreshRate.entries.forEach { rate -> FilterChip(selected = preferences.refreshRate == rate,
+                    onClick = { viewModel.setRefreshRate(rate) }, label = { Text(rate.thaiLabel()) }) } } }
+                item { Text("ความถี่ของแต่ละ PID ขึ้นกับรถและอะแดปเตอร์ แอปอาจลดจังหวะเมื่อพบ timeout", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { ToggleSetting("อ่านต่อเมื่อออกจากแอป", "ปิดไว้เพื่อประหยัดพลังงานและหยุดการอ่านเมื่อออกจากหน้าแอป", preferences.continuousMonitoring, viewModel::setContinuousMonitoring) }
+                item { ConnectionHealthPanel(health, connectionState == ConnectionState.CONNECTED) }
+                item { OutlinedButton(onClick = viewModel::runAdapterSelfTest, modifier = Modifier.fillMaxWidth()) { Text("ทดสอบความเข้ากันได้ของ ELM327") } }
+            }
+            SettingsGroup.DISPLAY -> {
+                item { SettingsSection("หน้าตาแอป", "ธีมแอปแยกจากสีของหน้าปัดที่คุณบันทึกไว้") }
+                item { ChoiceChips { listOf(GraphiteTheme, DaylightTheme).forEach { theme -> FilterChip(selected = preferences.theme == theme,
+                    onClick = { viewModel.selectTheme(theme) }, label = { Text(if (theme.name == "Graphite") "มืด · Graphite" else "สว่าง · Daylight") }) } } }
+                if (preferences.theme != GraphiteTheme && preferences.theme != DaylightTheme) item { Text("กำลังใช้ธีมเดิม: ${preferences.theme.name} · สีที่บันทึกไว้ยังคงอยู่", style = MaterialTheme.typography.bodySmall) }
+                item { ToggleSetting("ลดการเคลื่อนไหว", "ลดการเลื่อนหน้าและการเคลื่อนไหวของเข็ม", preferences.reduceMotion, viewModel::setReduceMotion) }
+                item { ToggleSetting("เปิดหน้าจอค้างขณะเชื่อมต่อ", "ใช้เมื่อวางโทรศัพท์เป็นหน้าปัด", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
+                item { ToggleSetting("โหมดขับรถ", "ป้องกันการแก้ไขหน้าปัดระหว่างใช้งาน", preferences.drivingMode, viewModel::setDrivingMode) }
+                item { ToggleSetting("เลื่อนเปลี่ยนหน้าปัด", "ใช้การปัดเพื่อสลับหน้าจอที่บันทึกไว้", preferences.swipePages, viewModel::setSwipePages) }
+                item { ToggleSetting("เต็มจออัตโนมัติเมื่อเชื่อมต่อ", "ซ่อนเมนูหลักเมื่อเข้าสู่หน้าปัด", preferences.autoFocusOnConnect, viewModel::setAutoFocusOnConnect) }
+                item { ToggleSetting("จอรถยนต์แบบเต็มจอ", "ปรับพื้นที่แสดงผลเมื่อใช้จอ Head unit", preferences.headUnitImmersive, viewModel::setHeadUnitImmersive) }
+                item { ToggleSetting("แสดงค่าต่ำสุด–สูงสุด", "ใช้ค่าจาก session ปัจจุบัน", preferences.showMinMax, viewModel::setShowMinMax) }
+                if (dashboards.isNotEmpty()) item { ChoiceChips { dashboards.forEach { dashboard -> FilterChip(selected = preferences.selectedDashboardId == dashboard.id,
+                    onClick = { viewModel.selectDashboard(dashboard.id) }, label = { Text(dashboard.name) }) } } }
+                onManageDashboards?.let { action -> item { OutlinedButton(onClick = action, modifier = Modifier.fillMaxWidth()) { Text("จัดการหน้าปัด") } } }
+            }
+            SettingsGroup.UNITS -> {
+                item { SettingsSection("หน่วยของแต่ละ Widget", "เปลี่ยนหน่วยพร้อมช่วงสเกลและค่าการเตือนในคุณสมบัติ Widget") }
+                item { MessageCard("เลือกหน่วยที่เหมาะกับข้อมูล", "ความเร็ว อุณหภูมิ และความดันตั้งค่าแยกได้ในหน้าจัดหน้าปัด หน่วยที่แปลงไม่ได้จะไม่ถูกนำมาแสดงเป็นค่าจริง") }
+                onManageDashboards?.let { action -> item { Button(onClick = action, modifier = Modifier.fillMaxWidth()) { Text("เปิดจัดการหน้าปัด") } } }
+            }
+            SettingsGroup.ALERTS -> {
+                item { SettingsSection("การแจ้งเตือนค่า", "กำหนด threshold ของแต่ละ Widget ในตัวแก้ไขหน้าปัด") }
+                item { ToggleSetting("ปิดเสียงและการสั่นทั้งหมด", "ป้ายสถานะยังคงแสดงค่าการเตือน", preferences.muteAlerts, viewModel::setMuteAlerts) }
+                item { ToggleSetting("เสียงแจ้งเตือน", "ใช้เมื่อค่าข้าม threshold ที่คุณตั้งไว้", preferences.alertSound, viewModel::setAlertSound) }
+                item { ToggleSetting("สั่นแจ้งเตือน", "อุปกรณ์ต้องรองรับการสั่น", preferences.alertVibration, viewModel::setAlertVibration) }
+                item { Text("ช่วงพักระหว่างแจ้งเตือน · ${preferences.alertCooldownSeconds} s", style = MaterialTheme.typography.titleMedium) }
+                item { ChoiceChips { listOf(5, 15, 30, 60).forEach { seconds -> FilterChip(selected = preferences.alertCooldownSeconds == seconds,
+                    onClick = { viewModel.setAlertCooldownSeconds(seconds) }, label = { Text("$seconds s") }) } } }
+                item { Text("Threshold เป็นการเตือนเพื่อสังเกตค่าที่คุณกำหนด ไม่ใช่ผลวินิจฉัยหรือขีดจำกัดที่ยืนยันจากผู้ผลิต", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            SettingsGroup.STORAGE -> {
+                item { SettingsSection("ข้อมูลในอุปกรณ์", "แยกหน้าปัด การบันทึก และประวัติการทดสอบออกจากกัน") }
+                item { ToggleSetting("เก็บบันทึกระบบ", "ใช้ตรวจปัญหาการตอบกลับและการเชื่อมต่อ", preferences.diagnosticLogging, viewModel::setDiagnosticLogging) }
+                item { OutlinedButton(onClick = viewModel::resetReadingStats, modifier = Modifier.fillMaxWidth()) { Text("เริ่มนับ Min/Max ของ session ใหม่") } }
+                item { Text("การรีเซ็ต Min/Max ไม่เปลี่ยนการบันทึกหรือผลทดสอบที่บันทึกไว้", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { OutlinedButton(onClick = { shareText(context, "NowTuneUp diagnostic report", viewModel.exportDiagnosticLogs()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงานระบบปัจจุบัน") } }
+                item { OutlinedButton(onClick = { shareText(context, "NowTuneUp last session report", viewModel.exportLastSessionReport()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงาน Session ล่าสุด") } }
+                item { TextButton(onClick = { confirmClearLogs = true }) { Text("ลบบันทึกการเชื่อมต่อ…") } }
+                item { Text("จัดการและส่งออก telemetry จากหน้าข้อมูลสด ลบผลทดสอบเป็นรายรายการจาก History", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            SettingsGroup.ABOUT -> {
+                item { SettingsSection("NowTuneUp", "Professional automotive technology · local-first") }
+                item { MessageCard("เวอร์ชัน ${BuildConfig.VERSION_NAME}", "Android 8.0+ · Bluetooth Classic + USB OTG") }
+                item { MessageCard("ข้อมูลรถที่ตรวจพบ", "VIN: ${identity.vin ?: "ยังอ่านไม่ได้"}\nAdapter: ${connectionUi.initialization.adapterIdentity ?: "ยังไม่ทราบ"}") }
+                item { Text("ค่าประมาณจาก OBD ไม่ใช่ความแม่นยำแบบอุปกรณ์จับเวลาที่รับรองจาก GPS และไม่ใช่ผลวินิจฉัยจากช่าง", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
-        item { SettingsSection("การเชื่อมต่อ", "${connectionState.shortLabel()} · ${connectionUi.transportType.displayName()}") }
-        item { ChoiceChips { listOf(ObdTransportType.BLUETOOTH_CLASSIC, ObdTransportType.USB).forEach { type -> FilterChip(selected = preferences.preferredTransport == type, onClick = { viewModel.selectTransport(type) }, label = { Text(type.displayName()) }) } } }
-        item { ToggleSetting("เชื่อมต่ออะแดปเตอร์ล่าสุดอัตโนมัติ", "เหมาะสำหรับ ELM327 ที่ใช้กับรถคันเดิมเป็นประจำ", preferences.autoConnectLastAdapter, viewModel::setAutoConnectLastAdapter) }
-        item { ToggleSetting("เชื่อมต่อใหม่อัตโนมัติ", "พยายามกลับมาอ่านข้อมูลเมื่อ Bluetooth หรือ ECU สะดุด", preferences.autoReconnect, viewModel::setAutoReconnect) }
-        item { SettingsSection("การอ่านข้อมูล", "สุขภาพ ${health.thaiLabel} • ${health.averageLatencyMillis} ms • ระบบแนะนำ ${health.recommendedMode.name}") }
-        item { ChoiceChips { RefreshRate.entries.forEach { rate -> FilterChip(selected = preferences.refreshRate == rate, onClick = { viewModel.setRefreshRate(rate) }, label = { Text(rate.thaiLabel()) }) } } }
-        item { Text("หาก ELM327 เริ่ม timeout แอปจะลดความถี่ลงเอง แม้เลือกโหมดตอบสนองไว เพื่อป้องกันการหลุด", style = MaterialTheme.typography.bodySmall) }
-        item { ToggleSetting("อ่านต่อเมื่อออกจากแอป", "ปิดไว้เพื่อความเสถียรและประหยัดพลังงาน", preferences.continuousMonitoring, viewModel::setContinuousMonitoring) }
-        item { SettingsSection("รถคันนี้", "VIN ใช้จำข้อมูลที่รถรองรับและ profile ของ adapter") }
-        item { Card(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(identity.vin ?: "ยังอ่าน VIN ไม่ได้", fontWeight = FontWeight.Bold); Text(connectionUi.initialization.adapterIdentity ?: "ยังไม่ทราบรุ่น ELM327") } } }
-        item { SettingsSection("หน้าปัด", "อ่านเฉพาะ PID ที่ widget ปัจจุบันต้องใช้ เพื่อลดภาระ ELM327") }
-        if (dashboards.isEmpty()) item { Text("ยังไม่มีโปรไฟล์ สร้างได้จากหน้า “หน้าปัด”") } else item { ChoiceChips { dashboards.forEach { dashboard -> FilterChip(selected = preferences.selectedDashboardId == dashboard.id, onClick = { viewModel.selectDashboard(dashboard.id) }, label = { Text(dashboard.name) }) } } }
-        item { ToggleSetting("แสดงค่าต่ำสุด–สูงสุด", "ใช้ Min/Max ของ session ปัจจุบัน โดยไม่มี Peak ซ้ำซ้อน", preferences.showMinMax, viewModel::setShowMinMax) }
-        item { Button(onClick = viewModel::resetReadingStats, modifier = Modifier.fillMaxWidth()) { Text("เริ่มนับค่าต่ำสุด–สูงสุดใหม่") } }
-        item { ToggleSetting("ลดการเคลื่อนไหว", "ปิดการเลื่อนหน้า การขยายการ์ด และลดแอนิเมชันเข็ม", preferences.reduceMotion, viewModel::setReduceMotion) }
-        item { ToggleSetting("เปิดหน้าจอค้างขณะเชื่อมต่อ", "เหมาะเมื่อวางโทรศัพท์เป็นหน้าปัดในรถ", preferences.keepScreenOn, viewModel::setKeepScreenOn) }
-        item { SettingsSection("การตรวจปัญหา", "รายงานจะรวม latency, success rate, VIN และ recovery count") }
-        item { ToggleSetting("เก็บบันทึกระบบ", "เปิดเมื่อกำลังตรวจปัญหา ELM327 หรือการหลุดของข้อมูลสด", preferences.diagnosticLogging, viewModel::setDiagnosticLogging) }
-        item { Button(onClick = viewModel::runAdapterSelfTest, modifier = Modifier.fillMaxWidth()) { Text("ทดสอบความเข้ากันได้ของ ELM327") } }
-        item { Button(onClick = { shareText(context, "NowTuneUp diagnostic report", viewModel.exportDiagnosticLogs()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงานระบบปัจจุบัน") } }
-        item { OutlinedButton(onClick = { shareText(context, "NowTuneUp last session report", viewModel.exportLastSessionReport()) }, modifier = Modifier.fillMaxWidth()) { Text("ส่งรายงาน Session ล่าสุด") } }
-        item { Text("NowTuneUp ${BuildConfig.VERSION_NAME} • Android 8+ • Bluetooth Classic + USB", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(vertical = 16.dp)) }
     }
 }
 

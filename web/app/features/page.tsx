@@ -4,7 +4,7 @@ import { localRelease } from "@/lib/local-release";
 
 export const metadata: Metadata = {
   title: "Features",
-  description: "Explore NowTuneUp v1.18 Motorsport Performance Suite: Custom HUD templates, driver-configured RPM shift lights, timestamped OBD telemetry with CSV export, Time Slip history, diagnostics and adapter health.",
+  description: "Explore NowTuneUp: five destinations, two gauge styles, persistent dashboard management, local performance reports, OBD telemetry, diagnostics and adapter health.",
 };
 
 const pillars = [
@@ -47,10 +47,10 @@ export default function Features() {
     <>
       <section className="page-hero">
         <div className="shell">
-          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Motorsport Suite</span><span className="chip">HUD presets · Shift Lights · CSV</span></div>
+          <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> v{localRelease.version}</span><span className="chip">Professional Dashboard</span><span className="chip">HUD presets · Shift Lights · CSV</span></div>
           <p className="eyebrow mt-8">Product capabilities</p>
           <h1 className="page-title mt-4">Built around the four jobs that matter on the road.</h1>
-          <p className="page-lede mt-7">NowTuneUp v1.18.0 expands the custom HUD with optional motorsport templates and user-configured shift lights, while adding timestamped telemetry recording and more detailed, comparable Time Slip results. Core OBD monitoring stays local-first.</p>
+          <p className="page-lede mt-7">NowTuneUp v{localRelease.version} organizes Home, Performance, History, Garage and Settings around your vehicle. Manage dashboards and widgets, select dial or digital gauges, and share local performance reports. OBD monitoring stays local-first.</p>
           <div className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {pillars.map((pillar) => (
               <div key={pillar.eyebrow} className="technical-card p-4">

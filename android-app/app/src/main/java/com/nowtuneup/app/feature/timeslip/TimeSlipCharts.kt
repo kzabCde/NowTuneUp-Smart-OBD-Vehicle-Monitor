@@ -34,8 +34,9 @@ private enum class ChartMetric(val title: String, val unit: String) {
 
 @Composable
 fun TimeSlipCharts(record: TimeSlipRecord, comparison: TimeSlipRecord? = null) {
+    AuxiliaryTimeSlipCharts(record, comparison?.takeIf { TimeSlipAnalysis.comparable(record, it) })
     val data = remember(record) { TimeSlipAnalysis.chart(record) }
-    val previousData = remember(comparison) { comparison?.let(TimeSlipAnalysis::chart) }
+    val previousData = remember(record, comparison) { comparison?.takeIf { TimeSlipAnalysis.comparable(record, it) }?.let(TimeSlipAnalysis::chart) }
     var metric by remember(record.id) { mutableStateOf(ChartMetric.SPEED) }
     var compare by remember(record.id, comparison?.id) { mutableStateOf(false) }
     var cursor by remember(record.id) { mutableFloatStateOf(0f) }
@@ -74,6 +75,17 @@ fun TimeSlipCharts(record: TimeSlipRecord, comparison: TimeSlipRecord? = null) {
                     }
                     if (compare && comparison != null) {
                         Text("เส้นทึบ: ครั้งนี้  ·  เส้นประ: ครั้งก่อน", style = MaterialTheme.typography.bodySmall)
+                        Text("Solid ${record.id.take(8)} · dashed ${comparison.id.take(8)}", style = MaterialTheme.typography.bodySmall)
+                        record.distanceSplits.forEach { split ->
+                            comparison.distanceSplits.firstOrNull { it.target == split.target }?.let { other ->
+                                Text("${split.target.label}: Δ ${formatSeconds(split.elapsedMillis - other.elapsedMillis)} s", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        record.speedMilestones.forEach { split ->
+                            comparison.speedMilestones.firstOrNull { it.startSpeedKmh == split.startSpeedKmh && it.targetSpeedKmh == split.targetSpeedKmh }?.let { other ->
+                                Text("${split.label}: Δ ${formatSeconds(split.elapsedMillis - other.elapsedMillis)} s", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                         val delta = record.elapsedMillis - comparison.elapsedMillis
                         Text(when {
                             delta < 0 -> "เร็วขึ้น ${formatSeconds(-delta)} s"

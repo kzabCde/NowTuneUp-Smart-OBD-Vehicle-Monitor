@@ -12,7 +12,7 @@ const steps = [
   ["01", "Download", "Get the official signed APK from the current GitHub production release."],
   ["02", "Allow installation", "Android may ask your browser or file manager for permission to install apps."],
   ["03", "Install", "Open the APK and review Android's installation confirmation."],
-  ["04", "Set up your cockpit", "Create your vehicle, then choose an optional HUD template or customize the layout and driver-defined shift thresholds."],
+  ["04", "Set up Home & Garage", "Create or import your dashboard in Home, then add your vehicle and adapter in Garage."],
 ];
 
 export default function Download() {
@@ -21,10 +21,10 @@ export default function Download() {
       <section className="page-hero">
         <div className="shell grid gap-10 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
           <div>
-            <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Motorsport Suite</span><span className="chip">Android 8+</span></div>
+            <div className="flex flex-wrap gap-2"><span className="chip"><span className="status-dot" aria-hidden="true" /> Production</span><span className="chip">Signed APK</span><span className="chip">Professional Dashboard</span><span className="chip">Android 8+</span></div>
             <p className="eyebrow mt-8">Official Android download</p>
             <h1 className="page-title mt-4">NowTuneUp {localRelease.version}</h1>
-            <p className="page-lede mt-7">Install the official signed v1.18.0 Motorsport Performance Suite APK, including HUD presets, configurable shift lights, raw telemetry CSV export and improved Time Slip history. Check build details and SHA-256 before installing.</p>
+            <p className="page-lede mt-7">Install the official signed v{localRelease.version} APK with five destinations, two gauge styles, persistent dashboard management and local performance reports. Check build details and SHA-256 before installing.</p>
           </div>
           <ReleaseCard release={localRelease} compact />
         </div>

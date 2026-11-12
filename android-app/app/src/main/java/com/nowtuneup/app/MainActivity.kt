@@ -7,12 +7,20 @@ import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DashboardCustomize
+import com.nowtuneup.app.ui.navigation.*
+import com.nowtuneup.app.ui.vehicle.GarageScreen
+import com.nowtuneup.app.ui.dashboard.WorkspaceManagerScreen
+import com.nowtuneup.app.feature.timeslip.PerformanceHistoryScreen
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -34,6 +42,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,7 +51,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -53,9 +61,9 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import com.nowtuneup.app.ui.components.NtuPanel as Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -116,33 +124,36 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent { NtuApp() }
     }
 }
 
-data class Destination(val title: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
-    val destinations = remember {
-        listOf(
-            Destination("หน้าปัด", Icons.Default.Speed),
-            Destination("เชื่อมต่อ", Icons.Default.Bluetooth),
-            Destination("ข้อมูลสด", Icons.AutoMirrored.Filled.List),
-            Destination("ตรวจปัญหา", Icons.Default.Warning),
-            Destination("Time Slip", Icons.Default.Timer),
-            Destination("ตั้งค่า", Icons.Default.Settings),
-        )
+    var selectedKey by rememberSaveable(key = "primary-destination-v2") { mutableStateOf(AppDestination.HOME.key) }
+    val selectedDestination = AppDestination.fromKey(selectedKey)
+    var secondaryPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var performanceActive by remember { mutableStateOf(false) }
+    var openWorkspace by remember { mutableStateOf(false) }
+    fun select(destination: AppDestination) {
+        if (performanceActive) return
+        selectedKey = destination.key
+        secondaryPage = null
     }
-    var selectedDestination by rememberSaveable { mutableIntStateOf(0) }
+    fun openGarage(page: String) {
+        if (performanceActive) return
+        selectedKey = AppDestination.GARAGE.key
+        secondaryPage = page
+    }
     val connectionState by viewModel.connection.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val vehicleRepository = rememberVehicleProfileRepository()
     val vehicleProfiles by vehicleRepository.profiles.collectAsState()
     val activeVehicle = vehicleProfiles.firstOrNull { it.isActive }
-    var showVehicleProfiles by remember { mutableStateOf(vehicleProfiles.isEmpty() || activeVehicle == null) }
     var splashVisible by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
     val view = LocalView.current
@@ -155,7 +166,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         smallestWidthDp = configuration.smallestScreenWidthDp,
     )
     val headUnitImmersive = deviceLayout == ResolvedDeviceLayout.HEAD_UNIT && preferences.headUnitImmersive
-    val chromeHidden = selectedDestination == 0 && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
+    val chromeHidden = selectedDestination == AppDestination.HOME && (preferences.focusMode || preferences.hudMode || headUnitImmersive)
     val useNavigationRail = deviceLayout != ResolvedDeviceLayout.PHONE || configuration.screenWidthDp > configuration.screenHeightDp
     val activity = context as? Activity
 
@@ -164,10 +175,6 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             if (!preferences.reduceMotion) delay(NtuMotion.Splash.toLong())
             splashVisible = false
         }
-    }
-
-    LaunchedEffect(vehicleProfiles.isEmpty(), activeVehicle?.id) {
-        if (vehicleProfiles.isEmpty() || activeVehicle == null) showVehicleProfiles = true
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -214,8 +221,9 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
     }
 
     LaunchedEffect(connectionState, preferences.autoFocusOnConnect) {
-        if (connectionState == ConnectionState.CONNECTED && preferences.autoFocusOnConnect) {
-            selectedDestination = 0
+        if (connectionState == ConnectionState.CONNECTED && preferences.autoFocusOnConnect && !performanceActive) {
+            selectedKey = AppDestination.HOME.key
+            secondaryPage = null
             viewModel.setFocusMode(true)
         }
     }
@@ -237,14 +245,25 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         }
     }
 
-    BackHandler(enabled = !splashVisible && activeVehicle != null && (showVehicleProfiles || selectedDestination != 0)) {
-        if (showVehicleProfiles) showVehicleProfiles = false else selectedDestination = 0
+    BackHandler(enabled = !splashVisible && (secondaryPage != null || selectedDestination != AppDestination.HOME || chromeHidden)) {
+        when {
+            secondaryPage != null -> secondaryPage = null
+            chromeHidden -> { viewModel.setFocusMode(false); viewModel.setHudMode(false); viewModel.setHeadUnitImmersive(false) }
+            else -> select(AppDestination.HOME)
+        }
     }
 
     NtuTheme(preferences.theme, reduceMotion = preferences.reduceMotion) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
-        DisposableEffect(lightBars) {
+        val legacyNavigationColor = MaterialTheme.colorScheme.surface.toArgb()
+        DisposableEffect(lightBars, legacyNavigationColor) {
             activity?.window?.let { window ->
+                // Before API 29, edge-to-edge uses an opaque navigation scrim.
+                // Match the app palette when its theme differs from Android's theme.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = legacyNavigationColor
+                }
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = lightBars
                     isAppearanceLightNavigationBars = lightBars
@@ -255,41 +274,36 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
         when {
             splashVisible -> NowTuneUpSplash(reduceMotion = preferences.reduceMotion)
 
-            vehicleProfiles.isEmpty() || activeVehicle == null || showVehicleProfiles -> VehicleProfilesScreen(
-                repository = vehicleRepository,
-                onContinue = if (activeVehicle != null) ({ showVehicleProfiles = false }) else null,
-                showBackAction = activeVehicle != null,
-                onBack = if (activeVehicle != null) ({ showVehicleProfiles = false }) else null,
-            )
-
             else -> Scaffold(
                 topBar = {
                     if (!chromeHidden) {
                         TopAppBar(
                             navigationIcon = {
-                                NowTuneUpLogoMark(Modifier.padding(start = 12.dp, end = 6.dp).size(36.dp),
+                                if (secondaryPage != null) IconButton(onClick = { secondaryPage = null }, enabled = !performanceActive) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "กลับ")
+                                } else NowTuneUpLogoMark(Modifier.padding(start = 12.dp, end = 6.dp).size(28.dp),
                                     foreground = MaterialTheme.colorScheme.onSurface,
                                     accent = MaterialTheme.colorScheme.primary,
                                     background = MaterialTheme.colorScheme.surface)
                             },
                             title = {
                                 Column {
-                                    Text(activeVehicle.displayName, style = MaterialTheme.typography.titleMedium,
+                                    Text(secondaryPage?.let { when(it) { "connection" -> "การเชื่อมต่อ"; "diagnostics" -> "ตรวจปัญหา"; "live" -> "ข้อมูลสด"; else -> "รถของฉัน" } } ?: selectedDestination.title, style = MaterialTheme.typography.titleMedium,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(connectionState.shortLabel(), style = MaterialTheme.typography.labelSmall,
+                                    Text("${activeVehicle?.displayName ?: "NowTuneUp"} · ${connectionState.shortLabel()}", style = MaterialTheme.typography.labelSmall,
                                         color = if (connectionState == ConnectionState.ERROR) MaterialTheme.colorScheme.error
                                             else MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             },
                             actions = {
-                                IconButton(onClick = { selectedDestination = 1 }) {
+                                IconButton(onClick = { openGarage("connection") }, enabled = !performanceActive) {
                                     Icon(if (connectionState == ConnectionState.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Bluetooth,
                                         contentDescription = "การเชื่อมต่อ: ${connectionState.shortLabel()}",
                                         tint = if (connectionState == ConnectionState.CONNECTED) MaterialTheme.colorScheme.primary
                                             else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                IconButton(onClick = { showVehicleProfiles = true }) {
+                                IconButton(onClick = { openGarage("vehicles") }, enabled = !performanceActive) {
                                     Icon(Icons.Default.DirectionsCar, contentDescription = "จัดการโปรไฟล์รถ")
                                 }
                             },
@@ -298,56 +312,49 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
                 },
                 bottomBar = {
                     if (!chromeHidden && !useNavigationRail) {
-                        NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
-                            destinations.forEachIndexed { index, destination ->
-                                NavigationBarItem(
-                                    selected = selectedDestination == index,
-                                    onClick = { selectedDestination = index },
-                                    icon = { NtuDestinationIcon(destination, selectedDestination == index, preferences.reduceMotion) },
-                                    label = { Text(destination.title, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    alwaysShowLabel = false,
-                                )
-                            }
-                        }
+                        AppBottomNavigation(selectedDestination, ::select, enabled = !performanceActive)
                     }
                 },
             ) { innerPadding ->
-                Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                Row(modifier = Modifier.fillMaxSize().padding(innerPadding).consumeWindowInsets(innerPadding)) {
                     if (!chromeHidden && useNavigationRail) {
-                        NavigationRail(modifier = Modifier.verticalScroll(rememberScrollState()), containerColor = MaterialTheme.colorScheme.surface) {
-                            destinations.forEachIndexed { index, destination ->
-                                NavigationRailItem(
-                                    selected = selectedDestination == index,
-                                    onClick = { selectedDestination = index },
-                                    icon = { NtuDestinationIcon(destination, selectedDestination == index, preferences.reduceMotion) },
-                                    label = { Text(destination.title, fontSize = 10.sp) },
-                                )
-                            }
-                        }
+                        AppNavigationRail(selectedDestination, ::select, enabled = !performanceActive)
                     }
                     Box(modifier = Modifier.weight(1f)) {
                         AnimatedContent(
-                            targetState = selectedDestination,
+                            targetState = selectedDestination to secondaryPage,
                             transitionSpec = {
-                                if (preferences.reduceMotion) {
-                                    fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                                } else {
-                                    (fadeIn(tween(NtuMotion.Standard)) + slideInHorizontally(tween(NtuMotion.Standard)) {
-                                        if (targetState > initialState) it / 24 else -it / 24
-                                    }) togetherWith (fadeOut(tween(NtuMotion.Quick)) + slideOutHorizontally(tween(NtuMotion.Quick)) {
-                                        if (targetState > initialState) -it / 32 else it / 32
-                                    })
-                                }
+                                val duration = if (preferences.reduceMotion) 0 else 100
+                                fadeIn(tween(duration)) togetherWith fadeOut(tween(duration))
                             },
                             label = "NowTuneUp destination",
-                        ) { destination ->
-                            when (destination) {
-                                0 -> Dashboard(viewModel)
-                                1 -> ConnectionScreen(viewModel)
-                                2 -> LiveDataScreen(viewModel)
-                                3 -> DiagnosticsScreen(viewModel)
-                                4 -> TimeSlipScreen(viewModel)
-                                else -> SettingsScreen(viewModel)
+                        ) { route ->
+                            val destination = route.first
+                            when (route.second) {
+                                "connection" -> ConnectionScreen(viewModel)
+                                "diagnostics" -> DiagnosticsScreen(viewModel)
+                                "live" -> LiveDataScreen(viewModel)
+                                "vehicles" -> VehicleProfilesScreen(repository = vehicleRepository,
+                                    onContinue = if (activeVehicle != null) ({ secondaryPage = null }) else null,
+                                    showBackAction = true, onBack = { secondaryPage = null })
+                                else -> when (destination) {
+                                    AppDestination.HOME -> Dashboard(viewModel,
+                                        onLiveData = { secondaryPage = "live" },
+                                        initiallyManage = openWorkspace,
+                                        onManagerOpened = { openWorkspace = false })
+                                    AppDestination.PERFORMANCE -> TimeSlipScreen(viewModel,
+                                        onOpenHistory = { select(AppDestination.HISTORY) },
+                                        onSessionActiveChange = { performanceActive = it })
+                                    AppDestination.HISTORY -> PerformanceHistoryScreen(viewModel, onStartPerformance = { select(AppDestination.PERFORMANCE) })
+                                    AppDestination.GARAGE -> GarageScreen(viewModel,
+                                        onManageVehicles = { secondaryPage = "vehicles" },
+                                        onConnection = { secondaryPage = "connection" },
+                                        onDiagnostics = { secondaryPage = "diagnostics" },
+                                        onLiveData = { secondaryPage = "live" })
+                                    AppDestination.SETTINGS -> SettingsScreen(viewModel, onManageDashboards = {
+                                        openWorkspace = true; select(AppDestination.HOME)
+                                    })
+                                }
                             }
                         }
                     }
@@ -359,7 +366,7 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
             AlertDialog(
                 onDismissRequest = viewModel::dismissError,
                 confirmButton = { TextButton(onClick = viewModel::dismissError) { Text("ตกลง") } },
-                title = { Text("ปัญหาการเชื่อมต่อ") },
+                title = { Text("ดำเนินการไม่สำเร็จ") },
                 text = { Text(message) },
             )
         }
@@ -367,19 +374,26 @@ fun NtuApp(viewModel: MainViewModel = hiltViewModel()) {
 }
 
 @Composable
-fun Dashboard(viewModel: MainViewModel) {
+fun Dashboard(viewModel: MainViewModel, onLiveData: () -> Unit = {}, initiallyManage: Boolean = false, onManagerOpened: () -> Unit = {}) {
+    var managing by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initiallyManage) { if (initiallyManage) { managing = true; onManagerOpened() } }
+    val storageIssues by viewModel.dashboardStorageIssues.collectAsState()
+    val workspaceReady by viewModel.dashboardWorkspaceReady.collectAsState()
     val dashboards by viewModel.dashboards.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     var editingProfile by remember { mutableStateOf<DashboardConfig?>(null) }
 
     val profileBeingEdited = editingProfile
     when {
+        !workspaceReady -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        managing && profileBeingEdited == null -> WorkspaceManagerScreen(viewModel,
+            onCreate = { editingProfile = DashboardDefaults.newProfile() },
+            onEdit = { editingProfile = it }, onClose = { managing = false })
         profileBeingEdited != null -> DashboardEditor(
             config = profileBeingEdited,
             drivingMode = preferences.drivingMode,
             onSave = { saved ->
-                viewModel.saveDashboard(saved)
-                editingProfile = null
+                viewModel.saveDashboard(saved) { editingProfile = null }
             },
             onCancel = { editingProfile = null },
         )
@@ -388,12 +402,20 @@ fun Dashboard(viewModel: MainViewModel) {
             onCreate = { editingProfile = DashboardDefaults.newProfile() },
         )
 
-        else -> DashboardProfilesPager(
-            viewModel = viewModel,
-            pages = dashboards,
-            onEdit = { editingProfile = it },
-            onCreate = { editingProfile = DashboardDefaults.newProfile() },
-        )
+        else -> Column(Modifier.fillMaxSize()) {
+            if (!preferences.focusMode && !preferences.hudMode && !preferences.drivingMode) Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("พื้นที่หน้าปัด", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = onLiveData) { Text("ข้อมูลสด") }
+                IconButton(onClick = { managing = true }) { Icon(Icons.Default.DashboardCustomize, contentDescription = "จัดการหน้าปัด") }
+            }
+            Box(Modifier.weight(1f)) { DashboardProfilesPager(
+                viewModel = viewModel, pages = dashboards,
+                onEdit = { profile ->
+                    if (storageIssues.any { it.id == profile.id && it.unreadable }) managing = true
+                    else editingProfile = profile
+                }) }
+        }
     }
 }
 
@@ -402,12 +424,12 @@ private fun DashboardProfilesPager(
     viewModel: MainViewModel,
     pages: List<DashboardConfig>,
     onEdit: (DashboardConfig) -> Unit,
-    onCreate: () -> Unit,
 ) {
     val readings by viewModel.readings.collectAsState()
     val preferences by viewModel.dashboardPreferences.collectAsState()
     val connectionState by viewModel.connection.collectAsState()
-    val dtcs by viewModel.dtcs.collectAsState()
+    val connectionUi by viewModel.connectionUiState.collectAsState()
+    val diagnosticOverview by viewModel.diagnosticOverview.collectAsState()
     val stats by viewModel.readingStats.collectAsState()
     val alerts by viewModel.activeAlerts.collectAsState()
     val initialPage = pages.indexOfFirst { it.id == preferences.selectedDashboardId }.coerceAtLeast(0)
@@ -444,7 +466,7 @@ private fun DashboardProfilesPager(
                 readingStats = stats,
                 preferences = preferences,
                 connectionState = connectionState,
-                dtcCount = dtcs.size,
+                dtcCount = diagnosticOverview?.allDtcs?.size,
                 activeAlerts = alerts,
                 pageIndex = page,
                 pageCount = pages.size,
@@ -467,16 +489,13 @@ private fun DashboardProfilesPager(
                     viewModel.setTouchLock(!preferences.touchLock)
                 },
                 onResetStats = viewModel::resetReadingStats,
+                simulated = connectionUi.transportType == com.nowtuneup.app.domain.model.ObdTransportType.MOCK,
             )
         }
 
-        if (!preferences.focusMode && !preferences.hudMode && !preferences.drivingMode) {
-            ExtendedFloatingActionButton(
-                onClick = onCreate,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("โปรไฟล์ใหม่") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
-            )
+        val display = LocalConfiguration.current
+        if (display.screenWidthDp >= 900 && preferences.headUnitImmersive && !preferences.focusMode && !preferences.hudMode) {
+            TextButton(onClick = { viewModel.setHeadUnitImmersive(false) }, modifier = Modifier.align(Alignment.TopEnd)) { Text("ออกจากเต็มจอ") }
         }
     }
 }
@@ -492,13 +511,6 @@ private fun DashboardProfileEmptyState(onCreate: () -> Unit) {
     }
 }
 
-@Composable
-private fun NtuDestinationIcon(destination: Destination, selected: Boolean, reduceMotion: Boolean) {
-    val scale by animateFloatAsState(if (selected) 1.08f else 1f,
-        tween(if (reduceMotion) 0 else NtuMotion.Quick), label = "navigation selection")
-    Icon(destination.icon, contentDescription = destination.title,
-        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
-}
 
 private fun ConnectionState.shortLabel(): String = when (this) {
     ConnectionState.DISCONNECTED -> "ยังไม่เชื่อมต่อ"

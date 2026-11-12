@@ -576,7 +576,7 @@ class ObdSessionManager @Inject constructor(
         _readings.update { readings ->
             readings.map { reading ->
                 when (reading.pid) {
-                    pid -> reading.copy(value = value, updatedAt = now)
+                    pid -> reading.copy(value = value, updatedAt = now, sourceTimeNanos = responseReceivedAtNanos)
                     DerivedPids.TURBO_PRESSURE -> {
                         val turboSupported = DerivedPids.MAP in _supportedPids.value &&
                             DerivedPids.BAROMETRIC_PRESSURE in _supportedPids.value
@@ -584,6 +584,7 @@ class ObdSessionManager @Inject constructor(
                             value = if (turboSupported && estimate.quality == TurboDataQuality.GOOD) estimate.valueKpa else null,
                             supported = turboSupported,
                             updatedAt = estimate.updatedAtMillis,
+                            sourceTimeNanos = if (reading.updatedAt != estimate.updatedAtMillis) responseReceivedAtNanos else reading.sourceTimeNanos,
                         )
                     }
 
