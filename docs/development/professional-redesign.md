@@ -1,6 +1,6 @@
 # Professional Automotive Technology redesign
 
-The native Android redesign is prepared for release 1.19.0. Release packaging and
+The native Android redesign is prepared for release 1.19.1. Release packaging and
 publication follow [the release process](../release-process.md), including production
 signature and website artifact verification.
 The supplied Dragy, social-navigation and activity-card images inform hierarchy,
@@ -235,4 +235,10 @@ Paths below are relative to `android-app/app/src` unless stated otherwise.
 
 The implementation uses the existing Compose, Room, DataStore and FileProvider
 dependencies. No new backend, social feature, account requirement, diagnostic
-command or dependency was introduced. The database version is unchanged. Release 1.19.0 uses Android build code 29.
+command or dependency was introduced. The database version is unchanged. Release 1.19.1 uses Android build code 30.
+
+For release 1.19.1, both JVM suites were rerun with 132 passing tests each after
+removing an obsolete codec test pinned to version 1.18.0. The release workflow
+validates the application version against its immutable tag. Version 1.19.0 was
+not published; its failed tag is preserved. The UI verification above preceded
+release packaging, and the production release independently verifies signing.
