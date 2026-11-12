@@ -81,6 +81,32 @@ jobs:
             echo 'Production signing secrets are required; no unsigned APK will be published.' >&2
             exit 1
           }
+      - name: Create immutable release tag from reviewed main
+        if: ${{ startsWith(github.ref, 'refs/heads/release/publish-v') }}
+        working-directory: .
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "release/publish-v$RELEASE_VERSION" || {
+            echo "The release branch must match the requested version" >&2
+            exit 1
+          }
+          # A fresh release branch is created from the already reviewed main commit.
+          # Do not permit a modified or stale branch to publish a different tree.
+          git fetch --no-tags origin main
+          main_commit="$(git rev-parse FETCH_HEAD)"
+          head_commit="$(git rev-parse HEAD)"
+          test "$head_commit" = "$main_commit" || {
+            echo "Release branch does not exactly match current main" >&2
+            exit 1
+          }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$RELEASE_VERSION" >/dev/null; then
+            echo "Immutable v$RELEASE_VERSION tag already exists" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v$RELEASE_VERSION" -m "NowTuneUp v$RELEASE_VERSION" "$head_commit"
+          git push origin "refs/tags/v$RELEASE_VERSION"
       - name: Build the immutable release tag source
         working-directory: .
         run: |
