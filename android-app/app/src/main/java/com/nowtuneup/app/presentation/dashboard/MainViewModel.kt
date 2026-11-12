@@ -3,6 +3,13 @@ package com.nowtuneup.app.presentation.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nowtuneup.app.data.dashboard.DashboardRepository
+import com.nowtuneup.app.data.dashboard.DashboardStorageIssue
+import com.nowtuneup.app.data.preferences.DashboardWorkspacePreferences
+import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import com.nowtuneup.app.data.local.dao.NtuDao
 import com.nowtuneup.app.data.local.entity.DiagnosticScanEntity
 import com.nowtuneup.app.data.logging.DiagnosticLogger
@@ -59,16 +66,26 @@ class MainViewModel @Inject constructor(
     val vehicleIdentity = session.vehicleIdentity
     val turboQuality = session.turboQuality
     val diagnosticLogs = logger.entries
-    val dashboards = dashboardRepository.dashboards.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList(),
+    private val workspacePreferences = settingsRepository.dashboardWorkspace.stateIn(
+        viewModelScope, SharingStarted.Eagerly, DashboardWorkspacePreferences(),
     )
-    val dashboardPreferences = settingsRepository.dashboardPreferences.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        DashboardPreferences(),
+    private val workspace = dashboardRepository.workspace.stateIn(
+        viewModelScope, SharingStarted.Eagerly, com.nowtuneup.app.data.dashboard.DashboardWorkspaceSnapshot(),
     )
+    val dashboards = combine(workspace, workspacePreferences) { snapshot, preferences ->
+        orderedDashboards(snapshot.dashboards, preferences.orderedIds)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val dashboardStorageIssues = workspace.map { it.issues }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList<DashboardStorageIssue>())
+    val dashboardLandingId = combine(workspace, workspacePreferences) { snapshot, preferences ->
+        preferences.landingId?.takeIf { id -> snapshot.dashboards.any { it.id == id } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val workspaceMutation = Mutex()
+    private val _dashboardPreferences = MutableStateFlow(DashboardPreferences())
+    val dashboardPreferences = _dashboardPreferences.asStateFlow()
+    private val dashboardPreferencesLoaded = MutableStateFlow(false)
+    private val _dashboardWorkspaceReady = MutableStateFlow(false)
+    val dashboardWorkspaceReady = _dashboardWorkspaceReady.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
@@ -100,6 +117,30 @@ class MainViewModel @Inject constructor(
     private var dashboardDemandPids: Set<Int> = emptySet()
 
     init {
+        viewModelScope.launch {
+            settingsRepository.dashboardPreferences.collect { persisted ->
+                // Publish actual persisted preferences before signalling that defaults are gone.
+                _dashboardPreferences.value = persisted
+                dashboardPreferencesLoaded.value = true
+            }
+        }
+        viewModelScope.launch {
+            runCatching {
+                val initial = combine(dashboardRepository.workspace, settingsRepository.dashboardWorkspace,
+                    settingsRepository.dashboardPreferences) { snapshot, workspace, preferences ->
+                    Triple(snapshot.dashboards, workspace, preferences)
+                }.first()
+                val ordered = orderedDashboards(initial.first, initial.second.orderedIds)
+                val id = initialDashboardId(ordered, initial.second.landingId, initial.third.selectedDashboardId)
+                if (id != initial.third.selectedDashboardId) {
+                    settingsRepository.updateDashboardPreferences { it.copy(selectedDashboardId = id) }
+                }
+                dashboardPreferencesLoaded.first { it }
+                dashboardPreferences.first { it.selectedDashboardId == id }
+                dashboards.first { current -> current.map { it.id } == ordered.map { it.id } }
+                _dashboardWorkspaceReady.value = true
+            }.onFailure { _error.value = "Unable to open the saved dashboard workspace: ${it.message}" }
+        }
         viewModelScope.launch { liveSessions.recording.collect { applyPollingDemand() } }
         viewModelScope.launch {
             dashboardPreferences.collect { preferences ->
@@ -350,28 +391,108 @@ class MainViewModel @Inject constructor(
     }
 
     private fun updatePreferences(change: (DashboardPreferences) -> DashboardPreferences) = viewModelScope.launch {
-        settingsRepository.saveDashboardPreferences(change(dashboardPreferences.value))
+        settingsRepository.updateDashboardPreferences(change)
     }
 
-    fun saveDashboard(config: DashboardConfig) = viewModelScope.launch {
-        val userProfile = config.copy(isDefault = false)
-        dashboardRepository.save(userProfile)
-        selectDashboard(userProfile.id)
+    /** A mutation's source of truth is persisted state, not the asynchronously emitted UI snapshot. */
+    private suspend fun savedWorkspaceForMutation(): com.nowtuneup.app.data.dashboard.DashboardWorkspaceSnapshot {
+        val saved = dashboardRepository.workspace.first()
+        val preferences = settingsRepository.dashboardWorkspace.first()
+        return saved.copy(dashboards = orderedDashboards(saved.dashboards, preferences.orderedIds))
+    }
+
+    fun saveDashboard(config: DashboardConfig, onSaved: () -> Unit = {}) = viewModelScope.launch {
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val saved = savedWorkspaceForMutation()
+                if (saved.issues.any { it.id == config.id && it.unreadable }) {
+                    _error.value = "Reset the damaged layout from Manage dashboards before editing. Its original data is still retained."
+                    return@withLock
+                }
+                val isNew = saved.dashboards.none { it.id == config.id }
+                dashboardRepository.save(config.copy(isDefault = false))
+                if (isNew) settingsRepository.saveDashboardOrder(saved.dashboards.map { it.id } + config.id)
+                settingsRepository.updateDashboardPreferences { it.copy(selectedDashboardId = config.id) }
+            }.onSuccess { onSaved() }
+                .onFailure { _error.value = "Unable to save dashboard: ${it.message}" }
+        }
+    }
+
+    fun renameDashboard(id: String, name: String) = viewModelScope.launch {
+        val title = name.trim().take(60)
+        if (title.isBlank()) return@launch
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val saved = savedWorkspaceForMutation()
+                if (saved.issues.any { it.id == id && it.unreadable }) return@withLock
+                val profile = saved.dashboards.firstOrNull { it.id == id } ?: return@withLock
+                dashboardRepository.save(profile.copy(name = title))
+            }.onFailure { _error.value = "Unable to rename dashboard: ${it.message}" }
+        }
     }
 
     fun duplicateDashboard(config: DashboardConfig) = viewModelScope.launch {
-        val copy = config.copy(
-            id = "profile-${System.currentTimeMillis()}",
-            name = "${config.name} สำเนา",
-            isDefault = false,
-        )
-        dashboardRepository.save(copy)
-        selectDashboard(copy.id)
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val saved = savedWorkspaceForMutation()
+                if (saved.issues.any { it.id == config.id && it.unreadable }) return@withLock
+                val source = saved.dashboards.firstOrNull { it.id == config.id } ?: return@withLock
+                val copy = source.copy(id = "profile-${UUID.randomUUID()}", name = "${source.name} copy", isDefault = false)
+                dashboardRepository.save(copy)
+                settingsRepository.saveDashboardOrder(saved.dashboards.map { it.id } + copy.id)
+                settingsRepository.updateDashboardPreferences { it.copy(selectedDashboardId = copy.id) }
+            }.onFailure { _error.value = "Unable to duplicate dashboard: ${it.message}" }
+        }
     }
 
     fun deleteDashboard(id: String) = viewModelScope.launch {
-        dashboardRepository.delete(id)
-        if (dashboardPreferences.value.selectedDashboardId == id) selectDashboard("")
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val remaining = savedWorkspaceForMutation().dashboards.filterNot { it.id == id }
+                dashboardRepository.delete(id)
+                settingsRepository.removeDashboardMetadata(id)
+                settingsRepository.updateDashboardPreferences { current ->
+                    if (current.selectedDashboardId == id) current.copy(selectedDashboardId = remaining.firstOrNull()?.id.orEmpty())
+                    else current
+                }
+            }.onFailure { _error.value = "Unable to delete dashboard: ${it.message}" }
+        }
+    }
+
+    fun moveDashboard(id: String, direction: Int) = viewModelScope.launch {
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val ids = savedWorkspaceForMutation().dashboards.map { it.id }.toMutableList()
+                val from = ids.indexOf(id)
+                if (from < 0) return@withLock
+                val to = (from + direction.coerceIn(-1, 1)).coerceIn(0, ids.lastIndex)
+                ids.add(to, ids.removeAt(from))
+                settingsRepository.saveDashboardOrder(ids)
+            }.onFailure { _error.value = "Unable to reorder dashboards: ${it.message}" }
+        }
+    }
+
+    fun setLandingDashboard(id: String) = viewModelScope.launch {
+        workspaceMutation.withLock {
+            runCatching {
+                if (savedWorkspaceForMutation().dashboards.any { it.id == id }) settingsRepository.setLandingDashboard(id)
+            }.onFailure { _error.value = "Unable to save the preferred dashboard: ${it.message}" }
+        }
+    }
+
+    fun resetDashboardToTemplate(id: String, template: DashboardConfig) = viewModelScope.launch {
+        workspaceMutation.withLock {
+            runCatching {
+                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
+                val profile = savedWorkspaceForMutation().dashboards.firstOrNull { it.id == id } ?: return@withLock
+                dashboardRepository.save(template.copy(id = id, name = profile.name, isDefault = false))
+            }.onFailure { _error.value = "Unable to reset dashboard: ${it.message}" }
+        }
     }
 
     fun resetReadingStats() {
@@ -595,3 +716,15 @@ class MainViewModel @Inject constructor(
         super.onCleared()
     }
 }
+
+/** Ignore stale/orphan metadata; unlisted legacy dashboards retain a deterministic order. */
+internal fun orderedDashboards(profiles: List<DashboardConfig>, orderedIds: List<String>): List<DashboardConfig> {
+    val ranks = orderedIds.distinct().withIndex().associate { it.value to it.index }
+    return profiles.distinctBy { it.id }.sortedWith(compareBy<DashboardConfig> { ranks[it.id] ?: Int.MAX_VALUE }
+        .thenBy { it.name.lowercase() }.thenBy { it.id })
+}
+
+internal fun initialDashboardId(profiles: List<DashboardConfig>, landingId: String?, selectedId: String): String =
+    landingId?.takeIf { id -> profiles.any { it.id == id } }
+        ?: selectedId.takeIf { id -> profiles.any { it.id == id } }
+        ?: profiles.firstOrNull()?.id.orEmpty()

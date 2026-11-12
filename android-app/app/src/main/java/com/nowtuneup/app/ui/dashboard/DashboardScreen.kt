@@ -16,12 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Usb
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -57,6 +53,7 @@ import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.ui.adaptive.AdaptiveLayoutResolver
 import com.nowtuneup.app.ui.adaptive.ResolvedDeviceLayout
 import com.nowtuneup.app.ui.dashboard.components.DrivingDashboardWidget
+import com.nowtuneup.app.ui.dashboard.components.label
 import com.nowtuneup.app.util.DisplayReadingAdapter
 import kotlinx.coroutines.delay
 
@@ -133,7 +130,6 @@ fun DashboardScreen(
         Column(Modifier.fillMaxSize()) {
             if (simulated) Text("SIMULATED SOURCE — not vehicle telemetry", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
             if (!immersive) {
-                ConnectionSetupCard(connectionState, onConnectionAction, compact)
                 DashboardHeader(
                     config = config,
                     landscape = landscape,
@@ -142,6 +138,14 @@ fun DashboardScreen(
                     onEdit = onEdit,
                     onEnterFocus = onEnterFocus,
                 )
+            }
+
+            if (immersive) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    ConnectionBadge(state = connectionState)
+                    PageIndicator(pageIndex = pageIndex, pageCount = pageCount)
+                }
             }
 
             activeAlerts.firstOrNull()?.let { alert ->
@@ -157,18 +161,6 @@ fun DashboardScreen(
                 dtcCount = dtcCount,
                 now = now,
                 modifier = Modifier.weight(1f),
-            )
-        }
-
-        if (immersive) {
-            ConnectionBadge(
-                state = connectionState,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-            )
-            PageIndicator(
-                pageIndex = pageIndex,
-                pageCount = pageCount,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
             )
         }
 
@@ -280,7 +272,7 @@ private fun DashboardHeader(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                "Custom HUD · ${deviceLayout.label()} · 12×24 canvas",
+                "${if (landscape) "แนวนอน" else "แนวตั้ง"} · จัดวางได้ตามต้องการ",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -333,12 +325,12 @@ private fun ImmersiveControls(
 @Composable
 private fun ConnectionBadge(state: ConnectionState, modifier: Modifier = Modifier) {
     val color = when (state) {
-        ConnectionState.CONNECTED -> Color(0xFF4CAF50)
-        ConnectionState.ERROR -> Color(0xFFFF5252)
-        ConnectionState.DISCONNECTED -> Color(0xFF90A4AE)
-        else -> Color(0xFFFFC107)
+        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
+        ConnectionState.ERROR -> MaterialTheme.colorScheme.error
+        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) Color(0xFF855300) else Color(0xFFFFC107)
     }
-    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.68f), shape = MaterialTheme.shapes.large) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.small) {
         Text(
             state.shortLabel(),
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
@@ -352,11 +344,11 @@ private fun ConnectionBadge(state: ConnectionState, modifier: Modifier = Modifie
 @Composable
 private fun PageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
     if (pageCount <= 1) return
-    Surface(modifier = modifier, color = Color.Black.copy(alpha = 0.62f), shape = MaterialTheme.shapes.large) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.small) {
         Text(
             "${pageIndex + 1} / $pageCount",
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.labelSmall,
         )
     }
@@ -367,9 +359,9 @@ private fun AlertBanner(alert: DashboardAlert, compact: Boolean) {
     val color = if (alert.severity == AlertSeverity.CRITICAL) Color(0xFFD50000) else Color(0xFFFFA000)
     Surface(color = color, modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "${alert.severity.name}: ${alert.title} ${"%.1f".format(alert.value)} ${alert.unit.name.lowercase()}",
+            text = "${alert.severity.name}: ${alert.title} ${"%.1f".format(alert.value)} ${alert.unit.label()}",
             modifier = Modifier.padding(horizontal = 12.dp, vertical = if (compact) 5.dp else 9.dp),
-            color = Color.White,
+            color = com.nowtuneup.app.presentation.theme.contentColorFor(color),
             fontWeight = FontWeight.Bold,
             style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
         )
@@ -403,66 +395,6 @@ private fun readingFreshness(
         age <= preferences.staleAfterMillis -> DataFreshness.DELAYED
         else -> DataFreshness.STALE
     }
-}
-
-@Composable
-private fun ConnectionSetupCard(
-    state: ConnectionState,
-    onAction: () -> Unit,
-    compact: Boolean,
-) {
-    val connected = state == ConnectionState.CONNECTED
-    val busy = state in setOf(
-        ConnectionState.DEVICE_DETECTED,
-        ConnectionState.REQUESTING_PERMISSION,
-        ConnectionState.CONNECTING,
-        ConnectionState.INITIALIZING,
-    )
-    val title = when (state) {
-        ConnectionState.DISCONNECTED -> "เชื่อมต่อรถ"
-        ConnectionState.DEVICE_DETECTED -> "พบอะแดปเตอร์"
-        ConnectionState.REQUESTING_PERMISSION -> "รอสิทธิ์อุปกรณ์"
-        ConnectionState.CONNECTING -> "กำลังเชื่อมต่อ"
-        ConnectionState.INITIALIZING -> "กำลังเตรียม ECU"
-        ConnectionState.CONNECTED -> "OBD เชื่อมต่อแล้ว"
-        ConnectionState.ERROR -> "การเชื่อมต่อมีปัญหา"
-    }
-    val accent = when (state) {
-        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
-        ConnectionState.ERROR -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.secondary
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = if (compact) 8.dp else 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            when {
-                busy -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
-                connected -> Icon(Icons.Default.CheckCircle, null, tint = accent)
-                state == ConnectionState.ERROR -> Icon(Icons.Default.Warning, null, tint = accent)
-                else -> Icon(Icons.Default.Usb, null, tint = accent)
-            }
-            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            if (!busy) {
-                Button(onClick = onAction) {
-                    Text(if (connected) "ตัด" else "เชื่อมต่อ")
-                }
-            }
-        }
-    }
-}
-
-private fun ResolvedDeviceLayout.label(): String = when (this) {
-    ResolvedDeviceLayout.PHONE -> "Phone"
-    ResolvedDeviceLayout.TABLET -> "Tablet"
-    ResolvedDeviceLayout.HEAD_UNIT -> "Head unit"
 }
 
 private fun ConnectionState.shortLabel(): String = when (this) {

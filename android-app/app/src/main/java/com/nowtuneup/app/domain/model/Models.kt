@@ -112,7 +112,17 @@ enum class WidgetSize { SMALL, MEDIUM, LARGE }
 data class DashboardProfile(val id: Long = 0, val name: String, val widgets: List<DashboardWidget>)
 
 enum class DashboardMode { DIGITAL, ANALOG, HYBRID }
+/** Legacy names remain serializable so older dashboard files never lose widget settings. */
 enum class DashboardWidgetType { DIGITAL, DIGITAL_RING, ANALOG, MINI_GAUGE, PROGRESS, LINE_CHART, DTC_CARD, SHIFT_LIGHT }
+enum class PrimaryGaugePresentation { DIAL, DIGITAL }
+val primaryGaugeTypes = listOf(DashboardWidgetType.ANALOG, DashboardWidgetType.DIGITAL)
+
+/** Lossless presentation migration. Utilities are not additional gauge presentation types. */
+fun DashboardWidgetType.primaryGaugePresentation(): PrimaryGaugePresentation? = when (this) {
+    DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE -> PrimaryGaugePresentation.DIAL
+    DashboardWidgetType.DIGITAL, DashboardWidgetType.DIGITAL_RING, DashboardWidgetType.PROGRESS -> PrimaryGaugePresentation.DIGITAL
+    DashboardWidgetType.LINE_CHART, DashboardWidgetType.DTC_CARD, DashboardWidgetType.SHIFT_LIGHT -> null
+}
 enum class GaugeStyle { CLASSIC_METAL, SPORT_RED, NEO_CYAN, RACING_AMBER, OEM_BLUE, HUD_GREEN, CUSTOM }
 enum class BezelFinish { BRUSHED_STEEL, BLACK_CHROME, TITANIUM_DARK }
 enum class GaugeSmoothing { FAST, BALANCED, SMOOTH }
@@ -323,18 +333,18 @@ data class DashboardConfig(
 
 data class ThemeConfig(
     val name: String = "Graphite",
-    val primary: Long = 0xFF52FF8A,
-    val secondary: Long = 0xFFFFC66D,
-    val accent: Long = 0xFF52FF8A,
-    val background: Long = 0xFF080B0E,
-    val card: Long = 0xFF12191E,
-    val text: Long = 0xFFF1F6F4,
-    val gaugeNeedle: Long = 0xFF52FF8A,
+    val primary: Long = 0xFF4F8EF7,
+    val secondary: Long = 0xFF9AA5B5,
+    val accent: Long = 0xFF4F8EF7,
+    val background: Long = 0xFF0B0D10,
+    val card: Long = 0xFF171A20,
+    val text: Long = 0xFFF3F5F7,
+    val gaugeNeedle: Long = 0xFF4F8EF7,
     val gaugeTick: Long = 0xFF90A4AE,
     val warning: Long = 0xFFFFB300,
     val critical: Long = 0xFFFF5252,
     val success: Long = 0xFF4CAF50,
-    val border: Long = 0xFF334139,
+    val border: Long = 0xFF343B47,
 )
 
 data class ReadingStats(

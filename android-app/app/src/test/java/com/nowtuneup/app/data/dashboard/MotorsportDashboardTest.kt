@@ -25,7 +25,7 @@ class MotorsportDashboardTest {
     }
     @Test fun templatesRoundTripWithoutChangingFactoryOrEmptyProfiles() {
         val presets = DashboardDefaults.presets()
-        assertEquals(listOf("Daily Drive", "Performance", "Diagnostics"), presets.map { it.name })
+        assertEquals(listOf("Daily", "Engine", "Performance"), presets.map { it.name })
         presets.forEach { template ->
             assertTrue(DashboardCodec.import(DashboardCodec.export(template)).isSuccess)
             assertNotEquals(template.portrait, template.landscape)

@@ -35,58 +35,19 @@ fun DrivingDashboardWidget(
     val protectedReading = displayableReading(reading, freshness)?.takeUnless {
         config.type == com.nowtuneup.app.domain.model.DashboardWidgetType.SHIFT_LIGHT && freshness != DataFreshness.LIVE
     }
-    val contentAlpha = when (freshness) {
-        DataFreshness.STALE, DataFreshness.UNSUPPORTED -> 0.60f
-        DataFreshness.NO_DATA, DataFreshness.RECONNECTING -> 0.76f
-        else -> 1f
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().alpha(contentAlpha)) {
-            DashboardWidgetView(
-                config = config,
-                reading = protectedReading,
-                reduceMotion = reduceMotion,
-                dtcCount = dtcCount,
-                // Peak and session maximum previously used the same calculation.
-                // Keep only the useful session Min/Max data and suppress the duplicate marker.
-                stats = stats?.copy(peak = null),
-            )
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxSize()) {
+            DashboardWidgetView(config, protectedReading, reduceMotion, dtcCount,
+                stats = stats?.copy(peak = null), freshness = freshness)
         }
-
-        if (freshness != DataFreshness.LIVE) {
-            Surface(
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-                color = freshnessColor(freshness).copy(alpha = 0.94f),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    text = freshnessLabel(freshness),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (freshness == DataFreshness.STALE) Color.White else Color.Black,
-                )
-            }
-        }
-
-        if (stats != null && showMinMax) {
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
-                color = Color.Black.copy(alpha = 0.70f),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "ต่ำสุด ${stats.minimum.short()}  สูงสุด ${stats.maximum.short()}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
+        val footer = listOfNotNull(
+            freshnessLabel(freshness).takeIf { freshness != DataFreshness.LIVE },
+            stats?.takeIf { showMinMax }?.let { "ต่ำ/สูง ${it.minimum.short()}–${it.maximum.short()}" },
+        ).joinToString(" · ")
+        if (footer.isNotEmpty()) Text(footer, Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (freshness == DataFreshness.STALE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -97,15 +58,6 @@ private fun freshnessLabel(value: DataFreshness): String = when (value) {
     DataFreshness.NO_DATA -> "รอข้อมูล ECU"
     DataFreshness.UNSUPPORTED -> "รถไม่รองรับ"
     DataFreshness.RECONNECTING -> "กำลังเชื่อมต่อใหม่"
-}
-
-private fun freshnessColor(value: DataFreshness): Color = when (value) {
-    DataFreshness.LIVE -> Color(0xFF4CAF50)
-    DataFreshness.DELAYED -> Color(0xFFFFC107)
-    DataFreshness.STALE -> Color(0xFFD84315)
-    DataFreshness.NO_DATA -> Color(0xFFB0BEC5)
-    DataFreshness.UNSUPPORTED -> Color(0xFF90A4AE)
-    DataFreshness.RECONNECTING -> Color(0xFF29B6F6)
 }
 
 private fun Double?.short(): String = this?.let { value ->

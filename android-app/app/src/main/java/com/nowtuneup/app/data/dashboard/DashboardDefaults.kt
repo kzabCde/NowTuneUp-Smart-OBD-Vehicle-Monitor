@@ -77,7 +77,11 @@ object DashboardDefaults {
         return DashboardWidgetConfig(
             id = id,
             pid = pid,
-            type = type,
+            type = when(type) {
+                DashboardWidgetType.MINI_GAUGE -> DashboardWidgetType.ANALOG
+                DashboardWidgetType.PROGRESS, DashboardWidgetType.DIGITAL_RING -> DashboardWidgetType.DIGITAL
+                else -> type
+            },
             title = title,
             unit = unit,
             row = 0,
@@ -215,7 +219,7 @@ object DashboardDefaults {
     )
 
     fun newProfile(
-        id: String = "profile-${System.currentTimeMillis()}",
+        id: String = "profile-${java.util.UUID.randomUUID()}",
         name: String = "โปรไฟล์ใหม่",
     ): DashboardConfig = DashboardConfig(
         id = id,
@@ -229,13 +233,22 @@ object DashboardDefaults {
     /** Optional factory templates; selecting one creates an editable copy, never mutates the factory. */
     fun presets(): List<DashboardConfig> {
         fun layout(pids: List<Int>, racing: Boolean, landscape: Boolean): DashboardLayout {
+            val across = if (landscape) { if (pids.size == 4) 4 else 3 } else 2
+            val width = 12 / across
+            val height = when {
+                pids.size == 4 && landscape -> if (racing) 22 else 24
+                pids.size == 4 -> if (racing) 11 else 12
+                landscape -> 10
+                else -> 6
+            }
+            val top = if (racing) 2 else 0
             val widgets = pids.mapIndexed { index, pid ->
                 widgetCatalog.first { it.pid == pid }.copy(
                     id = "preset-$index", type = DashboardWidgetType.DIGITAL,
                     title = when(pid) { 0x0D -> "Speed"; 0x0C -> "RPM"; 0x05 -> "Coolant"; 0x04 -> "Load"; 0x11 -> "Throttle"; 0x42 -> "Voltage"; else -> "Intake" },
-                    canvasX = if (landscape) (index % 3) * 4 else (index % 2) * 6,
-                    canvasY = 2 + (index / if (landscape) 3 else 2) * 6,
-                    canvasWidth = if (landscape) 4 else 6, canvasHeight = 6,
+                    canvasX = (index % across) * width,
+                    canvasY = top + (index / across) * height,
+                    canvasWidth = width, canvasHeight = height,
                     valueSize = if (pid == 0x0D || pid == 0x0C) 42 else 28,
                     gaugeStyle = GaugeStyle.CUSTOM,
                     colors = ColorConfig(value = 0xFFFFFFFF, background = 0xFF101214, border = 0xFF303438),
@@ -251,9 +264,9 @@ object DashboardDefaults {
             return DashboardLayout(widgets = widgets)
         }
         return listOf(
-            Triple("Daily Drive", listOf(0x0D, 0x0C, 0x05, 0x04), false),
+            Triple("Daily", listOf(0x0D, 0x0C, 0x05, 0x04), false),
+            Triple("Engine", listOf(0x05, 0x0F, 0x42, 0x04, 0x0B, 0x11), false),
             Triple("Performance", listOf(0x0C, 0x0D, 0x11, 0x05), true),
-            Triple("Diagnostics", listOf(0x05, 0x0F, 0x42, 0x04, 0x0B, 0x11), false),
         ).map { (name, pids, racing) ->
             DashboardConfig("template-$name", name, DashboardMode.HYBRID,
                 layout(pids, racing, false), layout(pids, racing, true), isDefault = true)

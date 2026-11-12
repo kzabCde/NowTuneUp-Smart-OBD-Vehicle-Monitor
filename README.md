@@ -1,6 +1,6 @@
 # NowTuneUp (NTU)
 
-Next Android release: **1.16.0 — Performance Insights**. See the [release notes](docs/releases/v1.16.0.md) for performance graphs, the minimal interface refresh and upgrade behavior.
+Native UI redesign development is documented in [the audit and migration guide](docs/development/professional-redesign.md). Production release assets are managed separately from this development work.
 
 NowTuneUp is a local-first Android vehicle monitor and its official Next.js product/release website. The Android app reads standardized, read-only OBD-II data through an ELM327-compatible USB adapter. The website explains compatibility and installation, discovers signed APKs from GitHub Releases on the server, and redirects downloads only to trusted GitHub assets.
 
@@ -30,7 +30,7 @@ No standalone backend exists. GitHub Releases is the production artifact store a
 
 ## Android application
 
-- Package: `com.nowtuneup.app`; Android 8.0/API 26 minimum; target/compile SDK 35; version 1.0.0 (code 1).
+- Package: `com.nowtuneup.app`; Android 8.0/API 26 minimum; target/compile SDK 35; version defined in `android-app/app/build.gradle.kts`.
 - Compose Material 3 automotive dashboard, portrait/landscape layout, live-data search, read-only DTC scan, local trips, settings, CSV writer, Room and DataStore.
 - `ObdTransport` abstraction with debug mock and usb-serial-for-android implementation.
 - Serialized, timeout-bounded commands; sequential `ATZ`, `ATE0`, `ATL0`, `ATS0`, `ATH0`, `ATSP0`; Mode 01 PID parsing and read-only Mode 03.

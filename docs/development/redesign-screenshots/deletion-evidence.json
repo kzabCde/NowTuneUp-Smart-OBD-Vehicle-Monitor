@@ -1,0 +1,20 @@
+{
+  "before-delete": {
+    "dashboard_profiles": 1,
+    "trips": 0,
+    "samples": 0,
+    "diagnostic_scans": 0
+  },
+  "after-delete": {
+    "dashboard_profiles": 0,
+    "trips": 0,
+    "samples": 0,
+    "diagnostic_scans": 0
+  },
+  "after-restart": {
+    "dashboard_profiles": 0,
+    "trips": 0,
+    "samples": 0,
+    "diagnostic_scans": 0
+  }
+}

@@ -38,7 +38,7 @@ object NtuMotion {
     const val Quick = 150
     const val Standard = 220
     const val Emphasis = 300
-    const val Splash = 750
+    const val Splash = 200
 }
 
 val LocalNtuReduceMotion = staticCompositionLocalOf { false }
@@ -49,7 +49,7 @@ fun Modifier.ntuAnimateContentSize(): Modifier =
 
 val NtuGraphite = Color(0xFF080B0E)
 val NtuWhite = Color(0xFFF5F7F8)
-val NtuElectricGreen = Color(0xFF52FF8A)
+val NtuAccentBlue = Color(0xFF4F8EF7)
 
 @Composable
 fun NowTuneUpSplash(
@@ -64,7 +64,7 @@ fun NowTuneUpSplash(
             progress.snapTo(0f)
             progress.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
             )
         }
     }
@@ -78,14 +78,14 @@ fun NowTuneUpSplash(
             verticalArrangement = Arrangement.spacedBy(18.dp),
             modifier = Modifier.graphicsLayer {
                 alpha = 0.35f + progress.value * 0.65f
-                val scale = 0.88f + progress.value * 0.12f
+                val scale = 1f
                 scaleX = scale
                 scaleY = scale
             },
         ) {
             NowTuneUpLogoMark(
                 sweepProgress = progress.value,
-                modifier = Modifier.size(156.dp),
+                modifier = Modifier.size(96.dp),
             )
             Text(
                 text = "NOWTUNEUP",
@@ -109,7 +109,7 @@ fun NowTuneUpLogoMark(
     modifier: Modifier = Modifier,
     sweepProgress: Float = 1f,
     foreground: Color = NtuWhite,
-    accent: Color = NtuElectricGreen,
+    accent: Color = NtuAccentBlue,
     background: Color = NtuGraphite,
 ) {
     // Match the launcher vector in a 108-unit viewport, inside the adaptive icon safe zone.

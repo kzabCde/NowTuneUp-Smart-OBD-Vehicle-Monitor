@@ -129,7 +129,7 @@ fun VehicleProfilesScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("รถของฉัน", fontWeight = FontWeight.Black)
+                        Text("รถของฉัน", fontWeight = FontWeight.SemiBold)
                         Text(
                             if (profiles.isEmpty()) "เพิ่มรถคันแรกเพื่อเริ่มต้น" else "รถที่คุณสร้าง ${profiles.size} คัน",
                             style = MaterialTheme.typography.labelSmall,
@@ -165,7 +165,7 @@ fun VehicleProfilesScreen(
                     ) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("รถที่ใช้งานอยู่", style = MaterialTheme.typography.labelLarge)
-                            Text(active?.displayName ?: "เลือกรถที่ต้องการใช้งาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                            Text(active?.displayName ?: "เลือกรถที่ต้องการใช้งาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                             Text(
                                 "เลือกรถเพื่อแยกข้อมูลการเชื่อมต่อและผล Time Slip ของแต่ละคัน",
                                 style = MaterialTheme.typography.bodySmall,
@@ -239,7 +239,7 @@ private fun VehicleProfileCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(profile.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                    Text(profile.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
                         listOf(profile.brand, profile.model, profile.year).filter { it.isNotBlank() }.joinToString(" • "),
                         style = MaterialTheme.typography.bodyMedium,
@@ -297,7 +297,7 @@ private fun VehicleProfileEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isNew) "เพิ่มโปรไฟล์รถ" else "แก้ไขโปรไฟล์รถ", fontWeight = FontWeight.Black) },
+        title = { Text(if (isNew) "เพิ่มโปรไฟล์รถ" else "แก้ไขโปรไฟล์รถ", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),

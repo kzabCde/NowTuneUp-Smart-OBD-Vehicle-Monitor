@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,24 +58,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.nowtuneup.app.data.dashboard.DashboardCodec
 import com.nowtuneup.app.data.dashboard.DashboardDefaults
+import com.nowtuneup.app.data.dashboard.removeWidget
+import com.nowtuneup.app.data.dashboard.moveWidget
+import com.nowtuneup.app.data.dashboard.resizeWidget
 import com.nowtuneup.app.domain.model.ColorConfig
 import com.nowtuneup.app.domain.model.DashboardConfig
 import com.nowtuneup.app.domain.model.DashboardLayout
 import com.nowtuneup.app.domain.model.DashboardWidgetConfig
 import com.nowtuneup.app.domain.model.DashboardWidgetType
 import com.nowtuneup.app.domain.model.DisplayUnit
-import com.nowtuneup.app.domain.model.GaugeStyle
 import com.nowtuneup.app.domain.model.HUD_CANVAS_COLUMNS
 import com.nowtuneup.app.domain.model.HUD_CANVAS_ROWS
 import com.nowtuneup.app.domain.model.ThemeConfig
 import com.nowtuneup.app.domain.model.VehicleReading
 import com.nowtuneup.app.domain.model.WarningThreshold
-import com.nowtuneup.app.domain.model.premiumGaugePreset
-import com.nowtuneup.app.domain.model.userVisibleGaugeStyles
+import com.nowtuneup.app.domain.model.primaryGaugeTypes
+import com.nowtuneup.app.domain.model.primaryGaugePresentation
 import com.nowtuneup.app.ui.components.NtuScreenHeader
 import com.nowtuneup.app.ui.dashboard.components.DashboardWidgetView
 import kotlin.math.roundToInt
@@ -95,6 +99,8 @@ fun DashboardEditor(
     var orientation by remember { mutableStateOf(EditorOrientation.PORTRAIT) }
     var selectedWidgetId by remember { mutableStateOf<String?>(null) }
     var showLibrary by remember { mutableStateOf(false) }
+    var clearCanvas by remember { mutableStateOf(false) }
+    var pendingPreset by remember { mutableStateOf<DashboardConfig?>(null) }
     var transferMessage by remember { mutableStateOf<String?>(null) }
     var undoStack by remember(config) { mutableStateOf(emptyList<DashboardConfig>()) }
     var redoStack by remember(config) { mutableStateOf(emptyList<DashboardConfig>()) }
@@ -123,6 +129,17 @@ fun DashboardEditor(
     }
 
     val activeLayout = draft.layout(orientation)
+
+    if (clearCanvas) AlertDialog(
+        onDismissRequest = { clearCanvas = false }, title = { Text("ล้าง Widget ในหน้านี้?") },
+        text = { Text("ลบเฉพาะ Widget ในแนวที่เลือก ข้อมูลรถและประวัติยังอยู่ และย้อนกลับได้ก่อนบันทึก") },
+        confirmButton = { TextButton(onClick = { commit(draft.withLayout(orientation, activeLayout.copy(widgets = emptyList()))); selectedWidgetId = null; clearCanvas = false }) { Text("ล้าง Widget") } },
+        dismissButton = { TextButton(onClick = { clearCanvas = false }) { Text("ยกเลิก") } })
+    pendingPreset?.let { preset -> AlertDialog(
+        onDismissRequest = { pendingPreset = null }, title = { Text("รีเซ็ตเป็น ${preset.name}?") },
+        text = { Text("แทนเลย์เอาต์ทั้งสองแนว ชื่อและรหัสหน้าปัดเดิมยังอยู่ และย้อนกลับได้ก่อนบันทึก") },
+        confirmButton = { TextButton(onClick = { commit(preset.copy(id = draft.id, name = draft.name, isDefault = false)); selectedWidgetId = null; pendingPreset = null }) { Text("ใช้แม่แบบ") } },
+        dismissButton = { TextButton(onClick = { pendingPreset = null }) { Text("ยกเลิก") } }) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -194,13 +211,13 @@ fun DashboardEditor(
                 onDelete = {
                     commit(draft.withLayout(
                         orientation,
-                        activeLayout.copy(widgets = activeLayout.widgets.filterNot { item -> item.id == widget.id }),
+                        activeLayout.removeWidget(widget.id),
                     ))
                     selectedWidgetId = null
                 },
                 onDuplicate = {
                     val duplicate = widget.copy(
-                        id = "${widget.id}-copy-${System.currentTimeMillis()}",
+                        id = "${widget.id}-copy-${java.util.UUID.randomUUID()}",
                         canvasX = (widget.canvasX + 1).coerceAtMost((activeLayout.columns - widget.canvasWidth).coerceAtLeast(0)),
                         canvasY = (widget.canvasY + 1).coerceAtMost((activeLayout.rows - widget.canvasHeight).coerceAtLeast(0)),
                         zIndex = ((activeLayout.widgets.maxOfOrNull { it.zIndex } ?: 0) + 1).coerceAtMost(10_000),
@@ -224,22 +241,29 @@ fun DashboardEditor(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Custom HUD Studio") },
-                navigationIcon = { TextButton(onClick = onCancel) { Text("ยกเลิก") } },
-                actions = {
+            Column {
+                TopAppBar(
+                    title = { Text("Custom HUD Studio", style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = { TextButton(onClick = onCancel) { Text("ยกเลิก") } },
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    actions = {
+                        TextButton(
+                            onClick = {
+                                runCatching { DashboardCodec.import(DashboardCodec.export(draft)).getOrThrow() }
+                                    .onSuccess { onSave(it.copy(isDefault = false)) }
+                                    .onFailure { transferMessage = "Invalid HUD: ${it.message}" }
+                            },
+                            enabled = draft.name.isNotBlank(),
+                        ) { Text("บันทึก") }
+                    },
+                )
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = ::undo, enabled = undoStack.isNotEmpty()) { Text("ย้อนกลับ") }
                     TextButton(onClick = ::redo, enabled = redoStack.isNotEmpty()) { Text("ทำซ้ำ") }
-                    TextButton(
-                        onClick = {
-                            runCatching { DashboardCodec.import(DashboardCodec.export(draft)).getOrThrow() }
-                                .onSuccess { onSave(it.copy(isDefault = false)) }
-                                .onFailure { transferMessage = "Invalid HUD: ${it.message}" }
-                        },
-                        enabled = draft.name.isNotBlank(),
-                    ) { Text("บันทึก") }
-                },
-            )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -255,11 +279,14 @@ fun DashboardEditor(
                 )
             }
 
-            if (draft.portrait.widgets.isEmpty() && draft.landscape.widgets.isEmpty()) item {
-                Text("Start from a factory template (editable copy)")
+            item {
+                Text("แม่แบบหน้าปัด · สำเนาที่แก้ไขได้")
                 ScrollableChips {
                     DashboardDefaults.presets().forEach { preset ->
-                        OutlinedButton(onClick = { commit(preset.copy(id = draft.id, isDefault = false)) }) { Text(preset.name) }
+                        OutlinedButton(onClick = {
+                            if (draft.portrait.widgets.isEmpty() && draft.landscape.widgets.isEmpty()) commit(preset.copy(id = draft.id, name = draft.name, isDefault = false))
+                            else pendingPreset = preset
+                        }) { Text(preset.name) }
                     }
                 }
             }
@@ -295,6 +322,7 @@ fun DashboardEditor(
             }
 
             item {
+                Text("ตัวอย่างเลย์เอาต์ · ค่าสาธิต ไม่ใช่ข้อมูลรถ", style = MaterialTheme.typography.labelSmall)
                 HudCanvasEditor(
                     layout = activeLayout,
                     orientation = orientation,
@@ -313,13 +341,7 @@ fun DashboardEditor(
                     onResize = { id, dw, dh ->
                         val widget = activeLayout.widgets.firstOrNull { it.id == id } ?: return@HudCanvasEditor
                         if (!widget.locked) {
-                            val maxWidth = activeLayout.columns - widget.canvasX
-                            val maxHeight = activeLayout.rows - widget.canvasY
-                            val changed = widget.copy(
-                                canvasWidth = (widget.canvasWidth + dw).coerceIn(2, maxWidth.coerceAtLeast(2)),
-                                canvasHeight = (widget.canvasHeight + dh).coerceIn(2, maxHeight.coerceAtLeast(2)),
-                            )
-                            commit(draft.updateWidget(orientation, changed))
+                            commit(draft.withLayout(orientation, activeLayout.resizeWidget(id, widget.canvasWidth + dw, widget.canvasHeight + dh)))
                         }
                     },
                 )
@@ -327,13 +349,12 @@ fun DashboardEditor(
 
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { showLibrary = true }, modifier = Modifier.weight(1f)) {
+                    Button(onClick = { showLibrary = true }, enabled = activeLayout.widgets.size < 64, modifier = Modifier.weight(1f)) {
                         Text("+ เพิ่ม Widget")
                     }
                     OutlinedButton(
                         onClick = {
-                            commit(draft.withLayout(orientation, activeLayout.copy(widgets = emptyList())))
-                            selectedWidgetId = null
+                            clearCanvas = true
                         },
                         enabled = activeLayout.widgets.isNotEmpty(),
                         modifier = Modifier.weight(1f),
@@ -342,7 +363,20 @@ fun DashboardEditor(
             }
 
             item {
-                SectionTitle("ธีมโปรไฟล์", "เปลี่ยนสีทั้ง HUD แล้วปรับแต่ละ Widget ต่อได้")
+                SectionTitle("Widget ในหน้านี้", "เลือกแก้ไขหรือจัดลำดับชั้นโดยไม่ต้องแตะ Widget ที่ซ้อนกัน")
+                activeLayout.widgets.sortedBy { it.zIndex }.forEach { widget ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { selectedWidgetId = widget.id }, modifier = Modifier.weight(1f)) {
+                            Text(widget.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = { commit(draft.withLayout(orientation, activeLayout.moveWidget(widget.id, -1))) }) { Text("ขึ้น") }
+                        TextButton(onClick = { commit(draft.withLayout(orientation, activeLayout.moveWidget(widget.id, 1))) }) { Text("ลง") }
+                    }
+                }
+            }
+
+            item {
+                SectionTitle("พื้นหลังโปรไฟล์", "เลือกพื้นหลังหน้าปัด โดยเกจใช้ระบบสีที่อ่านง่ายร่วมกัน")
                 ScrollableChips {
                     DashboardDefaults.themes.forEach { theme ->
                         FilterChip(
@@ -545,9 +579,8 @@ private fun WidgetLibrarySheet(
             Text("เลือกเครื่องมือก่อน แล้วเลือกข้อมูล OBD ที่ต้องการแสดง", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             listOf(
-                "Digital" to listOf(DashboardWidgetType.DIGITAL, DashboardWidgetType.DIGITAL_RING),
-                "Analog" to listOf(DashboardWidgetType.ANALOG, DashboardWidgetType.MINI_GAUGE),
-                "Performance / Telemetry" to listOf(DashboardWidgetType.PROGRESS, DashboardWidgetType.LINE_CHART),
+                "Gauges" to primaryGaugeTypes,
+                "Telemetry" to listOf(DashboardWidgetType.LINE_CHART),
             ).forEach { (category, types) ->
                 Text(category, style = MaterialTheme.typography.labelLarge)
                 ScrollableChips {
@@ -601,12 +634,18 @@ private fun WidgetPropertiesSheet(
     onDuplicate: () -> Unit,
 ) {
     var draft by remember(widget) { mutableStateOf(widget) }
+    var confirmDelete by remember(widget.id) { mutableStateOf(false) }
     var scaleMin by remember(widget) { mutableStateOf(widget.scaleMinimum?.toString().orEmpty()) }
     var scaleMax by remember(widget) { mutableStateOf(widget.scaleMaximum?.toString().orEmpty()) }
     var warningLow by remember(widget) { mutableStateOf(widget.threshold.warningLow?.toString().orEmpty()) }
     var warningHigh by remember(widget) { mutableStateOf(widget.threshold.warningHigh?.toString().orEmpty()) }
     var criticalLow by remember(widget) { mutableStateOf(widget.threshold.criticalLow?.toString().orEmpty()) }
     var criticalHigh by remember(widget) { mutableStateOf(widget.threshold.criticalHigh?.toString().orEmpty()) }
+
+    if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false },
+        title = { Text("ลบ Widget นี้?") }, text = { Text("ลบเฉพาะ Widget นี้ ข้อมูลที่บันทึกไว้ไม่ถูกลบ และย้อนกลับได้ก่อนบันทึก") },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("ลบ Widget") } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("ยกเลิก") } })
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -640,52 +679,14 @@ private fun WidgetPropertiesSheet(
                 val compatibleTypes = if (draft.pid < 0) {
                     listOf(DashboardWidgetType.DTC_CARD)
                 } else {
-                    DashboardWidgetType.entries.filter { it != DashboardWidgetType.DTC_CARD && (it != DashboardWidgetType.SHIFT_LIGHT || draft.pid == 0x0C) }
+                    primaryGaugeTypes + listOf(DashboardWidgetType.LINE_CHART) + if (draft.pid == 0x0C) listOf(DashboardWidgetType.SHIFT_LIGHT) else emptyList()
                 }
                 compatibleTypes.forEach { candidate ->
                     FilterChip(
-                        selected = draft.type == candidate,
+                        selected = draft.type == candidate || (candidate in primaryGaugeTypes && draft.type.primaryGaugePresentation() == candidate.primaryGaugePresentation()),
                         onClick = { draft = draft.copy(type = candidate) },
                         label = { Text(candidate.label()) },
                     )
-                }
-            }
-
-            if (draft.type in setOf(
-                    DashboardWidgetType.ANALOG,
-                    DashboardWidgetType.MINI_GAUGE,
-                    DashboardWidgetType.DIGITAL_RING,
-                )
-            ) {
-                SheetTitle("สไตล์เกจ")
-                ScrollableChips {
-                    userVisibleGaugeStyles.forEach { style ->
-                        FilterChip(
-                            selected = draft.gaugeStyle == style,
-                            onClick = {
-                                val preset = premiumGaugePreset(style)
-                                draft = draft.copy(
-                                    gaugeStyle = style,
-                                    bezelFinish = preset.bezelFinish,
-                                    colors = draft.colors.copy(
-                                        value = preset.value,
-                                        label = preset.label,
-                                        background = preset.face,
-                                        border = preset.bezel,
-                                        warning = preset.warning,
-                                        critical = preset.critical,
-                                        face = preset.face,
-                                        bezel = preset.bezel,
-                                        tick = preset.tick,
-                                        needle = preset.needle,
-                                        needleHighlight = preset.needleHighlight,
-                                        glow = preset.glow,
-                                    ),
-                                )
-                            },
-                            label = { Text(style.label()) },
-                        )
-                    }
                 }
             }
 
@@ -827,8 +828,8 @@ private fun WidgetPropertiesSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("ใช้การตั้งค่า") }
 
-            OutlinedButton(onClick = onDuplicate, modifier = Modifier.fillMaxWidth()) { Text("ทำสำเนา Widget") }
-            OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("ลบ Widget") }
+            OutlinedButton(onClick = onDuplicate, enabled = layout.widgets.size < 64, modifier = Modifier.fillMaxWidth()) { Text("ทำสำเนา Widget") }
+            OutlinedButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("ลบ Widget") }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("ปิด") }
         }
     }
@@ -889,7 +890,7 @@ private fun createWidgetFromSource(
     val position = findOpenPosition(layout, width, height)
     val topZ = (layout.widgets.maxOfOrNull { it.zIndex } ?: -1) + 1
     return source.copy(
-        id = "${source.id}-${System.currentTimeMillis()}",
+        id = "${source.id}-${java.util.UUID.randomUUID()}",
         type = type,
         canvasX = position.first,
         canvasY = position.second,
@@ -989,29 +990,10 @@ private fun DashboardConfig.copyOtherLayoutTo(target: EditorOrientation): Dashbo
     )
 }
 
-private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardConfig {
-    fun themed(widget: DashboardWidgetConfig): DashboardWidgetConfig {
-        val colors = ColorConfig(
-            value = theme.gaugeNeedle,
-            label = theme.text,
-            background = theme.card,
-            border = theme.border,
-            warning = theme.warning,
-            critical = theme.critical,
-            face = theme.card,
-            bezel = theme.border,
-            tick = theme.gaugeTick,
-            needle = theme.gaugeNeedle,
-            needleHighlight = theme.text,
-            glow = theme.accent,
-        )
-        return widget.copy(colors = colors)
-    }
-    return copy(
-        portrait = portrait.copy(background = theme.background, widgets = portrait.widgets.map(::themed)),
-        landscape = landscape.copy(background = theme.background, widgets = landscape.widgets.map(::themed)),
-    )
-}
+private fun DashboardConfig.applyDashboardTheme(theme: ThemeConfig): DashboardConfig = copy(
+    portrait = portrait.copy(background = theme.background),
+    landscape = landscape.copy(background = theme.background),
+)
 
 private fun EditorOrientation.label(): String = when (this) {
     EditorOrientation.PORTRAIT -> "แนวตั้ง"
@@ -1020,23 +1002,13 @@ private fun EditorOrientation.label(): String = when (this) {
 
 private fun DashboardWidgetType.label(): String = when (this) {
     DashboardWidgetType.SHIFT_LIGHT -> "Shift lights (RPM)"
-    DashboardWidgetType.DIGITAL -> "ตัวเลข"
+    DashboardWidgetType.DIGITAL -> "DigitalGauge · ตัวเลข"
     DashboardWidgetType.DIGITAL_RING -> "วงแหวน"
-    DashboardWidgetType.ANALOG -> "เข็ม Analog"
+    DashboardWidgetType.ANALOG -> "DialGauge · เข็ม"
     DashboardWidgetType.MINI_GAUGE -> "เกจเล็ก"
     DashboardWidgetType.PROGRESS -> "แถบค่า"
     DashboardWidgetType.LINE_CHART -> "กราฟสด"
     DashboardWidgetType.DTC_CARD -> "DTC Status"
-}
-
-private fun GaugeStyle.label(): String = when (this) {
-    GaugeStyle.CLASSIC_METAL -> "Classic"
-    GaugeStyle.SPORT_RED -> "Sport Red"
-    GaugeStyle.NEO_CYAN -> "Neo Cyan"
-    GaugeStyle.RACING_AMBER -> "Racing Amber"
-    GaugeStyle.OEM_BLUE -> "OEM Blue"
-    GaugeStyle.HUD_GREEN -> "HUD Green"
-    GaugeStyle.CUSTOM -> "Custom"
 }
 
 private fun DisplayUnit.label(): String = when (this) {
