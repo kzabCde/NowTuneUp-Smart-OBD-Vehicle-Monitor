@@ -10,9 +10,9 @@ const liveValues = [
 ];
 
 const capabilities = [
-  ["01", "Monitor", "Custom HUD Studio", "Build your own live dashboard with drag-and-resize widgets, independent portrait and landscape layouts, and deduplicated OBD PID demand."],
+  ["01", "Monitor", "Motorsport HUD", "Optional Daily Drive, Performance and Diagnostics HUD templates, configurable RPM shift lights and reusable realtime widgets in independent portrait and landscape layouts."],
   ["02", "Diagnose", "Vehicle Intelligence", "VIN, readiness, stored, pending and permanent DTCs, plus freeze-frame context where the ECU supports them."],
-  ["03", "Measure", "Time Slip", "A dedicated speed-priority mode for 0–60, 0–100, quarter-mile, half-mile and one-mile OBD-based timing."],
+  ["03", "Measure", "Time Slip & telemetry", "Exact 0–60 mph targets, searchable performance history with split deltas, and local timestamped raw OBD recordings with CSV export."],
   ["04", "Understand", "Adapter health", "Rolling latency, success rate and recovery behavior help NowTuneUp adapt pacing to the connection you actually have."],
 ];
 
@@ -44,11 +44,11 @@ export default function Home() {
               <span className="chip"><span className="status-dot" aria-hidden="true" /> Production {localRelease.version}</span>
               <span className="chip">Android 8+</span>
               <span className="chip">Bluetooth + USB</span>
-              <span className="chip">Custom HUD Studio</span>
+              <span className="chip">Motorsport Suite v1.18</span>
             </div>
             <p className="eyebrow mt-8">OBD-II vehicle intelligence</p>
             <h1 className="page-title mt-4">Your car, translated into <span className="text-cyan-300">live signal.</span></h1>
-            <p className="page-lede mt-7">Create your own vehicle profile, build a fully custom HUD, monitor realtime data, inspect read-only diagnostics, time performance runs and understand adapter health — directly on Android without requiring a cloud account.</p>
+            <p className="page-lede mt-7">Create your own vehicle profile, configure a motorsport HUD with optional templates and shift lights, record timestamped telemetry, and compare Time Slip runs — locally on Android without requiring a cloud account.</p>
             <div className="page-actions mt-9">
               <Link href="/download" className="button">Download {localRelease.version}</Link>
               <Link href="/supported-devices" className="button secondary">Check compatibility</Link>
@@ -131,13 +131,13 @@ export default function Home() {
             </div>
           </article>
           <article className="panel telemetry-grid p-7 md:p-9">
-            <p className="eyebrow">Custom HUD · v{localRelease.version}</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Turn live OBD data into your own cockpit.</h2>
-            <p className="muted mt-5 leading-7">The legacy fixed HUD is replaced by a freeform 12×24 canvas. Drag and resize widgets, use the same PID as a gauge, number and graph, tune scale and opacity, then save separate portrait and landscape layouts as reusable profiles.</p>
+            <p className="eyebrow">Motorsport Performance Suite · v{localRelease.version}</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">Choose a cockpit. Customize every detail.</h2>
+            <p className="muted mt-5 leading-7">Start from optional Daily Drive, Performance or Diagnostics HUD templates, or build from a blank 12×24 canvas. Position widgets, tune a multi-stage RPM shift light with driver-defined thresholds, and keep separate portrait and landscape layouts.</p>
             <div className="mt-7 technical-card px-5">
               <div className="spec-row"><span className="spec-key">Canvas</span><span className="spec-value">12 × 24</span></div>
-              <div className="spec-row"><span className="spec-key">Widget views</span><span className="spec-value">Analog · Digital · Graph</span></div>
-              <div className="spec-row"><span className="spec-key">Profiles</span><span className="spec-value">Save · Import · Export</span></div>
+              <div className="spec-row"><span className="spec-key">HUD presets</span><span className="spec-value">Daily · Track · Diagnostics</span></div>
+              <div className="spec-row"><span className="spec-key">Shift lights</span><span className="spec-value">User-configured RPM stages</span></div>
             </div>
           </article>
         </div>
@@ -173,8 +173,8 @@ export default function Home() {
               <div className="section-heading">
                 <p className="eyebrow">Time Slip · Performance mode</p>
                 <h2 className="section-title">Measure the run with the data already on the bus.</h2>
-                <p className="section-copy">Time Slip prioritizes the vehicle speed PID during a run. The 3 → 2 → 1 → GO countdown and result animations are presentation only; recorded timing continues to use actual OBD telemetry timestamps and interpolated crossings.</p>
-                <div className="mt-2 flex flex-wrap gap-2"><span className="chip">0–60 km/h</span><span className="chip">0–100 km/h</span><span className="chip">1/4 mile</span><span className="chip">1/2 mile</span><span className="chip">1 mile</span></div>
+                <p className="section-copy">Time Slip prioritizes OBD vehicle speed and supports exact 0–60 mph targets, searchable history and compatible split comparisons. RPM and throttle are retained when available. Distance and acceleration are speed-derived estimates, not certified GPS measurements.</p>
+                <div className="mt-2 flex flex-wrap gap-2"><span className="chip">0–60 mph</span><span className="chip">0–100 km/h</span><span className="chip">1/4 mile</span><span className="chip">1/2 mile</span><span className="chip">1 mile</span></div>
               </div>
               <div className="technical-card p-6 md:p-8">
                 <div className="flex flex-wrap justify-between gap-3"><span className="data-label">0–100 km/h</span><span className="data-label text-cyan-300">READY</span></div>
