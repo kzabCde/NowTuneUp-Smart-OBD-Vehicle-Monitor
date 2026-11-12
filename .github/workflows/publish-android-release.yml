@@ -85,8 +85,10 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "refs/tags/v$RELEASE_VERSION:refs/tags/v$RELEASE_VERSION"
-          git checkout --detach "refs/tags/v$RELEASE_VERSION"
+          # Checkout can create a lightweight local ref for an annotated tag.
+          # Fetch only into FETCH_HEAD to avoid replacing that local tag ref.
+          git fetch --no-tags origin "refs/tags/v$RELEASE_VERSION"
+          git checkout --detach FETCH_HEAD
       - name: Compile and test all release sources
         run: ./gradlew test assembleDebugAndroidTest --max-workers=2
       - name: Lint compiled sources
