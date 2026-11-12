@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    // Release 1.19.1: professional dashboard workspace and performance reporting.
+    // Release 1.19.2: accessible dashboard deletion and restrained gauge visuals.
     val keystoreFile = System.getenv("NTU_KEYSTORE_FILE")
     signingConfigs {
         if (!keystoreFile.isNullOrBlank()) {
@@ -25,8 +25,8 @@ android {
         applicationId = "com.nowtuneup.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "1.19.1"
+        versionCode = 31
+        versionName = "1.19.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("boolean", "MOCK_OBD_DEFAULT", "false")
