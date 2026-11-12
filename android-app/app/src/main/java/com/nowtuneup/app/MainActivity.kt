@@ -403,7 +403,7 @@ fun Dashboard(viewModel: MainViewModel, onLiveData: () -> Unit = {}, initiallyMa
         )
 
         else -> Column(Modifier.fillMaxSize()) {
-            if (!preferences.focusMode && !preferences.hudMode && !preferences.drivingMode) Row(
+            if (!preferences.focusMode && !preferences.hudMode) Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("พื้นที่หน้าปัด", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = onLiveData) { Text("ข้อมูลสด") }

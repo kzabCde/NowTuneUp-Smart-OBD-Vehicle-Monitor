@@ -34,6 +34,7 @@ fun WorkspaceManagerScreen(
     val issues by viewModel.dashboardStorageIssues.collectAsState()
     var renaming by remember { mutableStateOf<DashboardConfig?>(null) }
     var deleting by remember { mutableStateOf<DashboardConfig?>(null) }
+    var deleteFailed by remember { mutableStateOf(false) }
     var resetting by remember { mutableStateOf<DashboardConfig?>(null) }
     val locked = preferences.drivingMode
     if (onClose != null) BackHandler(onBack = onClose)
@@ -53,9 +54,21 @@ fun WorkspaceManagerScreen(
     deleting?.let { dashboard ->
         AlertDialog(
             onDismissRequest = { deleting = null }, title = { Text("ลบ ${dashboard.name}?") },
-            text = { Text("ลบเฉพาะหน้าปัดนี้และ Widget ภายใน รถ ข้อมูลบันทึก การเดินทาง และประวัติการทดสอบจะยังอยู่ แม้ลบหน้าปัดสุดท้าย") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ลบเฉพาะหน้าปัดนี้และ Widget ภายใน รถ ข้อมูลบันทึก การเดินทาง และประวัติการทดสอบจะยังอยู่ แม้ลบหน้าปัดสุดท้าย")
+                    if (deleteFailed) Text(
+                        "ลบไม่สำเร็จ กรุณาปิดโหมดขับรถหรือลองอีกครั้ง",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
             confirmButton = { TextButton(onClick = {
-                viewModel.deleteDashboard(dashboard.id); deleting = null
+                viewModel.deleteDashboard(dashboard.id) { success ->
+                    if (success) { deleting = null; deleteFailed = false }
+                    else deleteFailed = true
+                }
             }) { Text("ลบหน้าปัด", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("เก็บหน้าปัดไว้") } },
         )
@@ -112,6 +125,12 @@ fun WorkspaceManagerScreen(
                             Text("${dashboard.portrait.widgets.size} Widget แนวตั้ง · ${dashboard.landscape.widgets.size} แนวนอน",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        TextButton(enabled = !locked, onClick = {
+                            deleteFailed = false
+                            deleting = dashboard
+                        }) {
+                            Text("ลบ", color = if (locked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
+                        }
                         Box {
                             IconButton(enabled = !locked, onClick = { menu = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "จัดการ ${dashboard.name}")
@@ -124,7 +143,7 @@ fun WorkspaceManagerScreen(
                                 DropdownMenuItem(text = { Text("เลื่อนลง") }, enabled = index < dashboards.lastIndex, onClick = { menu = false; viewModel.moveDashboard(dashboard.id, 1) })
                                 DropdownMenuItem(text = { Text("รีเซ็ตจากแม่แบบ") }, onClick = { menu = false; resetting = dashboard })
                                 HorizontalDivider()
-                                DropdownMenuItem(text = { Text("ลบหน้าปัด", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; deleting = dashboard })
+                                DropdownMenuItem(text = { Text("ลบหน้าปัด", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; deleteFailed = false; deleting = dashboard })
                             }
                         }
                     }

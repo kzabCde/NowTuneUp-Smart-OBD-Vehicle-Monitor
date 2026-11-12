@@ -448,18 +448,26 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun deleteDashboard(id: String) = viewModelScope.launch {
+    fun deleteDashboard(id: String, onResult: (Boolean) -> Unit = {}) = viewModelScope.launch {
         workspaceMutation.withLock {
             runCatching {
-                if (settingsRepository.dashboardPreferences.first().drivingMode) return@withLock
-                val remaining = savedWorkspaceForMutation().dashboards.filterNot { it.id == id }
+                check(!settingsRepository.dashboardPreferences.first().drivingMode) {
+                    "Turn off Driving Mode before deleting a dashboard."
+                }
+                val saved = savedWorkspaceForMutation()
+                check(saved.dashboards.any { it.id == id }) { "The dashboard no longer exists." }
+                val remaining = saved.dashboards.filterNot { it.id == id }
                 dashboardRepository.delete(id)
                 settingsRepository.removeDashboardMetadata(id)
                 settingsRepository.updateDashboardPreferences { current ->
                     if (current.selectedDashboardId == id) current.copy(selectedDashboardId = remaining.firstOrNull()?.id.orEmpty())
                     else current
                 }
-            }.onFailure { _error.value = "Unable to delete dashboard: ${it.message}" }
+            }.onSuccess { onResult(true) }
+                .onFailure {
+                    _error.value = "Unable to delete dashboard: ${it.message}"
+                    onResult(false)
+                }
         }
     }
 
